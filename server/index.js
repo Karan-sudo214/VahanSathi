@@ -821,26 +821,51 @@ app.patch(
   })
 );
 
-// Voice Assistant Intent parser
+// Voice booking intent parser. The browser handles listening; this endpoint normalises
+// the transcript into the same fields used by the real booking form.
 app.post('/api/voice/intent', (req, res) => {
-  const text = String(req.body.text || '').toLowerCase();
-  const tripType = text.includes('airport')
+  const raw = String(req.body.text || '').trim();
+  const text = raw.toLowerCase();
+  const language = String(req.body.language || 'en-IN');
+  const city = text.includes('delhi') || text.includes('दिल्ली') ? 'Delhi NCR' : text.includes('gurugram') || text.includes('gurgaon') || text.includes('गुरुग्राम') ? 'Gurugram' : 'Bengaluru';
+  const tripType = /airport|aeropuerto|एयरपोर्ट|विमानतळ|ವಿಮಾನ ನಿಲ್ದಾಣ|விமான நிலையம்|విమానాశ్రయం/.test(text)
     ? 'Airport'
-    : text.includes('outstation')
+    : /outstation|outside city|बाहर|ಔಟ್ ಸ್ಟೇಷನ್|வெளியூர்|అవుట్ స్టేషన్/.test(text)
     ? 'Outstation'
-    : text.includes('night')
+    : /night|रात|ರಾತ್ರಿ|இரவு|రాత్రి/.test(text)
     ? 'Night driver'
-    : text.includes('day')
+    : /full day|whole day|पूरा दिन|ಪೂರ್ಣ ದಿನ|முழு நாள்|పూర్తి రోజు/.test(text)
     ? 'Full day'
     : 'Hourly';
-  const hours = Number(text.match(/(\d+)\s*hours?/)?.[1]) || 4;
-
-  res.json({
-    tripType,
-    hours,
-    requiresConfirmation: true,
-    notice: 'Review the trip details and transparent fare before booking.'
-  });
+  const numberWords = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, सात: 7, आठ: 8, चार: 4, पांच: 5 };
+  const hourMatch = text.match(/(\d+)\s*(?:hours?|घंटे|ಗಂಟೆ|மணி|గంట)/i);
+  const wordHour = Object.entries(numberWords).find(([word]) => text.includes(`${word} hour`) || text.includes(`${word} घंटे`));
+  const hours = Math.max(1, Math.min(24, Number(hourMatch?.[1] || wordHour?.[1] || (tripType === 'Full day' ? 8 : 4))));
+  const routeMatch = text.match(/(?:from|pickup|pick me)\s+(.+?)\s+(?:to|destination)\s+(.+?)(?:,|\.|$)/i) || text.match(/(.+?)\s+से\s+(.+?)(?=\s+(?:जाना|तक|कल|आज|सुबह|शाम|रात)|$)/i) || text.match(/से\s+(.+?)\s+(?:तक|जाना है|जाना|जाने)\s+(.+?)(?=\s+(?:कल|आज|सुबह|शाम|रात)|$)/i);
+  const cleanPlace = (value) => value?.replace(/^(?:मुझे|मुझको)\s+.*?(?:के लिए|के वास्ते)\s+/i, '').replace(/^(?:i need|please take me|मुझे)\s+/i, '').replace(/\s+(?:tomorrow|today|कल|आज|सुबह|शाम|रात).*$/i, '').replace(/\s+at\s+\d.*$/i, '').replace(/[,.]+$/, '').trim() || null;
+  const pickup = cleanPlace(routeMatch?.[1]);
+  const destination = cleanPlace(routeMatch?.[2]);
+  const explicitTime = text.match(/(?:at|around|on|बजे|सुबह|शाम|रात)\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm|बजे|सुबह|शाम|रात)?/i);
+  const allTimes = [...text.matchAll(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/gi)];
+  const timeMatch = explicitTime || allTimes[allTimes.length - 1];
+  let time = null;
+  if (timeMatch) {
+    const hourValue = explicitTime ? timeMatch[1] : timeMatch[1];
+    let hour = Number(hourValue);
+    const suffix = String(timeMatch[3] || '').toLowerCase();
+    if ((suffix === 'pm' || suffix === 'शाम' || suffix === 'रात') && hour < 12) hour += 12;
+    if ((suffix === 'am' || suffix === 'सुबह') && hour === 12) hour = 0;
+    time = `${String(hour).padStart(2, '0')}:${timeMatch[2] || '00'}`;
+  }
+  const date = /tomorrow|कल|ನಾಳೆ|நாளை|రేపు/.test(text) ? new Date(Date.now() + 86400000).toISOString().slice(0, 10) : null;
+  const labels = {
+    'hi-IN': `मैंने ${city} में ${hours} घंटे की ${tripType === 'Airport' ? 'एयरपोर्ट' : 'ड्राइवर'} यात्रा समझी है। विवरण जांचकर बुकिंग पूरी करें।`,
+    'kn-IN': `${city} ನಲ್ಲಿ ${hours} ಗಂಟೆಗಳ ಡ್ರೈವರ್ ಸೇವೆಯನ್ನು ಅರ್ಥಮಾಡಿಕೊಂಡಿದ್ದೇನೆ. ವಿವರಗಳನ್ನು ಪರಿಶೀಲಿಸಿ.`,
+    'ta-IN': `${city} நகரில் ${hours} மணி நேர டிரைவர் சேவையைப் புரிந்துகொண்டேன். விவரங்களைச் சரிபார்க்கவும்.`,
+    'te-IN': `${city} లో ${hours} గంటల డ్రైవర్ సేవను అర్థం చేసుకున్నాను. వివరాలను తనిఖీ చేయండి.`
+  };
+  const summary = labels[language] || `I understood a ${hours}-hour ${tripType.toLowerCase()} booking in ${city}. Review the details before confirming.`;
+  res.json({ tripType, hours, city, pickup, destination, date, time, language, requiresConfirmation: true, summary });
 });
 
 // Serve frontend in production
