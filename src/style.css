@@ -2042,3 +2042,8 @@ button, input, select, textarea { outline-color: var(--blue); }
 .voice-confirm-card span { color: var(--slate-800); font-size: 14px; }
 .voice-confirm-card small { color: var(--slate-500); font-size: 12px; }
 .voice-change-btn { width: 100%; justify-content: center; margin-top: 10px; }
+
+/* Voice booking is a persistent utility, not a hero promotion. */
+.voice-top-btn { display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 12px; background: #eef5fb; border: 1px solid #d7e6f1; border-radius: 7px; color: var(--blue); font-size: 12px; font-weight: 800; }
+.voice-top-btn:hover { background: #e3eef7; border-color: #bdd5e6; }
+@media (max-width: 680px) { .voice-top-btn { width: 34px; padding: 0; justify-content: center; } .voice-top-btn span { display: none; } }
