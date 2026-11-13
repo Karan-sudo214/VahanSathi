@@ -1994,3 +1994,27 @@ nav {
     display: none;
   }
 }
+
+.admin-toolbar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin: 20px 0;
+}
+.admin-toolbar input {
+  flex: 1;
+  min-width: 220px;
+  border: 1px solid var(--slate-200);
+  background: #fff;
+  border-radius: 10px;
+  padding: 12px 14px;
+  color: var(--slate-800);
+  outline: none;
+}
+.admin-toolbar input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(30, 82, 136, .12); }
+.secondary-btn { border: 1px solid var(--slate-200); background: #fff; color: var(--slate-700); border-radius: 9px; padding: 11px 15px; font-weight: 700; }
+.secondary-btn:hover { border-color: var(--blue); color: var(--blue); }
+.inline-error { border: 1px solid #fecaca; background: #fff1f2; color: #991b1b; padding: 12px 14px; border-radius: 10px; margin-bottom: 16px; }
+.empty-state { display: grid; place-items: center; gap: 8px; min-height: 150px; text-align: center; color: var(--slate-500); padding: 28px; }
+.empty-state h3 { color: var(--slate-800); }
+@media (max-width: 700px) { .admin-toolbar { align-items: stretch; flex-direction: column; } .admin-toolbar input { min-width: 0; } }

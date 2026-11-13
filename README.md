@@ -49,7 +49,7 @@ JWT_SECRET=your-secure-jwt-secret-key-here
 DATA_PATH=./data/app.json
 
 # Neon PostgreSQL Connection String
-DATABASE_URL=postgresql://neondb_owner:npg_zBT1ixlrRXd8@ep-soft-wave-ax07cwp2-pooler.c-4.us-east-2.aws.neon.tech/neondb?sslmode=require
+DATABASE_URL=postgresql://<user>:<password>@<neon-host>/<database>?sslmode=require
 ```
 
 ---
@@ -87,4 +87,5 @@ Frontend runs at `http://localhost:5173`, Express API runs at `http://localhost:
    - `JWT_SECRET`: Random secure string (or let Render auto-generate).
    - `NODE_ENV`: `production`.
 3. Render runs `npm run build` and starts `node server/index.js`.
-4. Health check endpoint: `/api/health`.
+4. In Render, set `DATABASE_URL` to a newly rotated Neon connection string (the previous credential must be considered compromised), then redeploy. The server waits for Neon hydration before accepting authenticated requests and seeds the demo accounts only when the database is empty.
+5. Health check endpoint: `/api/health`.

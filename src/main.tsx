@@ -423,7 +423,7 @@ function App() {
 
   const nav =
     user?.role === 'admin'
-      ? ['Overview', 'Live trips', 'Drivers', 'Pricing', 'Activity']
+      ? ['Overview', 'Live trips', 'Bookings', 'Drivers', 'Customers', 'Payments & Payouts', 'Disputes', 'Pricing & Revenue', 'Analytics', 'Audit Logs', 'Settings']
       : user?.role === 'driver'
       ? ['Requests', 'My trips', 'Earnings', 'Profile']
       : ['Home', 'Book a driver', 'Your trips', 'Wallet', 'Help'];
@@ -747,9 +747,15 @@ function App() {
           {page === 'Profile' && <DriverProfile user={user} />}
           {page === 'Overview' && <LiveAdminPage bookings={bookings} focus="Overview" />}
           {page === 'Live trips' && <LiveAdminPage bookings={bookings} focus="Trips" />}
+          {page === 'Bookings' && <AdminModulePage module="bookings" bookings={bookings} />}
           {page === 'Drivers' && <LiveAdminPage bookings={bookings} focus="Drivers" />}
-          {page === 'Pricing' && <LiveAdminPage bookings={bookings} focus="Pricing" flash={flash} />}
-          {page === 'Activity' && <LiveAdminPage bookings={bookings} focus="Activity" />}
+          {page === 'Customers' && <AdminModulePage module="customers" bookings={bookings} />}
+          {page === 'Payments & Payouts' && <AdminModulePage module="payments" bookings={bookings} />}
+          {page === 'Disputes' && <AdminModulePage module="disputes" bookings={bookings} />}
+          {page === 'Pricing & Revenue' && <LiveAdminPage bookings={bookings} focus="Pricing" flash={flash} />}
+          {page === 'Analytics' && <AdminModulePage module="analytics" bookings={bookings} />}
+          {page === 'Audit Logs' && <AdminModulePage module="audit" bookings={bookings} />}
+          {page === 'Settings' && <AdminModulePage module="settings" bookings={bookings} />}
         </div>
       </main>
 
@@ -1487,6 +1493,41 @@ function LiveAdminPage({ bookings, focus = 'Overview', flash }: any) {
       )}
     </div>
   );
+}
+
+// ----------------- Admin modules -----------------
+function AdminModulePage({ module, bookings }: { module: string; bookings: Booking[] }) {
+  const [rows, setRows] = useState<any[]>([]);
+  const [query, setQuery] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    let mounted = true;
+    const load = async () => {
+      setLoading(true);
+      try {
+        const endpoint = module === 'customers' ? '/admin/users?role=customer' : module === 'audit' ? '/admin/audit-logs' : module === 'disputes' ? '/admin/disputes' : module === 'payments' ? '/admin/payments' : null;
+        if (endpoint) {
+          const result = await api(endpoint);
+          if (mounted) setRows(result.users || result.logs || result.disputes || result.payments || []);
+        }
+        setError('');
+      } catch (e: any) { if (mounted) setError(e.message); }
+      finally { if (mounted) setLoading(false); }
+    };
+    load();
+    return () => { mounted = false; };
+  }, [module]);
+  const title: Record<string, string> = { bookings: 'Booking management', customers: 'Customer management', payments: 'Payments & driver payouts', disputes: 'Dispute resolution', analytics: 'Network analytics', audit: 'Immutable audit logs', settings: 'Operations settings' };
+  const subtitle: Record<string, string> = { bookings: 'Search, filter, and inspect every trip in the network.', customers: 'Customer profiles, spend, activity, and support context.', payments: 'Separate customer GMV, platform revenue, refunds, and driver payouts.', disputes: 'Resolve complaints with an accountable, auditable workflow.', analytics: 'Growth, quality, utilisation, and unit economics.', audit: 'Every critical admin action is recorded and cannot be deleted.', settings: 'Configure role-aware operations controls and integrations.' };
+  const filteredBookings = bookings.filter((b) => `${b.id} ${b.customer || ''} ${b.driver || ''} ${b.pickup} ${b.destination}`.toLowerCase().includes(query.toLowerCase()));
+  const filteredRows = rows.filter((r) => JSON.stringify(r).toLowerCase().includes(query.toLowerCase()));
+  return <div className="admin-view">
+    <div className="section-head"><div><span className="eyebrow">OPERATIONS CONSOLE</span><h1>{title[module]}</h1><p>{subtitle[module]}</p></div><span className="service-market-pill"><Database size={15} /> Role-protected</span></div>
+    <div className="admin-toolbar"><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={module === 'audit' ? 'Search admin, action, target…' : 'Search by name, ID, phone, route…'} /><button className="secondary-btn" onClick={() => setQuery('')}>Clear</button></div>
+    {error && <div className="inline-error">{error}</div>}
+    {module === 'analytics' ? <div className="stats-cards-grid"><div className="stat-card panel"><small>COMPLETION RATE</small><b>{bookings.length ? Math.round(bookings.filter((b) => b.status === 'Trip completed').length / bookings.length * 100) : 0}%</b><span>Completed bookings</span></div><div className="stat-card panel"><small>GMV</small><b>{money(bookings.reduce((n, b) => n + Number(b.total || 0), 0))}</b><span>Customer booking value</span></div><div className="stat-card panel"><small>DRIVER PAYOUTS</small><b>{money(bookings.reduce((n, b) => n + Number(b.payout || 0), 0))}</b><span>Separate from platform revenue</span></div><div className="stat-card panel"><small>TAKE RATE</small><b>{bookings.length ? Math.round(bookings.reduce((n, b) => n + Number(b.commission || 0), 0) / Math.max(1, bookings.reduce((n, b) => n + Number(b.total || 0), 0)) * 100) : 0}%</b><span>Platform commission</span></div></div> : module === 'settings' ? <section className="panel empty-state"><ShieldCheck size={28} /><h3>Protected operations workspace</h3><p>Admin access is enforced by signed server sessions. Pricing changes, verification decisions, refunds, payout actions, and role changes must be handled through privileged API routes and are written to Audit Logs.</p></section> : <section className="panel bookings-table-panel"><div className="panel-header"><div><h3>{module === 'bookings' ? 'Bookings' : module === 'customers' ? 'Customers' : module === 'payments' ? 'Payments and payouts' : module === 'disputes' ? 'Open cases' : 'Activity history'}</h3><p>{loading ? 'Loading live records…' : `${(module === 'bookings' ? filteredBookings : filteredRows).length} records`}</p></div><span className="status-pill done">Live data</span></div><div className="table-responsive"><table className="admin-table"><thead><tr>{module === 'bookings' ? <><th>BOOKING</th><th>ROUTE</th><th>CUSTOMER / DRIVER</th><th>FARE</th><th>STATUS</th></> : module === 'customers' ? <><th>CUSTOMER</th><th>CONTACT</th><th>CITY</th><th>ACCOUNT</th></> : module === 'payments' ? <><th>PAYMENT</th><th>BOOKING</th><th>AMOUNT</th><th>STATUS</th></> : module === 'disputes' ? <><th>CASE</th><th>BOOKING</th><th>TYPE</th><th>STATUS</th></> : <><th>TIMESTAMP</th><th>ADMIN / ROLE</th><th>ACTION</th><th>TARGET</th></>}</tr></thead><tbody>{(module === 'bookings' ? filteredBookings : filteredRows).map((r: any, i) => module === 'bookings' ? <tr key={r.id}><td><b>{r.id}</b><small>{r.date} · {r.time}</small></td><td>{r.pickup} → {r.destination}<small>{r.city}</small></td><td>{r.customer || 'Customer'}<small>Driver: {r.driver || 'Unassigned'}</small></td><td><b>{money(r.total)}</b><small>Platform {money(r.commission)}</small></td><td><span className="status-pill">{r.status}</span></td></tr> : module === 'customers' ? <tr key={r.id || i}><td><b>{r.name}</b><small>{r.id}</small></td><td>{r.phone || '—'}<small>{r.email}</small></td><td>{r.city || '—'}</td><td><span className="status-pill done">Active</span></td></tr> : module === 'payments' ? <tr key={r.id || i}><td><b>{r.id || 'Payment'}</b></td><td>{r.bookingId || r.booking_id || '—'}</td><td>{money(r.amount || r.total)}</td><td><span className="status-pill">{r.status || r.payment_status || 'Pending'}</span></td></tr> : module === 'disputes' ? <tr key={r.id || i}><td><b>{r.id || 'Case'}</b><small>{r.createdAt || r.created_at || '—'}</small></td><td>{r.bookingId || r.booking_id || '—'}</td><td>{r.type || r.disputeType || 'General complaint'}</td><td><span className="status-pill">{r.status || 'Open'}</span></td></tr> : <tr key={r.id || i}><td>{r.timestamp || '—'}</td><td>{r.adminName || 'Admin'}<small>{r.adminRole || 'operations_admin'}</small></td><td><b>{r.action || '—'}</b><small>{r.description}</small></td><td>{r.targetId || '—'}</td></tr>)}</tbody></table></div>{!loading && (module === 'bookings' ? filteredBookings : filteredRows).length === 0 && <div className="empty-state"><Activity size={24} /><p>No records match this search.</p></div>}</section>}
+  </div>;
 }
 
 // ----------------- Other Support Pages -----------------

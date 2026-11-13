@@ -25,6 +25,10 @@ const blank = () => ({
   bookings: [],
   ratings: [],
   history: [],
+  auditLogs: [],
+  disputes: [],
+  payments: [],
+  payouts: [],
   pricing: { hourly: 599, night: 120, airport: 599, commission: 20, gst: 5 }
 });
 
@@ -40,6 +44,7 @@ const DATABASE_URL = process.env.DATABASE_URL;
 let neonPool = null;
 let databaseReady = false;
 let databaseError = '';
+let databaseReadyPromise = Promise.resolve();
 
 if (DATABASE_URL) {
   try {
@@ -64,6 +69,10 @@ const postgresTables = {
   bookings: 'app_bookings',
   ratings: 'app_ratings',
   history: 'app_history',
+  auditLogs: 'app_audit_logs',
+  disputes: 'app_disputes',
+  payments: 'app_payments',
+  payouts: 'app_payouts',
 };
 
 async function persistItem(tableName, id, payload) {
@@ -125,6 +134,7 @@ async function seedDefaultAccounts() {
       phone: '+91 98765 43211',
       city: 'Bengaluru',
       vehicle: 'Sedan',
+      adminRole: 'super_admin',
       rating: 4.9,
       trips: 684,
       verificationStatus: 'verified',
@@ -152,6 +162,7 @@ async function seedDefaultAccounts() {
       email: 'admin@vaahansathi.demo',
       password: pwHash,
       role: 'admin',
+      adminRole: 'super_admin',
       phone: '+91 98765 43212',
       city: 'Bengaluru',
       createdAt: now
@@ -333,11 +344,13 @@ const safe = (u) => ({
   vehicle: u.vehicle,
   rating: u.rating,
   trips: u.trips,
-  verificationStatus: u.verificationStatus || 'verified'
+  verificationStatus: u.verificationStatus || 'verified',
+  adminRole: u.adminRole || (u.role === 'admin' ? 'operations_admin' : undefined)
 });
 
-function auth(req, res, next) {
+async function auth(req, res, next) {
   try {
+    await databaseReadyPromise;
     const token = (req.headers.authorization || '').replace(/^Bearer /, '');
     req.user = jwt.verify(token, secret);
     if (!data.users.some((u) => u.id === req.user.id)) {
@@ -350,9 +363,18 @@ function auth(req, res, next) {
 }
 
 const roles = (...allowed) => (req, res, next) =>
-  allowed.includes(req.user.role) ? next() : res.status(403).json({ error: 'You do not have permission for this action.' });
+  allowed.includes(req.user.role) || (req.user.role === 'admin' && allowed.includes(req.user.adminRole))
+    ? next()
+    : res.status(403).json({ error: 'You do not have permission for this action.' });
+const audit = async (req, action, module, targetId, previousValue = null, newValue = null, description = '') => {
+  const entry = { id: randomUUID(), timestamp: new Date().toISOString(), adminId: req.user.id, adminName: req.user.name, adminRole: req.user.adminRole || 'operations_admin', action, module, targetId, description, previousValue, newValue, status: 'success' };
+  data.auditLogs.unshift(entry);
+  await persistItem('app_audit_logs', entry.id, entry);
+  await save();
+};
 
 const asyncRoute = (handler) => (req, res, next) => Promise.resolve(handler(req, res, next)).catch(next);
+const adminOnly = roles('admin', 'super_admin', 'operations_admin');
 
 const cityLandmarks = {
   Bengaluru: {
@@ -523,7 +545,7 @@ app.post(
     await persistItem('app_users', u.id, u);
     await save();
 
-    const token = jwt.sign({ id: u.id, role: u.role, name: u.name }, secret, { expiresIn: '14d' });
+    const token = jwt.sign({ id: u.id, role: u.role, adminRole: u.adminRole, name: u.name }, secret, { expiresIn: '14d' });
     res.status(201).json({ token, user: safe(u) });
   })
 );
@@ -537,7 +559,7 @@ app.post(
     if (!u || !(await bcrypt.compare(password || '', u.password))) {
       return res.status(401).json({ error: 'Email or password is incorrect.' });
     }
-    const token = jwt.sign({ id: u.id, role: u.role, name: u.name }, secret, { expiresIn: '14d' });
+    const token = jwt.sign({ id: u.id, role: u.role, adminRole: u.adminRole, name: u.name }, secret, { expiresIn: '14d' });
     res.json({ token, user: safe(u) });
   })
 );
@@ -754,10 +776,34 @@ app.get('/api/admin/summary', auth, roles('admin'), (_, res) => {
     },
     customers: data.users.filter((u) => u.role === 'customer').length,
     drivers: data.users.filter((u) => u.role === 'driver').length,
+    onlineDrivers: data.users.filter((u) => u.role === 'driver' && u.available !== false).length,
+    pendingVerifications: data.users.filter((u) => u.role === 'driver' && u.verificationStatus !== 'verified').length,
+    openDisputes: data.disputes.filter((d) => !['resolved', 'closed'].includes(d.status)).length,
+    failedPayments: data.payments.filter((p) => p.status === 'failed').length,
     history: data.history.slice(0, 50),
+    auditLogs: data.auditLogs.slice(0, 50),
     pricing: Object.entries(data.pricing).map(([key, value]) => ({ key, value }))
   });
 });
+
+app.get('/api/admin/users', auth, adminOnly, (req, res) => {
+  const q = String(req.query.q || '').toLowerCase();
+  const role = String(req.query.role || 'all');
+  const users = data.users.filter((u) => (role === 'all' || u.role === role) && (!q || `${u.name} ${u.email} ${u.phone || ''} ${u.city || ''}`.toLowerCase().includes(q))).map(safe);
+  res.json({ users });
+});
+app.get('/api/admin/audit-logs', auth, adminOnly, (req, res) => res.json({ logs: data.auditLogs.slice(0, 200) }));
+app.get('/api/admin/disputes', auth, adminOnly, (req, res) => res.json({ disputes: data.disputes }));
+app.get('/api/admin/payments', auth, adminOnly, (req, res) => res.json({ payments: data.payments, payouts: data.payouts }));
+app.patch('/api/admin/drivers/:id/verification', auth, roles('admin', 'super_admin'), asyncRoute(async (req, res) => {
+  const driver = data.users.find((u) => u.id === req.params.id && u.role === 'driver');
+  if (!driver) return res.status(404).json({ error: 'Driver not found.' });
+  const previous = driver.verificationStatus || 'pending';
+  driver.verificationStatus = req.body.status === 'rejected' ? 'rejected' : req.body.status === 'verified' ? 'verified' : 'pending';
+  await persistItem('app_users', driver.id, driver);
+  await audit(req, `driver_${driver.verificationStatus}`, 'drivers', driver.id, { verificationStatus: previous }, { verificationStatus: driver.verificationStatus }, req.body.reason || 'Driver verification updated');
+  res.json({ user: safe(driver) });
+}));
 
 app.patch(
   '/api/admin/pricing',
@@ -770,7 +816,7 @@ app.patch(
       }
     }
     await persistPricing(data.pricing);
-    await save();
+    await audit(req, 'pricing_updated', 'pricing', 'current', null, data.pricing, 'Pricing configuration updated');
     res.json({ ok: true, pricing: data.pricing });
   })
 );
@@ -805,16 +851,15 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 async function start() {
-  const server = app.listen(port, () => {
-    console.log(`VaahanSathi server listening on port ${port}...`);
-  });
-
-  if (neonPool) {
-    await loadNeon();
-    console.log(`VaahanSathi is active [Mode: ${databaseReady ? 'Neon PostgreSQL' : 'Local Storage'}]`);
-  } else {
-    console.log('Running with local file storage. Set DATABASE_URL to connect Neon PostgreSQL.');
+  if (process.env.NODE_ENV === 'production' && !DATABASE_URL) {
+    console.error('DATABASE_URL is missing. Configure the Neon connection string in Render before accepting traffic.');
   }
+  databaseReadyPromise = neonPool ? loadNeon() : Promise.resolve();
+  await databaseReadyPromise;
+  if (!neonPool && data.users.length === 0) await seedDefaultAccounts();
+  app.listen(port, () => {
+    console.log(`VaahanSathi server listening on port ${port}...`);
+    console.log(`VaahanSathi is active [Mode: ${databaseReady ? 'Neon PostgreSQL' : 'Local Storage'}]`);
+  });
 }
-
-start();
+start().catch((err) => { console.error('Fatal startup error:', err); process.exitCode = 1; });
