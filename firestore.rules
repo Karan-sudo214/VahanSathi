@@ -1,0 +1,11 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // All reads and writes use the authenticated Express API with the Admin
+    // service account. Never allow browsers to bypass those role checks.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
+

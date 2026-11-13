@@ -31,18 +31,19 @@ The demo state persists in `data/demo.json`. Stop the app, delete that file, the
 
 ## Current demo scope
 
-The Express API provides password authentication, role checks, fare estimates, unique bookings, driver assignment, OTP-gated trip transitions, ratings, driver earnings, and admin totals. The local JSON store keeps the demo dependency-light and easy to reset. Demo payment status is clearly labelled and is not a real charge. The map is a designed tracking illustration, not live GPS.
+The Express API provides password authentication, role checks, fare estimates, unique bookings, driver assignment, OTP-gated trip transitions, ratings, driver earnings, and admin totals. When the Firebase service-account environment variables are configured, Express hydrates and persists users, bookings, ratings, booking history, and pricing in Cloud Firestore. The local JSON file remains a development fallback. Demo payment status is clearly labelled and is not a real charge. The map is a designed tracking illustration, not live GPS.
 
-Razorpay order creation and signature verification routes are present but require Razorpay **test mode** credentials. The ElevenLabs server token route uses the supplied public Agent ID and requires an ElevenLabs API key. The voice assistant's text request path works without provider credentials. Google Maps and Firebase are not connected in this lightweight presentation build; add those integrations before using the app for real dispatch, location, or customer data. Never put server secrets in frontend variables.
+Razorpay order creation and signature verification routes are present but require Razorpay **test mode** credentials. The ElevenLabs server token route uses the supplied public Agent ID and requires an ElevenLabs API key. The voice assistant's text request path works without provider credentials. Google Routes is used for road distance when `GOOGLE_MAPS_SERVER_API_KEY` is set; otherwise, known Bengaluru landmarks use a clearly labelled straight-line route estimate. Never put server secrets in frontend variables.
 
 ## Optional environment settings
 
-Copy `.env.example` to `.env` and set a strong `JWT_SECRET`. Set provider credentials only if enabling the corresponding integration. Keep `.env` out of source control. For production, replace the local JSON store with Firestore or a managed database, add persistent session and account recovery flows, use an HTTPS deployment, restrict browser API keys by referrer, and configure provider webhooks before taking payments.
+Copy `.env.example` to `.env` and set a strong `JWT_SECRET`. To connect Firestore, enable Cloud Firestore in Native mode, revoke the exposed service-account key, create a replacement service account key with Firestore access, and put its complete JSON in `FIREBASE_SERVICE_ACCOUNT_JSON`; set `FIREBASE_PROJECT_ID` to `vahansathi-4ffae`. For exact live road distance, enable Google Routes API and set `GOOGLE_MAPS_SERVER_API_KEY` to a server-restricted key. Keep `.env` out of source control. Firestore access is server-side only; `firestore.rules` denies direct client access.
 
 ## Deployment
 
-The project includes a Render Blueprint (`render.yaml`), a Vite production build, and an Express static-file fallback. Connect the project repository to Render and create a Blueprint instance to deploy. Render supplies the port and generates `JWT_SECRET`. The free demo uses local JSON storage, which can reset when the service restarts; use a persistent database for production. The local JSON store is not a production multi-user database.
+The project includes a Render Blueprint (`render.yaml`), a Vite production build, and an Express static-file fallback. Render supplies the port and generates `JWT_SECRET`. In the Render service Environment page, add `FIREBASE_PROJECT_ID`, `FIREBASE_SERVICE_ACCOUNT_JSON` (the rotated service-account JSON), and optionally `GOOGLE_MAPS_SERVER_API_KEY`; redeploy and check `/api/health` for `integrations.firebase: true` and `integrations.maps: true`. Without those credentials, it deliberately runs in local-demo mode and JSON data may reset when the free service restarts.
 
 ## Credential safety
 
 A Firebase service-account private key was pasted into the setup chat. It is not included in this project. Revoke that key in Google Cloud IAM and issue a replacement before connecting Firebase; treat the pasted value as exposed.
+
