@@ -22,3 +22,31 @@ body{font-size:15px;line-height:1.5}
 .test-pay-note{font-size:11px}
 @media(max-width:760px){.service-alert{padding:13px}.service-alert b{font-size:12px}.service-alert small{font-size:11px}.field input,.field select,.field textarea{font-size:16px}}
 
+/* Help center readability across laptop and mobile */
+.help-options{gap:16px}
+.help-options button{min-height:190px;padding:22px;gap:14px}
+.help-options button>svg{width:25px;height:25px}
+.help-options b{font-size:16px;line-height:1.35}
+.help-options small{font-size:14px;line-height:1.6}
+.help-options span{font-size:14px;line-height:1.4}
+.faq{padding:22px;margin-top:20px}
+.faq h3{font-size:18px;margin-bottom:14px}
+.faq details{padding:15px 3px}
+.faq summary{min-height:44px;align-items:center;font-size:15px;line-height:1.45;gap:12px}
+.faq summary svg{width:18px;height:18px;flex:none}
+.faq details p{font-size:14px;line-height:1.75;margin:10px 0 5px;max-width:850px}
+.help-page .page-title p{font-size:15px;line-height:1.6}
+@media(max-width:760px){
+ .help-options{gap:12px}
+ .help-options button{min-height:0;padding:18px;gap:11px}
+ .help-options b{font-size:16px}
+ .help-options small{font-size:14px;line-height:1.65}
+ .help-options span{font-size:14px}
+ .faq{padding:17px;margin-top:14px}
+ .faq h3{font-size:18px}
+ .faq details{padding:12px 1px}
+ .faq summary{min-height:48px;font-size:15px}
+ .faq details p{font-size:14px;line-height:1.75}
+ .help-page .page-title p{font-size:14px}
+}
+
