@@ -539,20 +539,6 @@ nav {
   transform: translateY(-1px);
 }
 
-.hero-btn-outline {
-  background: rgba(255, 255, 255, 0.1);
-  color: #ffffff;
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  border-radius: 8px;
-  padding: 12px 20px;
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.hero-btn-outline:hover {
-  background: rgba(255, 255, 255, 0.18);
-}
-
 .hero-highlights {
   display: flex;
   gap: 20px;
@@ -564,22 +550,6 @@ nav {
   display: flex;
   align-items: center;
   gap: 6px;
-}
-
-.hero-graphic {
-  position: relative;
-  z-index: 1;
-}
-
-.car-circle {
-  width: 140px;
-  height: 140px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.08);
-  border: 2px dashed rgba(255, 255, 255, 0.2);
-  display: grid;
-  place-items: center;
-  color: #ffffff;
 }
 
 /* Service Grid */
@@ -656,13 +626,6 @@ nav {
   color: var(--slate-500);
   margin-top: 4px;
   display: block;
-}
-
-.service-arrow {
-  position: absolute;
-  top: 14px;
-  right: 14px;
-  color: var(--slate-400);
 }
 
 /* Panels */
@@ -1567,46 +1530,6 @@ nav {
   margin-bottom: 20px;
 }
 
-/* Quick Demo Sign-In Box */
-.quick-demo-box {
-  background: #f8fafc;
-  border: 1px solid var(--slate-200);
-  border-radius: 10px;
-  padding: 14px;
-  margin-bottom: 20px;
-}
-
-.quick-label {
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--navy);
-  display: block;
-  margin-bottom: 10px;
-}
-
-.quick-buttons {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-}
-
-.quick-buttons button {
-  background: #ffffff;
-  border: 1px solid var(--slate-300);
-  border-radius: 6px;
-  padding: 8px 6px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--slate-700);
-  text-align: center;
-}
-
-.quick-buttons button:hover {
-  background: #eff6ff;
-  border-color: #93c5fd;
-  color: var(--blue);
-}
-
 .auth-form {
   display: flex;
   flex-direction: column;
@@ -1758,29 +1681,6 @@ nav {
 }
 
 /* Voice Assistant */
-.voice-float-btn {
-  position: fixed;
-  bottom: 24px;
-  right: 24px;
-  background: var(--navy);
-  color: #ffffff;
-  border: none;
-  border-radius: 30px;
-  padding: 12px 20px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 14px;
-  font-weight: 700;
-  box-shadow: var(--shadow-lg);
-  z-index: 50;
-}
-
-.voice-float-btn:hover {
-  background: var(--navy-light);
-  transform: translateY(-2px);
-}
-
 .voice-mic-circle {
   width: 56px;
   height: 56px;
@@ -1978,9 +1878,6 @@ nav {
   .hero-card h2 {
     font-size: 26px;
   }
-  .hero-graphic {
-    display: none;
-  }
   .help-cards-grid {
     grid-template-columns: 1fr;
   }
@@ -2114,3 +2011,13 @@ button, input, select, textarea { outline-color: var(--blue); }
   .hero-highlights { display: grid; gap: 8px; }
   .top-actions .city-pill { max-width: 140px; }
 }
+
+/* Remove ornamental effects from the primary experience. */
+.hero-card:after, .stat-card:after { display: none; }
+.hero-badge { background: transparent; border: 0; padding: 0; color: #b9ccda; letter-spacing: .11em; }
+.hero-card { background: var(--navy); }
+.hero-cta-row { margin-bottom: 20px; }
+.hero-btn { box-shadow: none; }
+.service-card { min-height: 126px; }
+.service-tags { gap: 14px; }
+.service-tags span { background: transparent; border: 0; padding: 0; font-size: 12px; color: var(--emerald); }

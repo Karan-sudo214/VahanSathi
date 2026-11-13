@@ -6,7 +6,6 @@ import {
   ArrowDownUp,
   ArrowLeft,
   ArrowRight,
-  ArrowUpRight,
   BadgeCheck,
   CalendarDays,
   CarFront,
@@ -19,7 +18,6 @@ import {
   IndianRupee,
   MapPin,
   Menu,
-  Mic,
   MoreHorizontal,
   Navigation,
   Phone,
@@ -216,8 +214,6 @@ function App() {
   const [fare, setFare] = useState<any>(null);
   const [filter, setFilter] = useState('Upcoming');
   const [rating, setRating] = useState(5);
-  const [voice, setVoice] = useState(false);
-  const [voiceText, setVoiceText] = useState('');
   const [mobileOpen, setMobileOpen] = useState(false);
   const [receipts, setReceipts] = useState<Receipt[]>(readReceipts);
   const [storageReady, setStorageReady] = useState<boolean | null>(null);
@@ -577,11 +573,6 @@ function App() {
                   <h1>Good day{user ? `, ${user.name.split(' ')[0]}` : ''}!</h1>
                   <p className="subhead">Professional, verified drivers for your own car on-demand.</p>
                 </div>
-                <div className="quick-action-btns">
-                  <button className="primary-btn" onClick={() => setPage('Book a driver')}>
-                    <Plus size={17} /> Book a Driver
-                  </button>
-                </div>
               </div>
 
               {/* Hero Showcase */}
@@ -597,21 +588,11 @@ function App() {
                     <button className="hero-btn" onClick={() => setPage('Book a driver')}>
                       Book Driver Now <ArrowRight size={17} />
                     </button>
-                    {!user && (
-                      <button className="hero-btn-outline" onClick={() => setModal('auth')}>
-                        Sign in / Quick Demo
-                      </button>
-                    )}
                   </div>
                   <div className="hero-highlights">
                     <span><ShieldCheck size={16} /> Thoroughly Police & Skill Verified</span>
                     <span><MapPin size={16} /> {city} Service Area</span>
                     <span><IndianRupee size={16} /> Transparent Fixed Fares</span>
-                  </div>
-                </div>
-                <div className="hero-graphic">
-                  <div className="car-circle">
-                    <CarFront size={80} strokeWidth={1.5} />
                   </div>
                 </div>
               </section>
@@ -644,7 +625,6 @@ function App() {
                     <span className="service-emoji">{s.icon}</span>
                     <b className="service-title">{s.title}</b>
                     <small className="service-desc">{s.desc}</small>
-                    <ArrowUpRight size={16} className="service-arrow" />
                   </button>
                 ))}
               </div>
@@ -701,7 +681,6 @@ function App() {
                 </section>
               </div>
 
-              <VoiceWidget onClick={() => setVoice(true)} />
             </>
           )}
 
@@ -808,29 +787,6 @@ function App() {
               await refresh();
               setModal('');
               flash('Thank you for rating your driver!');
-            } catch (e: any) {
-              flash(e.message);
-            }
-          }}
-        />
-      )}
-
-      {voice && (
-        <VoiceModal
-          onClose={() => setVoice(false)}
-          text={voiceText}
-          setText={setVoiceText}
-          onConfirm={async () => {
-            try {
-              const intent = await api('/voice/intent', {
-                method: 'POST',
-                body: JSON.stringify({ text: voiceText })
-              });
-              setTripType(intent.tripType);
-              setHours(intent.hours);
-              setVoice(false);
-              setPage('Book a driver');
-              flash(`Trip details understood: ${intent.tripType} for ${intent.hours} hours.`);
             } catch (e: any) {
               flash(e.message);
             }
@@ -1697,15 +1653,6 @@ function DriverProfile({ user }: any) {
   );
 }
 
-function VoiceWidget({ onClick }: any) {
-  return (
-    <button className="voice-float-btn" onClick={onClick} title="Voice Assistant">
-      <Mic size={20} />
-      <span>Trip Assistant</span>
-    </button>
-  );
-}
-
 // ----------------- Interactive Modals -----------------
 function AuthModal({ onClose, onLogin, onRegister, busy, storageReady }: any) {
   const [mode, setMode] = useState<'login' | 'register'>('login');
@@ -1734,22 +1681,6 @@ function AuthModal({ onClose, onLogin, onRegister, busy, storageReady }: any) {
         <p className="modal-sub">
           {mode === 'login' ? 'Access your rides and bookings' : 'Book verified drivers for your personal vehicle'}
         </p>
-
-        {/* 1-Click Quick Demo Sign-In */}
-        <div className="quick-demo-box">
-          <span className="quick-label">Demo access for presentations</span>
-          <div className="quick-buttons">
-            <button type="button" onClick={() => onLogin('ananya@vaahansathi.demo', 'password123')}>
-              Customer · Ananya
-            </button>
-            <button type="button" onClick={() => onLogin('ramesh@vaahansathi.demo', 'password123')}>
-              Driver · Ramesh
-            </button>
-            <button type="button" onClick={() => onLogin('admin@vaahansathi.demo', 'password123')}>
-              Admin · Ops
-            </button>
-          </div>
-        </div>
 
         <form onSubmit={submit} className="auth-form">
           {mode === 'register' && (
@@ -1908,32 +1839,6 @@ function RatingModal({ stars, setStars, onClose, onSubmit }: any) {
 
         <button className="primary-btn-wide" onClick={onSubmit}>
           Submit Rating <Check size={16} />
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function VoiceModal({ onClose, text, setText, onConfirm }: any) {
-  return (
-    <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal voice-modal-box">
-        <button className="modal-close-btn" onClick={onClose}><X size={18} /></button>
-        <div className="voice-mic-circle">
-          <Mic size={28} />
-        </div>
-        <h2>Trip Voice Assistant</h2>
-        <p>Speak or type your request: "Book a driver for 4 hours to airport in Bengaluru."</p>
-
-        <textarea
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder="e.g. I need an airport driver tomorrow at 8am from Indiranagar..."
-          rows={3}
-        />
-
-        <button className="primary-btn-wide" onClick={onConfirm} disabled={!text.trim()}>
-          Process Request <ArrowRight size={16} />
         </button>
       </div>
     </div>
