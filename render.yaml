@@ -14,5 +14,7 @@ services:
         generateValue: true
       - key: DATA_PATH
         value: ./data/app.json
+      - key: GEOCODER_URL
+        value: https://nominatim.openstreetmap.org/search
       - key: DATABASE_URL
         sync: false

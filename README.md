@@ -11,6 +11,7 @@ VaahanSathi is an on-demand driver booking platform for Indian car owners. Custo
 - **Role-Based Authentication**: Secure JWT + bcrypt authentication for Customers, Driver Partners, and Operations Admins.
 - **Transparent Fare Engine**:
   - Base hourly rates, night charges (10 PM – 6 AM), vehicle class adjustments (Hatchback, Sedan, SUV, Luxury), 5% GST, and fixed platform fee.
+  - Free-form Delhi and Gurugram addresses with cached OpenStreetMap geocoding and approximate distance-based fares.
   - Transparent 80% driver payout share prominently highlighted to customers.
 - **Two-Step OTP Lifecycle**:
   - Secure 4-digit **Start OTP** shared only when entering the vehicle.
@@ -23,18 +24,23 @@ VaahanSathi is an on-demand driver booking platform for Indian car owners. Custo
 
 ---
 
-## 🔑 Pre-Configured Test Accounts (Neon DB)
+## 🔑 Demo Accounts
 
-The database comes pre-seeded with ready-to-test accounts for quick demonstrations:
+The server creates or refreshes these accounts in local storage and Neon DB:
 
 | Role | Email | Password | Default City |
 | :--- | :--- | :--- | :--- |
-| **Customer** | `ananya@vaahansathi.demo` | `password123` | Bengaluru |
-| **Driver Partner** | `ramesh@vaahansathi.demo` | `password123` | Bengaluru |
-| **Driver Partner** | `kavita@vaahansathi.demo` | `password123` | Delhi NCR |
-| **Operations Admin** | `admin@vaahansathi.demo` | `password123` | Bengaluru |
+| **Customer** | `ananya@vaahansathi.demo` | `password123` | Delhi |
+| **Driver Partner** | `ramesh@vaahansathi.demo` | `password123` | Gurugram |
+| **Operations Admin** | `admin@vaahansathi.demo` | `password123` | Delhi |
 
 *(You can also use the 1-Click Quick Sign-In buttons directly on the login modal!)*
+
+## Location lookup and fares
+
+The booking form accepts addresses and landmarks across Delhi and Gurugram. On **Estimate fare**, the server geocodes the two entered locations through `GEOCODER_URL` (OpenStreetMap Nominatim by default), caches results, and limits lookup traffic to one request per second. It estimates road distance from the geocoded coordinates; this is not live turn-by-turn routing.
+
+The booking form discloses the lookup and displays OpenStreetMap attribution. Nominatim must not be used for autocomplete and is subject to its [usage policy](https://operations.osmfoundation.org/policies/nominatim/). For higher-volume production use, configure a compatible geocoding service you are authorized to use.
 
 ---
 
@@ -47,8 +53,11 @@ PORT=4000
 CLIENT_ORIGIN=http://localhost:5173
 JWT_SECRET=your-secure-jwt-secret-key-here
 DATA_PATH=./data/app.json
+GEOCODER_URL=https://nominatim.openstreetmap.org/search
+# Optional contact detail included in the geocoder User-Agent
+GEOCODER_CONTACT=you@example.com
 
-# Neon PostgreSQL Connection String
+# Neon PostgreSQL connection string (optional; local JSON storage is used otherwise)
 DATABASE_URL=postgresql://<user>:<password>@<neon-host>/<database>?sslmode=require
 ```
 

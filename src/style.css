@@ -977,6 +977,38 @@ nav {
   margin: 0;
 }
 
+.location-lookup-note {
+  margin: 12px 0 8px;
+  color: var(--slate-500);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.estimate-fare-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 8px;
+  padding: 11px 16px;
+  background: var(--navy);
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.estimate-fare-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.fare-error {
+  margin: 10px 0 0;
+  color: #b42318;
+  font-size: 13px;
+}
+
 /* Fare Card */
 .fare-card {
   position: sticky;
@@ -1384,7 +1416,7 @@ nav {
 /* Stats Grid */
 .stats-cards-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 16px;
   margin-bottom: 28px;
 }
@@ -1528,6 +1560,39 @@ nav {
   font-size: 14px;
   color: var(--slate-500);
   margin-bottom: 20px;
+}
+
+.quick-demo-box {
+  margin: 0 0 18px;
+  padding: 12px;
+  border: 1px solid var(--slate-200);
+  border-radius: 10px;
+  background: var(--slate-50);
+}
+
+.quick-label {
+  display: block;
+  margin-bottom: 9px;
+  color: var(--slate-600);
+  font-size: 12px;
+}
+
+.quick-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.quick-buttons button {
+  flex: 1;
+  min-width: 90px;
+  border: 1px solid var(--slate-200);
+  border-radius: 7px;
+  padding: 8px;
+  background: #fff;
+  color: var(--navy);
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .auth-form {

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
   Activity,
@@ -78,15 +78,12 @@ type Receipt = {
 };
 
 const DEMO_DRIVERS = [
-  { id: 'usr-driver-1', name: 'Ramesh Kumar', city: 'Bengaluru', rating: 4.9, trips: 684, phone: '+91 98765 43211', status: 'Verified', vehicle: 'Sedan', earnings: 18450 },
-  { id: 'usr-driver-2', name: 'Kavita Singh', city: 'Delhi NCR', rating: 4.8, trips: 512, phone: '+91 98765 43213', status: 'Verified', vehicle: 'SUV', earnings: 16200 },
-  { id: 'demo-arjun', name: 'Arjun Malik', city: 'Gurugram', rating: 4.9, trips: 391, phone: '+91 98765 43214', status: 'Verified', vehicle: 'Sedan', earnings: 13750 }
+  { id: 'usr-driver-1', name: 'Ramesh Kumar', city: 'Gurugram', rating: 4.9, trips: 684, phone: '+91 98765 43211', status: 'Verified', vehicle: 'Sedan', earnings: 18450 }
 ];
 
 const DEMO_REVIEWS = [
-  { id: 'r1', type: 'Driver review', name: 'Ananya Sharma', subject: 'Ramesh Kumar', city: 'Bengaluru', stars: 5, note: 'Ramesh arrived 10 mins early, handled Bangalore traffic with ease, and was extremely courteous.', date: 'Today · 10:32 AM' },
-  { id: 'r2', type: 'Customer review', name: 'Ramesh Kumar', subject: 'Ananya Sharma', city: 'Bengaluru', stars: 5, note: 'Car was clean, pickup location was precise, and pleasant trip throughout.', date: 'Today · 11:14 AM' },
-  { id: 'r3', type: 'Driver review', name: 'Meera Kapoor', subject: 'Kavita Singh', city: 'Delhi NCR', stars: 5, note: 'Excellent night driving skills on the expressway. Felt completely safe.', date: 'Yesterday · 8:40 PM' }
+  { id: 'r1', type: 'Driver review', name: 'Ananya Sharma', subject: 'Ramesh Kumar', city: 'Gurugram', stars: 5, note: 'Ramesh arrived 10 mins early, handled the traffic with ease, and was extremely courteous.', date: 'Today · 10:32 AM' },
+  { id: 'r2', type: 'Customer review', name: 'Ramesh Kumar', subject: 'Ananya Sharma', city: 'Gurugram', stars: 5, note: 'Car was clean, pickup location was precise, and pleasant trip throughout.', date: 'Today · 11:14 AM' }
 ];
 
 const money = (n: number) => '₹' + Number(n || 0).toLocaleString('en-IN');
@@ -132,7 +129,7 @@ function downloadReceipt(b: Booking, r: Receipt) {
     `Payment Mode: ${r.method}`,
     `Trip Type   : ${b.trip_type}`,
     `Route       : ${b.pickup} → ${b.destination}`,
-    `City        : ${b.city || 'Bengaluru'}`,
+    `City        : ${b.city || 'Delhi'}`,
     `Vehicle     : ${b.vehicle || 'Sedan'} (Customer Owned)`,
     `Driver      : ${b.driver || 'Verified Partner'}`,
     '----------------------------------------------------',
@@ -205,14 +202,16 @@ function App() {
   const [modal, setModal] = useState('');
   const [busy, setBusy] = useState(false);
   const [tripType, setTripType] = useState('Hourly');
-  const [city, setCity] = useState(localStorage.getItem('vs_city') || 'Bengaluru');
-  const [pickup, setPickup] = useState('Indiranagar, Bengaluru');
-  const [destination, setDestination] = useState('Kempegowda International Airport, Bengaluru');
+  const [city, setCity] = useState(localStorage.getItem('vs_city') === 'Gurugram' ? 'Gurugram' : 'Delhi');
+  const [pickup, setPickup] = useState('Connaught Place, Delhi');
+  const [destination, setDestination] = useState('Indira Gandhi International Airport, Delhi');
   const [date, setDate] = useState(new Date(Date.now() + 86400000).toISOString().slice(0, 10));
   const [time, setTime] = useState('08:00');
   const [hours, setHours] = useState(4);
   const [vehicle, setVehicle] = useState('Sedan');
   const [fare, setFare] = useState<any>(null);
+  const [fareBusy, setFareBusy] = useState(false);
+  const fareRequestId = useRef(0);
   const [filter, setFilter] = useState('Upcoming');
   const [rating, setRating] = useState(5);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -257,16 +256,43 @@ function App() {
     setCity(next);
     localStorage.setItem('vs_city', next);
     const defaults: Record<string, [string, string]> = {
-      Bengaluru: ['Indiranagar, Bengaluru', 'Kempegowda International Airport, Bengaluru'],
-      'Delhi NCR': ['Connaught Place, New Delhi', 'Indira Gandhi International Airport, New Delhi'],
+      Delhi: ['Connaught Place, Delhi', 'Indira Gandhi International Airport, Delhi'],
       Gurugram: ['Cyber City, Gurugram', 'Huda City Centre, Gurugram']
     };
     if (defaults[next]) {
       setPickup(defaults[next][0]);
       setDestination(defaults[next][1]);
     }
-    setFare(null);
+    clearFareEstimate();
     flash(`Service city switched to ${next}`);
+  };
+
+  const clearFareEstimate = () => {
+    fareRequestId.current += 1;
+    setFare(null);
+    setFareError('');
+    setFareBusy(false);
+  };
+
+  const estimateFare = async () => {
+    const requestId = ++fareRequestId.current;
+    setFare(null);
+    setFareError('');
+    setFareBusy(true);
+    try {
+      const response = await fetch('/api/fare/estimate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tripType, hours, date, time, vehicle, pickup, destination, city })
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Unable to estimate this route.');
+      if (requestId === fareRequestId.current) setFare(result);
+    } catch (error: any) {
+      if (requestId === fareRequestId.current) setFareError(error.message || 'Location lookup is unavailable. Please try again.');
+    } finally {
+      if (requestId === fareRequestId.current) setFareBusy(false);
+    }
   };
 
   const refresh = async () => {
@@ -289,28 +315,6 @@ function App() {
     return () => window.clearInterval(timer);
   }, [user]);
 
-  // Fare estimation
-  useEffect(() => {
-    if (pickup.trim() && destination.trim()) {
-      const timer = window.setTimeout(() => {
-        fetch('/api/fare/estimate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tripType, hours, date, time, vehicle, pickup, destination, city })
-        })
-          .then((r) => r.json())
-          .then((d) => {
-            setFare(d);
-            setFareError('');
-          })
-          .catch(() => {
-            setFareError('Using local estimation model');
-          });
-      }, 300);
-      return () => window.clearTimeout(timer);
-    }
-  }, [tripType, hours, date, time, vehicle, pickup, destination, city]);
-
   const login = async (email: string, password: string) => {
     setBusy(true);
     try {
@@ -321,6 +325,7 @@ function App() {
       localStorage.setItem('vs_token', d.token);
       localStorage.setItem('vs_user', JSON.stringify(d.user));
       setUser(d.user);
+      if (d.user.city === 'Delhi' || d.user.city === 'Gurugram') chooseCity(d.user.city);
       if (d.user.role === 'admin') setPage('Overview');
       else if (d.user.role === 'driver') setPage('Requests');
       else setPage('Home');
@@ -377,7 +382,7 @@ function App() {
   };
 
   const applyVoiceTrip = (intent: any) => {
-    const supportedCities = ['Bengaluru', 'Delhi NCR', 'Gurugram'];
+    const supportedCities = ['Delhi', 'Gurugram'];
     const nextCity = supportedCities.includes(intent.city) ? intent.city : city;
     setCity(nextCity);
     localStorage.setItem('vs_city', nextCity);
@@ -387,7 +392,7 @@ function App() {
     if (intent.destination) setDestination(intent.destination);
     if (intent.date) setDate(intent.date);
     if (intent.time) setTime(intent.time);
-    setFare(null);
+    clearFareEstimate();
     setPage('Book a driver');
     flash('Trip details understood. Confirm the booking with the voice agent.');
   };
@@ -541,7 +546,7 @@ function App() {
                   {x === 'Help' && <Headphones size={18} />}
                   {x === 'Profile' && <ShieldCheck size={18} />}
                 </span>
-                <span>{x}</span>
+                <span>{x === 'Requests' || x === 'Overview' ? 'Dashboard' : x}</span>
                 {x === 'Your trips' && bookings.length > 0 && <em className="badge">{bookings.length}</em>}
                 {x === 'Requests' && bookings.filter((b) => b.status === 'Searching').length > 0 && (
                   <em className="badge active">{bookings.filter((b) => b.status === 'Searching').length}</em>
@@ -594,8 +599,7 @@ function App() {
             <label className="city-pill">
               <MapPin size={15} className="city-pin" />
               <select value={city} onChange={(e) => chooseCity(e.target.value)}>
-                <option value="Bengaluru">Bengaluru</option>
-                <option value="Delhi NCR">Delhi NCR</option>
+                <option value="Delhi">Delhi</option>
                 <option value="Gurugram">Gurugram</option>
               </select>
               <ChevronDown size={14} />
@@ -728,8 +732,7 @@ function App() {
                       doorstep.
                     </p>
                     <div className="service-tags">
-                      <span>Bengaluru</span>
-                      <span>Delhi NCR</span>
+                      <span>Delhi</span>
                       <span>Gurugram</span>
                     </div>
                   </div>
@@ -756,6 +759,9 @@ function App() {
               vehicle={vehicle}
               setVehicle={setVehicle}
               fare={fare}
+              fareBusy={fareBusy}
+              onEstimate={estimateFare}
+              clearFare={clearFareEstimate}
               city={city}
               onBack={() => setPage('Home')}
               onBook={book}
@@ -868,6 +874,7 @@ function App() {
 
 // ----------------- Booking Page Component -----------------
 function BookingPage(p: any) {
+  const clearFare = () => p.clearFare?.();
   return (
     <div className="booking-view">
       <button className="back-link-btn" onClick={p.onBack}>
@@ -893,7 +900,10 @@ function BookingPage(p: any) {
               <button
                 key={t}
                 className={`type-chip ${p.tripType === t ? 'active' : ''}`}
-                onClick={() => p.setTripType(t)}
+                onClick={() => {
+                  p.setTripType(t);
+                  clearFare();
+                }}
               >
                 {t}
               </button>
@@ -914,8 +924,11 @@ function BookingPage(p: any) {
               <span><MapPin size={15} /> Pickup Location</span>
               <input
                 value={p.pickup}
-                onChange={(e) => p.setPickup(e.target.value)}
-                placeholder="Enter pickup address or landmark"
+                onChange={(e) => {
+                  p.setPickup(e.target.value);
+                  clearFare();
+                }}
+                placeholder={`Enter any pickup address in ${p.city}`}
               />
             </label>
 
@@ -926,6 +939,7 @@ function BookingPage(p: any) {
                 const temp = p.pickup;
                 p.setPickup(p.destination);
                 p.setDestination(temp);
+                clearFare();
               }}
             >
               <ArrowDownUp size={16} />
@@ -935,8 +949,11 @@ function BookingPage(p: any) {
               <span><Navigation size={15} /> Destination</span>
               <input
                 value={p.destination}
-                onChange={(e) => p.setDestination(e.target.value)}
-                placeholder="Enter destination address or landmark"
+                onChange={(e) => {
+                  p.setDestination(e.target.value);
+                  clearFare();
+                }}
+                placeholder={`Enter any destination in ${p.city}`}
               />
             </label>
 
@@ -946,19 +963,28 @@ function BookingPage(p: any) {
                 type="date"
                 value={p.date}
                 min={new Date().toISOString().slice(0, 10)}
-                onChange={(e) => p.setDate(e.target.value)}
+                onChange={(e) => {
+                  p.setDate(e.target.value);
+                  clearFare();
+                }}
               />
             </label>
 
             <label className="field-group">
               <span><Clock3 size={15} /> Pickup Time</span>
-              <input type="time" value={p.time} onChange={(e) => p.setTime(e.target.value)} />
+              <input type="time" value={p.time} onChange={(e) => {
+                p.setTime(e.target.value);
+                clearFare();
+              }} />
             </label>
 
             {(p.tripType === 'Hourly' || p.tripType === 'Custom') && (
               <label className="field-group">
                 <span><Clock3 size={15} /> Duration</span>
-                <select value={p.hours} onChange={(e) => p.setHours(Number(e.target.value))}>
+                <select value={p.hours} onChange={(e) => {
+                  p.setHours(Number(e.target.value));
+                  clearFare();
+                }}>
                   {[4, 5, 6, 8, 10, 12].map((n) => (
                     <option key={n} value={n}>{n} Hours</option>
                   ))}
@@ -968,7 +994,10 @@ function BookingPage(p: any) {
 
             <label className="field-group">
               <span><CarFront size={15} /> Your Car Type</span>
-              <select value={p.vehicle} onChange={(e) => p.setVehicle(e.target.value)}>
+              <select value={p.vehicle} onChange={(e) => {
+                p.setVehicle(e.target.value);
+                clearFare();
+              }}>
                 {['Hatchback', 'Sedan', 'SUV', 'Luxury'].map((x) => (
                   <option key={x} value={x}>{x}</option>
                 ))}
@@ -983,12 +1012,25 @@ function BookingPage(p: any) {
               <p>Transparent driver hourly and distance charges. Fuel, tolls, and parking are handled by the car owner.</p>
             </div>
           </div>
+          <p className="location-lookup-note">
+            When you estimate the fare, the pickup and destination are looked up with OpenStreetMap. © OpenStreetMap contributors.
+          </p>
+          <button
+            type="button"
+            className="estimate-fare-btn"
+            onClick={p.onEstimate}
+            disabled={p.fareBusy || !p.pickup.trim() || !p.destination.trim()}
+          >
+            {p.fareBusy ? 'Looking up locations…' : p.fare ? 'Refresh fare estimate' : 'Estimate fare'}
+            <ArrowRight size={16} />
+          </button>
+          {p.fareError && <p className="fare-error" role="alert">{p.fareError}</p>}
         </div>
 
         {/* Fare Summary Card */}
         <aside className="fare-card panel">
           <span className="eyebrow">TRANSPARENT FARE</span>
-          <h2>{p.fare ? money(p.fare.total) : 'Calculating...'}</h2>
+          <h2>{p.fareBusy ? 'Calculating...' : p.fare ? money(p.fare.total) : '—'}</h2>
           <p className="fare-sub">For professional driver time · {p.vehicle}</p>
 
           <div className="fare-divider" />
@@ -1020,7 +1062,7 @@ function BookingPage(p: any) {
           <button
             className="primary-btn-wide"
             onClick={p.user ? p.onBook : p.onAuth}
-            disabled={p.busy || !p.fare}
+            disabled={p.busy || p.fareBusy || !p.fare}
           >
             {p.busy ? 'Dispatching driver...' : p.user ? 'Confirm & Book Driver' : 'Sign in to Book Driver'} <ArrowRight size={17} />
           </button>
@@ -1232,17 +1274,17 @@ function DriverPage({ bookings, update, user }: any) {
       <div className="section-head">
         <div>
           <span className="eyebrow">PARTNER PORTAL</span>
-          <h1>Welcome, {user?.name || 'Driver Partner'}</h1>
-          <p>Manage your daily bookings, accept passenger rides, and track earnings.</p>
+          <h1>Driver Dashboard</h1>
+          <p>Welcome, {user?.name || 'Driver Partner'}. Manage your requests, trips, and earnings.</p>
         </div>
         <div className="service-market-pill">
-          <BadgeCheck size={16} color="#087f72" /> Verified Partner ({user?.city || 'Bengaluru'})
+          <BadgeCheck size={16} color="#087f72" /> Verified Partner ({user?.city || 'Delhi'})
         </div>
       </div>
 
       <div className="stats-cards-grid">
         <div className="stat-card panel">
-          <small>TODAY'S EARNINGS</small>
+          <small>TOTAL EARNINGS</small>
           <b>
             {money(
               bookings
@@ -1396,8 +1438,8 @@ function LiveAdminPage({ bookings, focus = 'Overview', flash }: any) {
       <div className="section-head">
         <div>
           <span className="eyebrow">OPERATIONS CONSOLE</span>
-          <h1>Network overview</h1>
-          <p>Real-time city bookings, driver verification, revenue, and pricing engine.</p>
+          <h1>{focus === 'Overview' ? 'Admin Dashboard' : 'Network operations'}</h1>
+          <p>Monitor bookings, drivers, revenue, and service operations across Delhi and Gurugram.</p>
         </div>
         <div className="service-market-pill">
           <Activity size={15} /> Operations live
@@ -1424,6 +1466,16 @@ function LiveAdminPage({ bookings, focus = 'Overview', flash }: any) {
           <small>ACTIVE TRIPS</small>
           <b className="status-online">{t.active || 0}</b>
           <span>Currently in progress</span>
+        </div>
+        <div className="stat-card panel">
+          <small>CUSTOMERS</small>
+          <b>{summary.customers || 0}</b>
+          <span>Registered accounts</span>
+        </div>
+        <div className="stat-card panel">
+          <small>DRIVERS</small>
+          <b>{summary.drivers || 0}</b>
+          <span>Partner accounts</span>
         </div>
       </div>
 
@@ -1704,7 +1756,7 @@ function DriverProfile({ user }: any) {
         <div>
           <h2>{user?.name || 'Driver Partner'}</h2>
           <p>{user?.email} · {user?.phone || '+91 98765 43211'}</p>
-          <span className="status-pill done">Verified Partner · {user?.city || 'Bengaluru'}</span>
+          <span className="status-pill done">Verified Partner · {user?.city || 'Delhi'}</span>
         </div>
       </div>
     </div>
@@ -1805,7 +1857,7 @@ function VoiceAgentModal({ onClose, onApply, onBook, city }: { onClose: () => vo
 function AuthModal({ onClose, onLogin, onRegister, busy, storageReady }: any) {
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [name, setName] = useState('');
-  const [city, setCity] = useState('Bengaluru');
+  const [city, setCity] = useState('Delhi');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
@@ -1830,6 +1882,17 @@ function AuthModal({ onClose, onLogin, onRegister, busy, storageReady }: any) {
           {mode === 'login' ? 'Access your rides and bookings' : 'Book verified drivers for your personal vehicle'}
         </p>
 
+        {mode === 'login' && (
+          <div className="quick-demo-box">
+            <span className="quick-label">Quick demo sign-in · password: password123</span>
+            <div className="quick-buttons">
+              <button type="button" onClick={() => onLogin('ananya@vaahansathi.demo', 'password123')}>Customer</button>
+              <button type="button" onClick={() => onLogin('ramesh@vaahansathi.demo', 'password123')}>Driver</button>
+              <button type="button" onClick={() => onLogin('admin@vaahansathi.demo', 'password123')}>Admin</button>
+            </div>
+          </div>
+        )}
+
         <form onSubmit={submit} className="auth-form">
           {mode === 'register' && (
             <>
@@ -1840,8 +1903,7 @@ function AuthModal({ onClose, onLogin, onRegister, busy, storageReady }: any) {
               <label className="field-group">
                 <span>City / Service Area</span>
                 <select value={city} onChange={(e) => setCity(e.target.value)}>
-                  <option value="Bengaluru">Bengaluru</option>
-                  <option value="Delhi NCR">Delhi NCR</option>
+                  <option value="Delhi">Delhi</option>
                   <option value="Gurugram">Gurugram</option>
                 </select>
               </label>

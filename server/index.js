@@ -122,7 +122,7 @@ async function seedDefaultAccounts() {
       password: pwHash,
       role: 'customer',
       phone: '+91 98765 43210',
-      city: 'Bengaluru',
+      city: 'Delhi',
       createdAt: now
     },
     {
@@ -132,26 +132,11 @@ async function seedDefaultAccounts() {
       password: pwHash,
       role: 'driver',
       phone: '+91 98765 43211',
-      city: 'Bengaluru',
+      city: 'Gurugram',
       vehicle: 'Sedan',
       adminRole: 'super_admin',
       rating: 4.9,
       trips: 684,
-      verificationStatus: 'verified',
-      available: true,
-      createdAt: now
-    },
-    {
-      id: 'usr-driver-2',
-      name: 'Kavita Singh',
-      email: 'kavita@vaahansathi.demo',
-      password: pwHash,
-      role: 'driver',
-      phone: '+91 98765 43213',
-      city: 'Delhi NCR',
-      vehicle: 'SUV',
-      rating: 4.8,
-      trips: 512,
       verificationStatus: 'verified',
       available: true,
       createdAt: now
@@ -164,7 +149,7 @@ async function seedDefaultAccounts() {
       role: 'admin',
       adminRole: 'super_admin',
       phone: '+91 98765 43212',
-      city: 'Bengaluru',
+      city: 'Delhi',
       createdAt: now
     }
   ];
@@ -180,9 +165,9 @@ async function seedDefaultAccounts() {
       driverId: 'usr-driver-1',
       driver: 'Ramesh Kumar',
       trip_type: 'Hourly',
-      pickup: 'Indiranagar, Bengaluru',
-      destination: 'MG Road, Bengaluru',
-      city: 'Bengaluru',
+      pickup: 'Cyber City, Gurugram',
+      destination: 'Sector 56, Gurugram',
+      city: 'Gurugram',
       vehicle: 'Sedan',
       date: todayStr,
       time: '10:00',
@@ -210,9 +195,9 @@ async function seedDefaultAccounts() {
       driverId: 'usr-driver-1',
       driver: 'Ramesh Kumar',
       trip_type: 'Airport',
-      pickup: 'Koramangala, Bengaluru',
-      destination: 'Kempegowda International Airport, Bengaluru',
-      city: 'Bengaluru',
+      pickup: 'Golf Course Road, Gurugram',
+      destination: 'IGI Airport, Delhi',
+      city: 'Gurugram',
       vehicle: 'Sedan',
       date: yesterdayStr,
       time: '18:30',
@@ -242,7 +227,7 @@ async function seedDefaultAccounts() {
       userId: 'usr-customer-1',
       driverId: 'usr-driver-1',
       stars: 5,
-      review: 'Ramesh was punctual, polite, and navigated Bangalore peak hour airport traffic smoothly!'
+      review: 'Ramesh was punctual, polite, and navigated the route smoothly!'
     }
   ];
 
@@ -265,6 +250,59 @@ async function seedDefaultAccounts() {
   await persistPricing(data.pricing);
   await save();
   console.log('Neon DB successfully initialized with seed data.');
+}
+
+async function ensureDemoAccounts() {
+  const password = await bcrypt.hash('password123', 10);
+  const now = new Date().toISOString();
+  const accounts = [
+    { id: 'usr-customer-1', name: 'Ananya Sharma', email: 'ananya@vaahansathi.demo', role: 'customer', phone: '+91 98765 43210', city: 'Delhi' },
+    { id: 'usr-driver-1', name: 'Ramesh Kumar', email: 'ramesh@vaahansathi.demo', role: 'driver', phone: '+91 98765 43211', city: 'Gurugram', vehicle: 'Sedan', adminRole: undefined, rating: 4.9, trips: 684, verificationStatus: 'verified', available: true },
+    { id: 'usr-admin-1', name: 'Ops Admin', email: 'admin@vaahansathi.demo', role: 'admin', adminRole: 'super_admin', phone: '+91 98765 43212', city: 'Delhi' }
+  ];
+
+  for (const account of accounts) {
+    const existing = data.users.find((u) => u.email === account.email);
+    const user = { ...existing, ...account, id: existing?.id || account.id, password, createdAt: existing?.createdAt || now };
+    if (existing) Object.assign(existing, user);
+    else data.users.push(user);
+    await persistItem('app_users', user.id, user);
+  }
+
+  const demoCustomer = data.users.find((u) => u.email === 'ananya@vaahansathi.demo');
+  const demoDriver = data.users.find((u) => u.email === 'ramesh@vaahansathi.demo');
+  const demoRoutes = [
+    { id: 'VS-2026-408215', city: 'Gurugram', pickup: 'Cyber City, Gurugram', destination: 'Sector 56, Gurugram' },
+    { id: 'VS-2026-408216', city: 'Gurugram', pickup: 'Golf Course Road, Gurugram', destination: 'IGI Airport, Delhi' }
+  ];
+  for (const routeDetails of demoRoutes) {
+    const booking = data.bookings.find((b) => b.id === routeDetails.id);
+    if (!booking) continue;
+    const route = await routeDistance(routeDetails.pickup, routeDetails.destination, routeDetails.city);
+    const fare = calculateFare({ ...booking, ...route });
+    Object.assign(booking, routeDetails, {
+      userId: demoCustomer?.id || booking.userId,
+      customer: demoCustomer?.name || booking.customer,
+      driverId: demoDriver?.id || booking.driverId,
+      driver: demoDriver?.name || booking.driver
+    }, route, fare);
+    await persistItem('app_bookings', booking.id, booking);
+  }
+
+  const sampleRating = data.ratings.find((r) => r.id === 'rate-1');
+  if (sampleRating) {
+    sampleRating.review = 'Ramesh was punctual, polite, and navigated the route smoothly!';
+    await persistItem('app_ratings', sampleRating.id, sampleRating);
+  }
+
+  const retiredDriver = data.users.find((u) => u.email === 'kavita@vaahansathi.demo');
+  if (retiredDriver) {
+    data.users = data.users.filter((u) => u.email !== 'kavita@vaahansathi.demo');
+    if (neonPool && databaseReady) {
+      await neonPool.query('DELETE FROM app_users WHERE id = $1', [String(retiredDriver.id)]);
+    }
+  }
+  await save();
 }
 
 async function loadNeon() {
@@ -377,39 +415,27 @@ const asyncRoute = (handler) => (req, res, next) => Promise.resolve(handler(req,
 const adminOnly = roles('admin', 'super_admin', 'operations_admin');
 
 const cityLandmarks = {
-  Bengaluru: {
-    airport: [13.1986, 77.7066],
-    kempegowda: [13.1986, 77.7066],
-    indiranagar: [12.9784, 77.6408],
-    koramangala: [12.9352, 77.6245],
-    whitefield: [12.9698, 77.75],
-    jayanagar: [12.925, 77.5938],
-    'mg road': [12.9758, 77.6066],
-    electronic: [12.8399, 77.677],
-    hebbal: [13.0358, 77.597],
-    yelahanka: [13.1007, 77.5963],
-    majestic: [12.9767, 77.5713],
-    hsr: [12.9116, 77.6389],
-    marathahalli: [12.9591, 77.6974],
-    banashankari: [12.925, 77.5468],
-    yeshwanthpur: [13.0285, 77.5407]
-  },
-  'Delhi NCR': {
+  Delhi: {
     'igi airport': [28.5562, 77.1],
     'indira gandhi international': [28.5562, 77.1],
+    'international airport': [28.5562, 77.1],
     'connaught place': [28.6315, 77.2167],
     'central delhi': [28.6315, 77.2167],
+    'india gate': [28.6129, 77.2295],
+    'new delhi railway station': [28.6431, 77.2197],
+    'old delhi railway station': [28.6619, 77.2274],
     dwarka: [28.5921, 77.046],
     saket: [28.5244, 77.2066],
-    noida: [28.5708, 77.3261],
-    'sector 18': [28.5708, 77.3261],
-    faridabad: [28.4089, 77.3178],
     'new delhi': [28.6139, 77.209],
     rohini: [28.7495, 77.0565],
     'karol bagh': [28.6514, 77.1907],
     vasant: [28.5672, 77.1593],
-    gurugram: [28.4595, 77.0266],
-    gurgaon: [28.4595, 77.0266]
+    'lajpat nagar': [28.5677, 77.2433],
+    'hauz khas': [28.5494, 77.2001],
+    janakpuri: [28.6219, 77.0878],
+    pitampura: [28.7033, 77.1322],
+    'chandni chowk': [28.6506, 77.2303],
+    'sadar bazar': [28.658, 77.207]
   },
   Gurugram: {
     'igi airport': [28.5562, 77.1],
@@ -425,32 +451,100 @@ const cityLandmarks = {
     'millennium city centre': [28.4595, 77.072],
     gurugram: [28.4595, 77.0266],
     gurgaon: [28.4595, 77.0266],
-    dwarka: [28.5921, 77.046]
+    'sector 14': [28.4687, 77.0305],
+    'sector 31': [28.4508, 77.043]
   }
 };
 
-function localDistance(city, pickup, destination) {
-  const regions = cityLandmarks[city] || cityLandmarks.Bengaluru;
-  const find = (s) =>
-    Object.entries(regions)
-      .sort((a, b) => b[0].length - a[0].length)
-      .find(([k]) => String(s || '').toLowerCase().includes(k))?.[1];
-  const a = find(pickup);
-  const b = find(destination);
-  if (!a || !b) return null;
+const geocodeCache = new Map();
+let geocodeQueue = Promise.resolve();
+let lastGeocodeRequestAt = 0;
+const cityBounds = {
+  Delhi: '76.82,28.90,77.37,28.40',
+  Gurugram: '76.82,28.56,77.20,28.30'
+};
+
+function findLandmark(city, location) {
+  const regions = cityLandmarks[city];
+  if (!regions) return null;
+  const query = String(location || '').toLowerCase();
+  return Object.entries(regions)
+    .sort((a, b) => b[0].length - a[0].length)
+    .find(([name]) => query.includes(name))?.[1] || null;
+}
+
+async function geocodeLocation(city, location) {
+  const key = `${city.toLowerCase()}|${location.trim().toLowerCase()}`;
+  if (geocodeCache.has(key)) return geocodeCache.get(key);
+
+  const lookup = geocodeQueue.then(async () => {
+    const wait = Math.max(0, 1100 - (Date.now() - lastGeocodeRequestAt));
+    if (wait) await new Promise((resolve) => setTimeout(resolve, wait));
+    lastGeocodeRequestAt = Date.now();
+
+    const endpoint = new URL(process.env.GEOCODER_URL || 'https://nominatim.openstreetmap.org/search');
+    endpoint.searchParams.set('format', 'jsonv2');
+    endpoint.searchParams.set('limit', '1');
+    endpoint.searchParams.set('countrycodes', 'in');
+    endpoint.searchParams.set('viewbox', cityBounds[city]);
+    endpoint.searchParams.set('bounded', '1');
+    endpoint.searchParams.set('q', `${location}, ${city}, India`);
+
+    const headers = {
+      'User-Agent': `VaahanSathi/1.0${process.env.GEOCODER_CONTACT ? ` (${process.env.GEOCODER_CONTACT})` : ''}`,
+      'Accept-Language': 'en'
+    };
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    try {
+      const response = await fetch(endpoint, { headers, signal: controller.signal });
+      if (!response.ok) {
+        throw Object.assign(new Error(`Location lookup is unavailable (HTTP ${response.status}). Please try again.`), { statusCode: 503 });
+      }
+      const results = await response.json();
+      const match = results[0];
+      return match ? [Number(match.lat), Number(match.lon)] : null;
+    } catch (error) {
+      if (error.statusCode) throw error;
+      throw Object.assign(new Error('Location lookup is unavailable. Please try again.'), { statusCode: 503 });
+    } finally {
+      clearTimeout(timeout);
+    }
+  });
+  geocodeQueue = lookup.then(() => undefined, () => undefined);
+  geocodeCache.set(key, lookup);
+  if (geocodeCache.size > 1000) geocodeCache.delete(geocodeCache.keys().next().value);
+
+  try {
+    return await lookup;
+  } catch (error) {
+    geocodeCache.delete(key);
+    throw error;
+  }
+}
+
+async function resolveLocation(city, location) {
+  return findLandmark(city, location) || geocodeLocation(city, location);
+}
+
+async function routeDistance(pickup, destination, city) {
+  const a = await resolveLocation(city, pickup);
+  const b = await resolveLocation(city, destination);
+  if (!a || !b) {
+    throw Object.assign(
+      new Error(`We could not find both locations in ${city}. Add a nearby landmark or check the spelling.`),
+      { statusCode: 422 }
+    );
+  }
   const rad = (n) => (n * Math.PI) / 180;
   const lat = rad(b[0] - a[0]);
   const lon = rad(b[1] - a[1]);
   const x = Math.sin(lat / 2) ** 2 + Math.cos(rad(a[0])) * Math.cos(rad(b[0])) * Math.sin(lon / 2) ** 2;
-  return Math.max(1, Math.round(6371 * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x)) * 1.35));
-}
-
-function routeDistance(pickup, destination, city = 'Bengaluru') {
-  const distanceKm = localDistance(city, pickup, destination);
+  const distanceKm = Math.max(1, Math.round(6371 * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x)) * 1.35));
   return {
     distanceKm,
-    duration: distanceKm ? `${Math.max(1, Math.round((distanceKm / 28) * 60))} mins` : null,
-    distanceSource: distanceKm ? `${city.toLowerCase()} approximate zone distance` : 'location estimate'
+    duration: `${Math.max(1, Math.round((distanceKm / 28) * 60))} mins`,
+    distanceSource: `${city} approximate road distance based on OpenStreetMap location data`
   };
 }
 
@@ -520,12 +614,12 @@ app.get('/api/health', (_, res) => {
 app.post(
   '/api/auth/register',
   asyncRoute(async (req, res) => {
-    const { name, email, password, phone, role = 'customer', city = 'Bengaluru' } = req.body || {};
+    const { name, email, password, phone, role = 'customer', city = 'Delhi' } = req.body || {};
     if (!name || !email || !password || password.length < 8) {
       return res.status(400).json({ error: 'Enter your name, email, and a password with at least 8 characters.' });
     }
-    if (!['Bengaluru', 'Delhi NCR', 'Gurugram'].includes(city)) {
-      return res.status(400).json({ error: 'Please choose Bengaluru, Delhi NCR, or Gurugram.' });
+    if (!['Delhi', 'Gurugram'].includes(city)) {
+      return res.status(400).json({ error: 'Please choose Delhi or Gurugram.' });
     }
     const cleanEmail = email.toLowerCase().trim();
     if (data.users.some((u) => u.email === cleanEmail)) {
@@ -571,10 +665,16 @@ app.get('/api/me', auth, (req, res) => {
 });
 
 // Fare Calculation
-app.post('/api/fare/estimate', (req, res) => {
-  const route = routeDistance(req.body?.pickup, req.body?.destination, req.body?.city);
+app.post('/api/fare/estimate', asyncRoute(async (req, res) => {
+  const pickup = String(req.body?.pickup || '').trim();
+  const destination = String(req.body?.destination || '').trim();
+  const city = req.body?.city;
+  if (!pickup || !destination || pickup.length > 250 || destination.length > 250 || !['Delhi', 'Gurugram'].includes(city)) {
+    return res.status(400).json({ error: 'Choose Delhi or Gurugram and enter both route locations.' });
+  }
+  const route = await routeDistance(pickup, destination, city);
   res.json(calculateFare({ ...req.body, ...route }));
-});
+}));
 
 // Bookings
 app.get('/api/bookings', auth, (req, res) => {
@@ -609,15 +709,15 @@ app.post(
   auth,
   roles('customer', 'admin'),
   asyncRoute(async (req, res) => {
-    const { tripType = 'Hourly', pickup, destination, city = 'Bengaluru', vehicle = 'Sedan', date, time = '10:00', hours = 4 } = req.body || {};
-    if (!pickup || !destination || !date) {
+    const { tripType = 'Hourly', pickup, destination, city = 'Delhi', vehicle = 'Sedan', date, time = '10:00', hours = 4 } = req.body || {};
+    if (!String(pickup || '').trim() || !String(destination || '').trim() || !date) {
       return res.status(400).json({ error: 'Pickup location, destination, and date are required.' });
     }
-    if (!['Bengaluru', 'Delhi NCR', 'Gurugram'].includes(city)) {
-      return res.status(400).json({ error: 'VaahanSathi is currently operational in Bengaluru, Delhi NCR, and Gurugram.' });
+    if (!['Delhi', 'Gurugram'].includes(city)) {
+      return res.status(400).json({ error: 'VaahanSathi is currently operational in Delhi and Gurugram.' });
     }
 
-    const route = routeDistance(pickup, destination, city);
+    const route = await routeDistance(String(pickup).trim(), String(destination).trim(), city);
     const f = calculateFare({ tripType, hours, time, vehicle, ...route });
     const customerUser = data.users.find((u) => u.id === req.user.id);
 
@@ -827,7 +927,7 @@ app.post('/api/voice/intent', (req, res) => {
   const raw = String(req.body.text || '').trim();
   const text = raw.toLowerCase();
   const language = String(req.body.language || 'en-IN');
-  const city = text.includes('delhi') || text.includes('दिल्ली') ? 'Delhi NCR' : text.includes('gurugram') || text.includes('gurgaon') || text.includes('गुरुग्राम') ? 'Gurugram' : 'Bengaluru';
+  const city = text.includes('gurugram') || text.includes('gurgaon') || text.includes('गुरुग्राम') ? 'Gurugram' : 'Delhi';
   const tripType = /airport|aeropuerto|एयरपोर्ट|विमानतळ|ವಿಮಾನ ನಿಲ್ದಾಣ|விமான நிலையம்|విమానాశ్రయం/.test(text)
     ? 'Airport'
     : /outstation|outside city|बाहर|ಔಟ್ ಸ್ಟೇಷನ್|வெளியூர்|అవుట్ స్టేషన్/.test(text)
@@ -868,6 +968,14 @@ app.post('/api/voice/intent', (req, res) => {
   res.json({ tripType, hours, city, pickup, destination, date, time, language, requiresConfirmation: true, summary });
 });
 
+app.use((err, req, res, next) => {
+  if (res.headersSent) return next(err);
+  console.error('Request failed:', err.message);
+  res.status(err.statusCode || 500).json({
+    error: err.statusCode ? err.message : 'An unexpected server error occurred.'
+  });
+});
+
 // Serve frontend in production
 if (process.env.NODE_ENV === 'production') {
   const dist = path.resolve('dist');
@@ -882,6 +990,7 @@ async function start() {
   databaseReadyPromise = neonPool ? loadNeon() : Promise.resolve();
   await databaseReadyPromise;
   if (!neonPool && data.users.length === 0) await seedDefaultAccounts();
+  await ensureDemoAccounts();
   app.listen(port, () => {
     console.log(`VaahanSathi server listening on port ${port}...`);
     console.log(`VaahanSathi is active [Mode: ${databaseReady ? 'Neon PostgreSQL' : 'Local Storage'}]`);
