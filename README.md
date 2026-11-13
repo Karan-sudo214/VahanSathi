@@ -35,3 +35,10 @@ Open the app and choose **Customer** or **Admin** to enter the browser-local wal
 
 When Firestore is unavailable, customer fare previews use local demo calculations. Authenticated production accounts and production bookings remain gated until Firestore is configured.
 
+
+## Neon PostgreSQL
+
+Neon is the preferred production datastore. Copy the pooled connection string from the Neon dashboard and set it as `DATABASE_URL` in Render Environment settings (and in `.env` for local use). Keep the URL server-side and never commit it. On startup, the Express server creates the application tables and loads or migrates the current local state. Neon takes precedence over the optional Firestore adapter. `/api/health` reports `neon-postgres` when the connection is ready. The `pg` pool uses the Neon-provided TLS connection URL.
+
+Application data is stored in PostgreSQL tables `app_users`, `app_bookings`, `app_ratings`, `app_history`, and `app_pricing`. Use the pooled URL for the long-running Render web service.
+
