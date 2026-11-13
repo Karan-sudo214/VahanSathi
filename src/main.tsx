@@ -581,6 +581,9 @@ function App() {
           </div>
 
           <div className="top-actions">
+            <button className="voice-top-btn" onClick={() => setVoiceAgentOpen(true)} aria-label="Open voice booking">
+              <Mic size={16} /> <span>Voice booking</span>
+            </button>
             {/* Database indicator pill */}
             <div className={`db-pill ${storageReady ? 'connected' : 'connecting'}`} title="Neon DB status">
               <Database size={14} />
@@ -639,9 +642,6 @@ function App() {
                   <div className="hero-cta-row">
                     <button className="hero-btn" onClick={() => setPage('Book a driver')}>
                       Book Driver Now <ArrowRight size={17} />
-                    </button>
-                    <button className="hero-voice-btn" onClick={() => setVoiceAgentOpen(true)}>
-                      <Mic size={16} /> Book by voice
                     </button>
                   </div>
                   <div className="hero-highlights">

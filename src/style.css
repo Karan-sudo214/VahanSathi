@@ -2022,8 +2022,6 @@ button, input, select, textarea { outline-color: var(--blue); }
 .service-tags { gap: 14px; }
 .service-tags span { background: transparent; border: 0; padding: 0; font-size: 12px; color: var(--emerald); }
 
-.hero-voice-btn { display: inline-flex; align-items: center; gap: 8px; padding: 11px 16px; background: transparent; color: #dbe8f1; border: 1px solid rgba(255,255,255,.28); border-radius: 8px; font-size: 13px; font-weight: 700; }
-.hero-voice-btn:hover { background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.5); }
 .voice-agent-modal { width: min(100%, 520px); }
 .voice-agent-header { display: flex; align-items: flex-start; gap: 14px; margin-bottom: 22px; }
 .voice-agent-header h2 { margin-bottom: 4px; }
