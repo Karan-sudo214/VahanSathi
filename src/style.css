@@ -2018,3 +2018,99 @@ nav {
 .empty-state { display: grid; place-items: center; gap: 8px; min-height: 150px; text-align: center; color: var(--slate-500); padding: 28px; }
 .empty-state h3 { color: var(--slate-800); }
 @media (max-width: 700px) { .admin-toolbar { align-items: stretch; flex-direction: column; } .admin-toolbar input { min-width: 0; } }
+
+/* Product-grade visual system: calm, dense, operational. */
+:root {
+  --navy: #102b46;
+  --navy-light: #173f63;
+  --blue: #1f4e79;
+  --emerald: #087f72;
+  --canvas: #f6f8fb;
+  --surface: #ffffff;
+  --line: #e5eaf0;
+  --slate-900: #162231;
+  --slate-800: #263647;
+  --slate-700: #405165;
+  --slate-600: #5a6b7e;
+  --slate-500: #718196;
+  --slate-400: #9aa8b7;
+  --slate-200: #e4eaf0;
+  --slate-100: #f1f4f7;
+  --slate-50: #f8fafc;
+  --radius: 10px;
+  --shadow-sm: 0 1px 2px rgba(16, 43, 70, .04);
+  --shadow-md: 0 8px 24px rgba(16, 43, 70, .07);
+}
+body { background: var(--canvas); color: var(--slate-800); }
+button, input, select, textarea { outline-color: var(--blue); }
+.sidebar { width: 248px; background: var(--navy); border-right: 0; padding: 22px 14px 16px; color: #fff; }
+.brand { border-bottom-color: rgba(255,255,255,.12); padding: 0 8px 20px; }
+.brandmark { width: 38px; height: 38px; background: #fff; color: var(--navy); border-radius: 9px; }
+.brand-text span { color: #fff; font-size: 18px; }
+.brand-text small { color: #9fb5c9; font-size: 10px; }
+.profile-mini { background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.12); margin: 16px 0 18px; padding: 11px 12px; }
+.profile-details b { color: #fff; font-size: 13px; }
+.profile-details small { color: #a9bdce; }
+.role-tag { background: rgba(255,255,255,.13); color: #cfe4f4; }
+.side-label, .nav-section-label { color: #8ea7bb; }
+.side-label { padding-left: 10px; font-size: 10px; }
+.nav-section-label { font-size: 10px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; padding: 15px 10px 6px; }
+.navitem { color: #b7c8d6; border-radius: 7px; padding: 10px 12px; font-size: 13px; }
+.navitem:hover { color: #fff; background: rgba(255,255,255,.08); }
+.navitem.selected { background: #fff; color: var(--navy); box-shadow: 0 3px 10px rgba(0,0,0,.12); }
+.navitem.selected .nav-icon { color: var(--blue); }
+.badge { background: rgba(255,255,255,.13); color: #cfe4f4; }
+.navitem.selected .badge { background: #e8f0f8; color: var(--blue); }
+.sidebar-bottom { border-top-color: rgba(255,255,255,.12); }
+.db-indicator { background: rgba(8,127,114,.15); border-color: rgba(113,227,210,.22); }
+.db-text b { color: #a8efe2; }
+.db-text small { color: #8fcfc7; }
+.auth-btn { background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.14); color: #d9e6ef; }
+.auth-btn:hover { background: rgba(255,255,255,.14); color: #fff; }
+.main { margin-left: 248px; }
+.topbar { height: 68px; padding: 0 34px; border-bottom-color: var(--line); background: rgba(255,255,255,.94); backdrop-filter: blur(14px); }
+.crumb { font-size: 13px; }
+.crumb span:first-child { color: var(--slate-400); }
+.top-actions { gap: 10px; }
+.db-pill { background: #f1faf8; border-color: #cdece6; color: var(--emerald); }
+.city-pill, .icon-btn { background: #fff; border-color: var(--line); }
+.content { max-width: 1440px; padding: 32px 40px 64px; }
+.welcome-banner { margin-bottom: 28px; }
+.welcome-banner h1, .section-head h1 { font-size: 30px; letter-spacing: -.035em; }
+.eyebrow { color: var(--slate-500); font-size: 10px; letter-spacing: .12em; }
+.subhead { color: var(--slate-600); }
+.hero-card { background: var(--navy); border-radius: 14px; padding: 38px 42px; box-shadow: 0 12px 28px rgba(16,43,70,.13); }
+.hero-card:after { content: ''; position: absolute; width: 320px; height: 320px; border: 1px solid rgba(255,255,255,.1); border-radius: 50%; right: -80px; top: -80px; }
+.hero-card h2 { font-size: 32px; letter-spacing: -.04em; max-width: 580px; }
+.hero-highlights { gap: 14px; flex-wrap: wrap; }
+.services-grid { gap: 12px; }
+.service-card { border-radius: 10px; padding: 16px; box-shadow: none; min-height: 138px; }
+.service-card:hover { transform: translateY(-1px); box-shadow: var(--shadow-md); }
+.service-emoji { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 8px; background: #edf4fa; color: var(--blue); font-size: 11px; font-weight: 800; letter-spacing: .04em; margin-bottom: 18px; }
+.service-card.active .service-emoji { background: var(--blue); color: #fff; }
+.panel { border-color: var(--line); border-radius: 10px; padding: 22px; box-shadow: var(--shadow-sm); }
+.section-head { margin-bottom: 20px; }
+.section-head h3, .panel-header h3 { letter-spacing: -.02em; }
+.stat-card { position: relative; overflow: hidden; }
+.stat-card:after { content: ''; position: absolute; right: -18px; bottom: -28px; width: 78px; height: 78px; border: 1px solid #e7eef4; border-radius: 50%; }
+.stat-card b { font-size: 25px; letter-spacing: -.04em; }
+.admin-table th { background: #fafbfd; font-size: 10px; letter-spacing: .09em; text-transform: uppercase; padding: 11px 14px; }
+.admin-table td { padding: 15px 14px; }
+.admin-table tbody tr { transition: background .15s ease; }
+.admin-table tbody tr:hover { background: #f8fbfd; }
+.status-pill { border-radius: 6px; padding: 5px 9px; font-size: 11px; font-weight: 700; background: #fff7e8; color: #9a6418; border: 1px solid #f4dfb5; }
+.status-pill.done { background: #eaf8f4; border-color: #c4e9df; color: var(--emerald); }
+/* Hide infrastructure/debug language from the primary product chrome. */
+.service-market-pill { background: #eef5fb; color: var(--blue); border-color: #d9e8f4; }
+@media (max-width: 1024px) { .content { padding-left: 26px; padding-right: 26px; } }
+@media (max-width: 768px) {
+  .sidebar { width: 286px; }
+  .main { margin-left: 0; }
+  .topbar { height: 62px; padding: 0 18px; }
+  .content { padding: 24px 18px 76px; }
+  .welcome-banner { align-items: flex-start; gap: 16px; flex-direction: column; }
+  .hero-card { padding: 28px 22px; }
+  .hero-card h2 { font-size: 27px; }
+  .hero-highlights { display: grid; gap: 8px; }
+  .top-actions .city-pill { max-width: 140px; }
+}

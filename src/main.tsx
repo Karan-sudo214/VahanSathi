@@ -461,46 +461,54 @@ function App() {
 
         <div className="side-label">NAVIGATION</div>
         <nav>
-          {nav.map((x) => (
-            <button
-              key={x}
-              className={`navitem ${page === x ? 'selected' : ''}`}
-              onClick={() => {
-                setPage(x);
-                setMobileOpen(false);
-              }}
-            >
-              <span className="nav-icon">
-                {x === 'Home' && <CarFront size={18} />}
-                {x === 'Book a driver' && <Plus size={18} />}
-                {x === 'Your trips' && <CalendarDays size={18} />}
-                {x === 'Requests' && <Navigation size={18} />}
-                {x === 'My trips' && <CalendarDays size={18} />}
-                {x === 'Earnings' && <Wallet size={18} />}
-                {x === 'Overview' && <Activity size={18} />}
-                {x === 'Live trips' && <Navigation size={18} />}
-                {x === 'Drivers' && <BadgeCheck size={18} />}
-                {x === 'Pricing' && <IndianRupee size={18} />}
-                {x === 'Activity' && <Clock3 size={18} />}
-                {x === 'Wallet' && <CreditCard size={18} />}
-                {x === 'Help' && <Headphones size={18} />}
-                {x === 'Profile' && <ShieldCheck size={18} />}
-              </span>
-              <span>{x}</span>
-              {x === 'Your trips' && bookings.length > 0 && <em className="badge">{bookings.length}</em>}
-              {x === 'Requests' && bookings.filter((b) => b.status === 'Searching').length > 0 && (
-                <em className="badge active">{bookings.filter((b) => b.status === 'Searching').length}</em>
-              )}
-            </button>
-          ))}
+          {nav.map((x, index) => {
+            const adminSection = user?.role === 'admin' && ({ 0: 'Monitor', 2: 'Manage', 5: 'Money', 6: 'Resolve', 10: 'Workspace' } as Record<number, string>)[index];
+            return <React.Fragment key={x}>
+              {adminSection && <div className="nav-section-label">{adminSection}</div>}
+              <button
+                className={`navitem ${page === x ? 'selected' : ''}`}
+                onClick={() => {
+                  setPage(x);
+                  setMobileOpen(false);
+                }}
+              >
+                <span className="nav-icon">
+                  {x === 'Home' && <CarFront size={18} />}
+                  {x === 'Book a driver' && <Plus size={18} />}
+                  {x === 'Your trips' && <CalendarDays size={18} />}
+                  {x === 'Requests' && <Navigation size={18} />}
+                  {x === 'My trips' && <CalendarDays size={18} />}
+                  {x === 'Earnings' && <Wallet size={18} />}
+                  {x === 'Overview' && <Activity size={18} />}
+                  {x === 'Live trips' && <Navigation size={18} />}
+                  {x === 'Bookings' && <CalendarDays size={18} />}
+                  {x === 'Drivers' && <BadgeCheck size={18} />}
+                  {x === 'Customers' && <Heart size={18} />}
+                  {(x === 'Pricing' || x === 'Pricing & Revenue') && <IndianRupee size={18} />}
+                  {(x === 'Payments & Payouts' || x === 'Wallet') && <CreditCard size={18} />}
+                  {x === 'Disputes' && <Headphones size={18} />}
+                  {x === 'Analytics' && <ArrowDownUp size={18} />}
+                  {(x === 'Audit Logs' || x === 'Activity') && <Clock3 size={18} />}
+                  {x === 'Settings' && <ShieldCheck size={18} />}
+                  {x === 'Help' && <Headphones size={18} />}
+                  {x === 'Profile' && <ShieldCheck size={18} />}
+                </span>
+                <span>{x}</span>
+                {x === 'Your trips' && bookings.length > 0 && <em className="badge">{bookings.length}</em>}
+                {x === 'Requests' && bookings.filter((b) => b.status === 'Searching').length > 0 && (
+                  <em className="badge active">{bookings.filter((b) => b.status === 'Searching').length}</em>
+                )}
+              </button>
+            </React.Fragment>;
+          })}
         </nav>
 
         <div className="sidebar-bottom">
           <div className="db-indicator">
             <span className={`db-pulse ${storageReady ? 'online' : 'connecting'}`} />
             <div className="db-text">
-              <b>{storageReady ? 'Neon PostgreSQL' : 'Database syncing...'}</b>
-              <small>{storageReady ? 'Live Cloud Datastore' : 'Connecting'}</small>
+              <b>{storageReady ? 'Cloud data connected' : 'Syncing workspace...'}</b>
+              <small>{storageReady ? 'All systems operational' : 'Checking connection'}</small>
             </div>
           </div>
 
@@ -528,7 +536,7 @@ function App() {
             {/* Database indicator pill */}
             <div className={`db-pill ${storageReady ? 'connected' : 'connecting'}`} title="Neon DB status">
               <Database size={14} />
-              <span>{storageReady ? 'Neon PostgreSQL' : 'Connecting...'}</span>
+              <span>{storageReady ? 'System operational' : 'Syncing status...'}</span>
             </div>
 
             {/* City Selector */}
@@ -618,12 +626,12 @@ function App() {
 
               <div className="services-grid">
                 {[
-                  { id: 'Hourly', title: 'Hourly Driver', desc: 'From ₹599 · 4 Hours', icon: '⏱' },
-                  { id: 'Airport', title: 'Airport Transfer', desc: 'Stress-free terminal drops', icon: '✈' },
-                  { id: 'Night driver', title: 'Night Driver', desc: 'Party or late commute safely', icon: '🌙' },
-                  { id: 'Full day', title: 'Full Day Chauffeur', desc: '8-12 hrs seamless city travel', icon: '📅' },
-                  { id: 'Outstation', title: 'Outstation Trip', desc: 'Highway experienced drivers', icon: '🛣' },
-                  { id: 'Custom', title: 'Custom Duration', desc: 'Flexible schedule & stops', icon: '⚡' }
+                  { id: 'Hourly', title: 'Hourly Driver', desc: 'From ₹599 · 4 Hours', icon: '01' },
+                  { id: 'Airport', title: 'Airport Transfer', desc: 'Stress-free terminal drops', icon: '02' },
+                  { id: 'Night driver', title: 'Night Driver', desc: 'Party or late commute safely', icon: '03' },
+                  { id: 'Full day', title: 'Full Day Chauffeur', desc: '8-12 hrs seamless city travel', icon: '04' },
+                  { id: 'Outstation', title: 'Outstation Trip', desc: 'Highway experienced drivers', icon: '05' },
+                  { id: 'Custom', title: 'Custom Duration', desc: 'Flexible schedule & stops', icon: '06' }
                 ].map((s) => (
                   <button
                     key={s.id}
@@ -1360,7 +1368,7 @@ function LiveAdminPage({ bookings, focus = 'Overview', flash }: any) {
         method: 'PATCH',
         body: JSON.stringify({ hourly: Number(hourlyRate) })
       });
-      flash?.('Pricing updated in Neon DB!');
+      flash?.('Pricing configuration saved.');
       fetchSummary();
     } catch (e: any) {
       flash?.(e.message);
@@ -1374,11 +1382,11 @@ function LiveAdminPage({ bookings, focus = 'Overview', flash }: any) {
       <div className="section-head">
         <div>
           <span className="eyebrow">OPERATIONS CONSOLE</span>
-          <h1>VaahanSathi Network Control</h1>
+          <h1>Network overview</h1>
           <p>Real-time city bookings, driver verification, revenue, and pricing engine.</p>
         </div>
         <div className="service-market-pill">
-          <Database size={15} /> Neon DB Live
+          <Activity size={15} /> Operations live
         </div>
       </div>
 
@@ -1729,16 +1737,16 @@ function AuthModal({ onClose, onLogin, onRegister, busy, storageReady }: any) {
 
         {/* 1-Click Quick Demo Sign-In */}
         <div className="quick-demo-box">
-          <span className="quick-label">⚡ 1-Click Quick Sign-In (Neon DB Connected):</span>
+          <span className="quick-label">Demo access for presentations</span>
           <div className="quick-buttons">
             <button type="button" onClick={() => onLogin('ananya@vaahansathi.demo', 'password123')}>
-              👤 Customer (Ananya)
+              Customer · Ananya
             </button>
             <button type="button" onClick={() => onLogin('ramesh@vaahansathi.demo', 'password123')}>
-              🚗 Driver (Ramesh)
+              Driver · Ramesh
             </button>
             <button type="button" onClick={() => onLogin('admin@vaahansathi.demo', 'password123')}>
-              🛡️ Admin (Ops)
+              Admin · Ops
             </button>
           </div>
         </div>
