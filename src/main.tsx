@@ -1,50 +1,1898 @@
-import React,{useEffect,useState} from 'react';import{createRoot}from'react-dom/client';import{Activity,CreditCard,ArrowDownLeft,ArrowLeft,ArrowRight,ArrowUpRight,BadgeCheck,CalendarDays,CarFront,Check,ChevronDown,Clock3,Headphones,Heart,IndianRupee,MapPin,Menu,Mic,MoreHorizontal,Navigation,Phone,Plus,ShieldCheck,Star,Wallet, X, Zap}from'lucide-react';import'./style.css';
-type User={id:string;name:string;email:string;role:string;phone?:string;city?:string};type Booking={id:string;trip_type:string;pickup:string;destination:string;date:string;time:string;hours:number;total:number;payout:number;status:string;start_otp:string;end_otp:string;payment_status:string;driver?:string;vehicle?:string;};
-const api=async(path:string,options:RequestInit={})=>{const token=localStorage.getItem('vs_token');const r=await fetch('/api'+path,{...options,headers:{'Content-Type':'application/json',...(token?{Authorization:`Bearer ${token}`}:{}) ,...(options.headers||{})}});const d=await r.json();if(r.status===401){localStorage.removeItem('vs_user');localStorage.removeItem('vs_token');window.dispatchEvent(new Event('vs-auth-expired'))}if(!r.ok)throw new Error(d.error||'Something went wrong.');return d};
-const money=(n:number)=>'₹'+Number(n||0).toLocaleString('en-IN');
-type Receipt={bookingId:string;amount:number;method:string;paidAt:string;customer:string};
-const readReceipts=():Receipt[]=>{try{return JSON.parse(localStorage.getItem('vs_receipts')||'[]')}catch{return []}};
-function downloadReceipt(b:Booking,r:Receipt){const body=['VAAHANSATHI · PAYMENT RECEIPT','DEMO CHECKOUT · NO REAL PAYMENT WAS PROCESSED','',`Receipt: VS-R-${r.bookingId}`,`Booking: ${b.id}`,`Paid by: ${r.customer}`,`Date: ${new Date(r.paidAt).toLocaleString('en-IN')}`,`Method: ${r.method}`,`Service: ${b.trip_type}`,`Route: ${b.pickup} → ${b.destination}`,`Amount: ${money(r.amount)}`,'','This receipt is for product walkthrough purposes only.'];const blob=new Blob([body.join('\n')],{type:'text/plain'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`${b.id}-payment-receipt.txt`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}
-function downloadInvoice(b:Booking){const lines=['VAAHANSATHI · DRIVER SERVICE INVOICE',`Booking ID: ${b.id}`,`Service: ${b.trip_type}`,`Date: ${b.date} · ${b.time}`,`Your car: ${b.vehicle||'Sedan'}`,`Pickup: ${b.pickup}`,`Destination: ${b.destination}`,`Driver service total: ${money(b.total)}`,`Driver payout: ${money(b.payout)}`,`Payment: ${b.payment_status}`,'','VaahanSathi provides a verified driver. The customer provides the car.'];const blob=new Blob([lines.join('\n')],{type:'text/plain'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`${b.id}-invoice.txt`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}
-function App(){let savedUser:User|null=null;try{savedUser=JSON.parse(localStorage.getItem('vs_user')||'null')}catch{localStorage.removeItem('vs_user');localStorage.removeItem('vs_token')}const[user,setUser]=useState<User|null>(savedUser), [page,setPage]=useState(savedUser&&savedUser.role!=='customer'?'Overview':'Home'),[bookings,setBookings]=useState<Booking[]>([]),[toast,setToast]=useState(''),[modal,setModal]=useState(''),[busy,setBusy]=useState(false),[tripType,setTripType]=useState('Hourly'),[city,setCity]=useState((['Bengaluru','Delhi NCR','Gurugram'].includes(localStorage.getItem('vs_city')||'')?localStorage.getItem('vs_city'):'Bengaluru') as string),[pickup,setPickup]=useState(localStorage.getItem('vs_city')==='Delhi NCR'?'Connaught Place, New Delhi':localStorage.getItem('vs_city')==='Gurugram'?'Cyber City, Gurugram':'Indiranagar, Bengaluru'),[destination,setDestination]=useState(localStorage.getItem('vs_city')==='Delhi NCR'?'Indira Gandhi International Airport, New Delhi':localStorage.getItem('vs_city')==='Gurugram'?'Huda City Centre, Gurugram':'Kempegowda International Airport, Bengaluru'),[date,setDate]=useState(new Date(Date.now()+86400000).toISOString().slice(0,10)),[time,setTime]=useState('08:00'),[hours,setHours]=useState(4),[vehicle,setVehicle]=useState('Sedan'),[fare,setFare]=useState<any>(null),[filter,setFilter]=useState('Upcoming'),[rating,setRating]=useState(5),[voice,setVoice]=useState(false),[voiceText,setVoiceText]=useState(''),[mobileOpen,setMobileOpen]=useState(false),[receipts,setReceipts]=useState<Receipt[]>(readReceipts),[storageReady,setStorageReady]=useState<boolean|null>(null),[fareError,setFareError]=useState('');
-const openCheckout=(b:Booking)=>setModal('payment:'+b.id);const completeDemoPayment=(b:Booking,method:string)=>{const receipt:Receipt={bookingId:b.id,amount:b.total,method,paidAt:new Date().toISOString(),customer:user?.name||'Customer'};const next=[receipt,...readReceipts().filter(x=>x.bookingId!==b.id)];localStorage.setItem('vs_receipts',JSON.stringify(next));setReceipts(next);setModal('');flash('Demo checkout complete · receipt saved')};
-useEffect(()=>{fetch('/api/health').then(r=>r.json()).then(d=>setStorageReady(!!d.integrations?.firebase)).catch(()=>setStorageReady(false))},[]);useEffect(()=>{const expired=()=>{setUser(null);setBookings([]);setPage('Home');setModal('auth')};window.addEventListener('vs-auth-expired',expired);return()=>window.removeEventListener('vs-auth-expired',expired)},[]);const flash=(s:string)=>{setToast(s);setTimeout(()=>setToast(''),3300)};const chooseCity=(next:string)=>{setCity(next);localStorage.setItem('vs_city',next);const defaults:any={'Bengaluru':['Indiranagar, Bengaluru','Kempegowda International Airport, Bengaluru'],'Delhi NCR':['Connaught Place, New Delhi','Indira Gandhi International Airport, New Delhi'],'Gurugram':['Cyber City, Gurugram','Huda City Centre, Gurugram']};setPickup(defaults[next][0]);setDestination(defaults[next][1]);setFare(null);flash(`Service area changed to ${next}`)};const refresh=async()=>{if(!user)return;try{const d=await api('/bookings');setBookings(d.bookings)}catch(e:any){flash(e.message)}};useEffect(()=>{if(user)refresh()},[user]);useEffect(()=>{if(!user)return;const timer=window.setInterval(()=>refresh(),15000);return()=>window.clearInterval(timer)},[user]);useEffect(()=>{if(user?.role==='customer'&&pickup.trim()&&destination.trim()){const timer=window.setTimeout(()=>api('/fare/estimate',{method:'POST',body:JSON.stringify({tripType,hours,date,time,vehicle,pickup,destination,city})}).then(d=>{setFare(d);setFareError('')}).catch((e:any)=>{setFare(null);setFareError(e.message)}),350);return()=>window.clearTimeout(timer)}},[tripType,hours,date,time,vehicle,pickup,destination,city,user]);
-const login=async(email:string,password:string)=>{setBusy(true);try{const d=await api('/auth/login',{method:'POST',body:JSON.stringify({email,password})});localStorage.setItem('vs_token',d.token);localStorage.setItem('vs_user',JSON.stringify(d.user));setUser(d.user);setPage(d.user.role==='customer'?'Home':'Overview');setModal('');flash(`Welcome back, ${d.user.name.split(' ')[0]}`)}catch(e:any){flash(e.message)}finally{setBusy(false)}};
-const register=async(name:string,email:string,password:string,accountCity:string)=>{setBusy(true);try{const d=await api('/auth/register',{method:'POST',body:JSON.stringify({name,email,password,city:accountCity})});localStorage.setItem('vs_token',d.token);localStorage.setItem('vs_user',JSON.stringify(d.user));setUser(d.user);chooseCity(accountCity);setPage('Home');setModal('');flash(`Welcome to VaahanSathi, ${d.user.name.split(' ')[0]}`)}catch(e:any){flash(e.message)}finally{setBusy(false)}};
-const book=async()=>{setBusy(true);try{const d=await api('/bookings',{method:'POST',body:JSON.stringify({tripType,pickup,destination,date,time,hours,vehicle,city})});await refresh();setPage('Your trips');setModal('');flash(`Driver confirmed · ${d.booking.id}`)}catch(e:any){flash(e.message)}finally{setBusy(false)}};
-const update=async(b:Booking,status:string,otp?:string)=>{try{await api(`/bookings/${b.id}/status`,{method:'PATCH',body:JSON.stringify({status,otp})});await refresh();flash(status==='Trip started'?'Trip started. Have a safe journey!':status==='Trip completed'?'Trip completed · invoice ready':`Booking updated · ${status}`)}catch(e:any){flash(e.message)}};
-const logout=()=>{localStorage.removeItem('vs_user');localStorage.removeItem('vs_token');setUser(null);setBookings([]);setPage('Home');flash('You have signed out.')};
-const nav=user?.role==='admin'?['Overview','Bookings','Driver verification','Disputes','Pricing']:user?.role==='driver'?['Overview','Requests','My trips','Earnings','Profile']:['Home','Your trips','Wallet','Help'];
-const active=bookings.find(b=>b.status==='Driver assigned'||b.status==='Driver arriving'||b.status==='Trip started');
-return <div className="app"><aside className={`sidebar ${mobileOpen?'open':''}`}><div className="brand"><div className="brandmark"><CarFront size={21}/></div><span>vaahansathi<small>YOUR CAR. OUR DRIVER.</small></span><button className="close-menu" onClick={()=>setMobileOpen(false)}><X/></button></div><div className="profile-mini"><div className="avatar">{user?.name?.split(' ').map(x=>x[0]).slice(0,2).join('')||'VS'}</div><div><b>{user?.name||'Welcome'}</b><small>{user?.role==='driver'?'Driver partner':user?.role==='admin'?'Operations admin':`${city}, India`}</small></div><ChevronDown size={15}/></div><div className="side-label">MENU</div><nav>{nav.map((x,i)=><button key={x} className={`navitem ${page===x?'selected':''}`} onClick={()=>{setPage(x);setMobileOpen(false)}}>{[<Activity/>,<CalendarDays/>,<Wallet/>,<Headphones/>,<ShieldCheck/>][i%5]}<span>{x}</span>{x==='Your trips'&&bookings.length>0&&<em>{bookings.length}</em>}</button>)}</nav><div className="sidebar-bottom"><div className="help-card"><span className="support-icon"><Headphones size={17}/></span><b>Need a hand?</b><p>Our team is here for your ride.</p><button onClick={()=>flash('Support phone is not configured yet. Please use the emergency contact in your booking details.')}>Contact support <ArrowRight size={14}/></button></div><div className="security-note"><ShieldCheck size={15}/> Your journey, thoughtfully managed.</div><button className="logout" onClick={()=>user?logout():setModal('auth')}>{user?'Sign out':'Sign in'} <ArrowRight size={15}/></button></div></aside>
-<main className="main"><header className="topbar"><button className="hamburger" onClick={()=>setMobileOpen(true)}><Menu/></button><div className="crumb">{user?.role==='admin'?'Operations':user?.role==='driver'?'Partner portal':'Customer'} <span>/</span> {page}</div><div className="top-actions"><label className="city-pill" aria-label="Service area"><MapPin size={14}/><select value={city} onChange={e=>chooseCity(e.target.value)} aria-label="Choose service area"><option>Bengaluru</option><option>Delhi NCR</option><option>Gurugram</option></select><ChevronDown size={13}/></label><button className="icon-button" title="Help" onClick={()=>setPage('Help')}><Headphones size={18}/></button><button className="top-avatar" onClick={()=>user?flash(`${user.name} · ${user.email}`):setModal('auth')}>{user?.name?.[0]||'A'}</button></div></header>
-<div className="content">{page==='Home'&&<><div className="welcome-row"><div><div className="eyebrow">{new Date().toLocaleDateString("en-IN",{weekday:"long",month:"long",day:"numeric",year:"numeric"}).toUpperCase()} </div><h1>Good morning{user?`, ${user.name.split(' ')[0]}`:''} <span className="wave">✳</span></h1><p className="subhead">Where can we drive you today?</p></div><button className="help-link" onClick={()=>setPage('Help')}><Headphones size={16}/> Need help?</button></div>
-<section className="hero"><div className="hero-copy"><span className="eyebrow pale">YOUR JOURNEY, YOUR CAR</span><h2>Your car.<br/>Our trusted driver.</h2><p>Book a professional driver for the car you already own. Choose a service, plan your journey, and see the fare before you request.</p><button className="hero-button" onClick={()=>user?setPage('Book a driver'):setModal('auth')}>Book a driver <ArrowRight size={16}/></button><div className="hero-proof"><span><ShieldCheck size={14}/> Driver service for your own car</span><span><MapPin size={14}/> Bengaluru · Delhi NCR · Gurugram</span></div></div><div className="hero-visual"><div className="sun-disc"/><div className="route-line"><i/><i/><i/></div><div className="map-pin pin-one"><MapPin/></div><div className="map-pin pin-two"><Navigation/></div><div className="city-label label-top">{pickup.split(',')[0].toUpperCase()}</div><div className="city-label label-bottom">{city.toUpperCase()}</div><div className="car-illustration"><CarFront size={94} strokeWidth={1.2}/></div></div><span className="hero-orb orb1"/><span className="hero-orb orb2"/></section>
-<div className="section-heading"><div><h3>Your everyday, made easier</h3><p>Professional drivers for every plan.</p></div><button className="text-button" onClick={()=>setPage('Book a driver')}>View all services <ArrowRight size={15}/></button></div><div className="service-grid">{[['◷','Hourly','From ₹599 · 4 hours'],['✈','Airport','Reliable airport pickups'],['☾','Night driver','Get home safe, always'],['▣','Full day','Your day, your schedule'],['↗','Outstation','Long drives, sorted']].map(([ic,name,desc])=><button className="service-card" key={name} onClick={()=>{setTripType(name==='Hourly'?'Hourly':name==='Airport'?'Airport':name==='Night driver'?'Night driver':name);user?setPage('Book a driver'):setModal('auth')}}><span className="service-icon">{ic}</span><b>{name}</b><small>{desc}</small><ArrowUpRight className="service-arrow" size={15}/></button>)}</div>
-<div className="bottom-grid"><section className="panel upcoming"><div className="panel-title"><div><h3>Upcoming rides</h3><p>Your next plans, all in one place</p></div><button className="text-button" onClick={()=>setPage('Your trips')}>See all <ArrowRight size={14}/></button></div>{bookings.filter(b=>b.status!=='Trip completed').length?<BookingRow booking={bookings[0]} onClick={()=>setPage('Your trips')}/>:<div className="empty-small"><span className="empty-icon"><CalendarDays/></span><div><b>A little room for a new plan</b><small>Your upcoming bookings will show up here.</small></div><button onClick={()=>user?setPage('Book a driver'):setModal('auth')}>Book a driver <ArrowRight size={13}/></button></div>}</section><section className="panel reassurance"><span className="reassure-icon"><ShieldCheck size={22}/></span><div><span className="eyebrow">THE VAahanSATHI PROMISE</span><h3>Arrive with peace of mind.</h3><p>Professional driver service for hourly plans, airport trips, night journeys, full days, and outstation travel.</p><div className="zone-chips"><span>Bengaluru</span><span>Delhi NCR</span><span>Gurugram</span></div></div></section></div><VoiceWidget onClick={()=>setVoice(true)}/></>}
-{page==='Book a driver'&&<BookingPage tripType={tripType} setTripType={setTripType} pickup={pickup} setPickup={setPickup} destination={destination} setDestination={setDestination} date={date} setDate={setDate} time={time} setTime={setTime} hours={hours} setHours={setHours} vehicle={vehicle} setVehicle={setVehicle} fare={fare} city={city} onBack={()=>setPage('Home')} onBook={book} busy={busy} user={user} onAuth={()=>setModal('auth')} storageReady={storageReady} fareError={fareError}/>}
-{page==='Your trips'&&<TripsPage bookings={bookings} filter={filter} setFilter={setFilter} update={update} onRate={b=>{setModal('rate:'+b.id)}} onBook={()=>setPage('Book a driver')}/>}
-{page==='Overview'&&(user?.role==='admin'?<AdminPage bookings={bookings}/>:<DriverPage bookings={bookings} update={update} user={user}/>)}
-{page==='Requests'&&<DriverPage bookings={bookings} update={update} user={user}/>}{page==='Earnings'&&<EarningsPage bookings={bookings}/>}{page==='Wallet'&&<WalletPage receipts={receipts} bookings={bookings} onReceipt={downloadReceipt}/>}{page==='Help'&&<HelpPage flash={flash}/>}{page==='Profile'&&<DriverProfile user={user}/>}
-{['Bookings','Driver verification','Disputes','Pricing'].includes(page)&&<AdminPage bookings={bookings} focus={page}/>}
-</div></main>
-{modal.startsWith('payment:')&&<CheckoutModal booking={bookings.find(b=>b.id===modal.slice(8))} onClose={()=>setModal('')} onPay={completeDemoPayment}/>}{modal.startsWith('track:')&&<TrackingModal booking={bookings.find(b=>b.id===modal.slice(6))} onClose={()=>setModal('')}/>}{modal==='auth'&&<AuthModal onClose={()=>setModal('')} onLogin={login} onRegister={register} busy={busy} storageReady={storageReady}/>}{modal.startsWith('rate:')&&<RatingModal stars={rating} setStars={setRating} onClose={()=>setModal('')} onSubmit={async()=>{const id=modal.split(':')[1];try{await api(`/bookings/${id}/rating`,{method:'POST',body:JSON.stringify({stars:rating})});await update(bookings.find(b=>b.id===id)!,'Rated');setModal('')}catch(e:any){flash(e.message)}}}/>}{voice&&<VoiceModal onClose={()=>setVoice(false)} text={voiceText} setText={setVoiceText} onConfirm={async()=>{try{const intent=await api('/voice/intent',{method:'POST',body:JSON.stringify({text:voiceText})});setTripType(intent.tripType);setHours(intent.hours);setVoice(false);setPage('Book a driver');flash(`Voice request understood · ${intent.tripType}, ${intent.hours} hours. Review before booking.`)}catch(e:any){flash(e.message)}}}/>}{toast&&<div className="toast"><span><Check size={15}/></span>{toast}<button onClick={()=>setToast('')}><X size={15}/></button></div>}</div>}
-function BookingPage(p:any){return <><button className="back-link" onClick={p.onBack}><ArrowLeft size={15}/> Back to home</button><div className="booking-head"><div><span className="eyebrow">A DRIVER FOR YOUR OWN CAR</span><h1>Let’s plan your ride.</h1><p>Tell us a little about where you’re headed.</p></div><span className="service-market">{p.city} service area</span></div>{p.storageReady===false&&<div className="service-alert"><ShieldCheck size={17}/><span><b>Booking service is temporarily unavailable</b><small>Persistent Firebase storage is not connected, so sign-in and bookings are paused. Add a rotated service-account credential to the Render environment to restore the service.</small></span></div>}{p.fareError&&<div className="service-alert warning"><Activity size={17}/><span><b>Fare estimate could not load</b><small>{p.fareError}</small></span></div>}<div className="booking-layout"><div className="booking-form panel"><h3>Choose your service</h3><div className="trip-types">{['Hourly','Airport','Night driver','Full day','Outstation'].map(t=><button className={p.tripType===t?'active':''} onClick={()=>p.setTripType(t)}>{t}</button>)}</div><div className="notice-own"><CarFront size={17}/><span><b>Your car, always.</b> VaahanSathi provides a professional driver. You provide the vehicle.</span></div><div className="form-grid"><label className="field full"><span><MapPin size={14}/> Pickup location</span><input value={p.pickup} onChange={e=>p.setPickup(e.target.value)} placeholder="Search pickup address"/><small>Enter a supported landmark in {p.city}; estimates update as you change locations.</small></label><button className="swap-locations" title="Swap pickup and destination" onClick={()=>{const a=p.pickup;p.setPickup(p.destination);p.setDestination(a)}}><ArrowDownLeft size={15}/></button><label className="field full"><span><Navigation size={14}/> Destination</span><input value={p.destination} onChange={e=>p.setDestination(e.target.value)} placeholder="Where are you going?"/></label><label className="field"><span><CalendarDays size={14}/> Date</span><input type="date" value={p.date} min={new Date().toISOString().slice(0,10)} onChange={e=>p.setDate(e.target.value)}/></label><label className="field"><span><Clock3 size={14}/> Pickup time</span><input type="time" value={p.time} onChange={e=>p.setTime(e.target.value)}/></label>{p.tripType==='Hourly'&&<label className="field"><span><Clock3 size={14}/> Duration</span><select value={p.hours} onChange={e=>p.setHours(Number(e.target.value))}>{[4,5,6,8,10,12].map(n=><option value={n}>{n} hours</option>)}</select></label>}<label className="field"><span><CarFront size={14}/> Your car type</span><select value={p.vehicle} onChange={e=>p.setVehicle(e.target.value)}>{['Hatchback','Sedan','SUV','Luxury'].map(x=><option>{x}</option>)}</select></label></div><div className="policy"><ShieldCheck size={17}/><span><b>Fair, transparent cancellation</b><small>If we can’t assign a driver, you won’t be charged. Fuel, tolls and parking are settled separately.</small></span></div></div><aside className="fare-panel panel"><span className="eyebrow">YOUR ESTIMATED FARE</span><h2>{p.fare?money(p.fare.total):'—'}</h2><p className="fare-caption">For your driver’s time · {p.vehicle}</p>{p.pickup&&p.destination&&!p.fare?.distanceKm&&<small className="fare-caption">Use a recognized {p.city} area name for an approximate distance-based fare.</small>}<div className="fare-divider"/>{p.fare?.distanceKm&&<><FareLine name={`Route · ${p.fare.distanceKm} km`} value={p.fare.distanceCharge||0}/><small className="fare-caption">{`Approximate ${p.city} zone distance · changes with your locations.`}</small></>}<FareLine name="Driver service" value={p.fare?.base||0}/>{p.fare?.night>0&&<FareLine name="Night service" value={p.fare.night}/>}<FareLine name="Service fee" value={p.fare?.serviceFee||0}/><FareLine name="GST (5%)" value={p.fare?.gst||0}/><div className="fare-divider"/><div className="fare-total"><span>Total payable</span><b>{p.fare?money(p.fare.total):'—'}</b></div><div className="payout-info"><span className="payout-avatar"><IndianRupee size={15}/></span><span><b>{money(p.fare?.payout||0)} goes to your driver</b><small>Transparent driver earnings</small></span></div><button className="primary-button wide" onClick={p.user?p.onBook:p.onAuth} disabled={p.busy||!p.fare||p.storageReady===false}>{p.busy?'Sending request…':'Request a driver'} <ArrowRight size={16}/></button><small className="test-pay-note"><ShieldCheck size={12}/> {p.storageReady===false?'Booking is paused until Firebase storage is connected.':'Payment is due after the trip. Online checkout is not available yet.'}</small><p className="fine-print">By continuing, you agree to our service terms. You’re booking a driver for your own car.</p></aside></div></>}
-function FareLine({name,value}:any){return <div className="fare-line"><span>{name}</span><span>{money(value||0)}</span></div>}
-function BookingRow({booking:b,onClick}:any){if(!b)return null;return <button className="booking-row" onClick={onClick}><div className="date-tile"><b>{new Date(b.date+'T00:00').toLocaleDateString('en-IN',{day:'2-digit'})}</b><small>{new Date(b.date+'T00:00').toLocaleDateString('en-IN',{month:'short'}).toUpperCase()}</small></div><div className="booking-route"><b>{b.trip_type} · {b.pickup.split(',')[0]} <ArrowRight size={12}/> {b.destination.split(',')[0]}</b><small>{b.time} · {b.hours} hours · {b.vehicle||'Sedan'}</small></div><span className={`status ${b.status==='Trip completed'?'done':''}`}>{b.status}</span><b className="booking-amount">{money(b.total)}</b><ArrowRight size={15} className="row-arrow"/></button>}
-function TripsPage({bookings,filter,setFilter,update,onRate,onBook,receipts,onPay,onTrack}:any){const filters=['Upcoming','Completed','Cancelled'];const list=bookings.filter((b:Booking)=>filter==='Upcoming'?['Searching','Driver assigned','Driver arriving','Trip started'].includes(b.status):filter==='Completed'?['Trip completed','Rated'].includes(b.status):b.status==='Cancelled');return <><div className="page-title"><div><span className="eyebrow">YOUR JOURNEYS</span><h1>Your trips</h1><p>Every ride, thoughtfully taken care of.</p></div><button className="primary-button" onClick={()=>onBook()}>+ Book a driver</button></div><div className="trip-filter">{filters.map(f=><button className={f===filter?'selected':''} onClick={()=>setFilter(f)}>{f}<small>{bookings.filter((b:Booking)=>f==='Upcoming'?['Searching','Driver assigned','Driver arriving','Trip started'].includes(b.status):f==='Completed'?['Trip completed','Rated'].includes(b.status):b.status==='Cancelled').length}</small></button>)}</div>{list.length===0?<div className="empty-state panel"><span className="empty-icon big"><CalendarDays/></span><h3>{filter==='Upcoming'?'No upcoming rides just yet':'Nothing to show here'}</h3><p>{filter==='Upcoming'?'Your next journey is only a few taps away.':'Completed journeys will appear here.'}</p><button className="primary-button" onClick={()=>onBook()}>Book a driver <ArrowRight size={15}/></button></div>:<div className="trips-list">{list.map((b:Booking)=><div className="trip-card panel"><BookingRow booking={b} onClick={()=>{}}/><div className="trip-card-footer"><span><span className="driver-photo">{b.driver?.split(' ').map((x:string)=>x[0]).slice(0,2).join('')||'VS'}</span> Driver <b>{b.driver||'Searching for a driver'}</b> <BadgeCheck size={14} color="#087f72"/></span><span className="trip-actions">{b.status==='Driver arriving'&&<><code>Start OTP {b.start_otp}</code></>}{b.status==='Trip started'&&<><a className="sos" href="tel:112">Call emergency services</a></>}{['Driver assigned','Driver arriving','Trip started'].includes(b.status)&&<button onClick={()=>onTrack(b)}><Navigation size={13}/> Track demo route</button>}{b.status==='Trip completed'&&<><button onClick={()=>onRate(b)}>Rate your driver</button>{receipts.some((r:Receipt)=>r.bookingId===b.id)?<button onClick={()=>downloadReceipt(b,receipts.find((r:Receipt)=>r.bookingId===b.id))}>Download receipt</button>:<button onClick={()=>onPay(b)}><CreditCard size={13}/> Pay securely</button>}<button onClick={()=>downloadInvoice(b)}>Download invoice</button></>}</span></div>{['Searching','Driver assigned','Driver arriving','Trip started'].includes(b.status)&&<div className="trip-status-card"><div className="status done">{b.status}</div><h3>{b.driver?`${b.driver} has accepted your booking`:'Your request is in the driver network'}</h3><p>{b.status==='Searching'?`We are looking for a driver in ${b.city}. This page updates when a partner accepts.`:b.status==='Driver assigned'?'Your driver has accepted the booking.':b.status==='Driver arriving'?'Your driver is on the way to the pickup.':'Your trip is in progress.'}</p></div>}{b.status==='Trip started'&&<div className="trip-otp"><span><Zap size={15}/> Trip in progress <small>· Fare is fixed at {money(b.total)}</small></span><b>End OTP <code>{b.end_otp}</code></b></div>}</div>)}</div>}</>}
-function DriverPage({bookings,update,user}:any){const own=bookings.filter((b:Booking)=>b.driver||['Searching','Driver assigned','Driver arriving','Trip started'].includes(b.status));return <><div className="page-title"><div><span className="eyebrow">PARTNER DASHBOARD</span><h1>Your day, at a glance.</h1><p>Welcome back, {user?.name?.split(' ')[0]||'Partner'}.</p></div><span className="service-market">{user?.city||'Service area not set'}</span></div><div className="driver-stats"><div className="stat-card"><small>TODAY’S EARNINGS</small><b>{money(bookings.filter((b:Booking)=>b.status==='Trip completed').reduce((a:number,b:Booking)=>a+b.payout,0)||0)}</b><span>Based on completed trips</span></div><div className="stat-card"><small>COMPLETED TRIPS</small><b>{bookings.filter((b:Booking)=>b.status==='Trip completed').length}</b><span>This week</span></div><div className="stat-card"><small>YOUR RATING</small><b>—</b><span>Based on completed trips</span></div><div className="stat-card"><small>ACCEPTANCE RATE</small><b>—</b><span>Requires completed trips</span></div></div><div className="section-heading"><div><h3>{own.length?'Your bookings':'Booking requests'}</h3><p>Requests are shown for your service area.</p></div></div>{own.length?own.map((b:Booking)=><div className="driver-request panel"><div className="request-type"><span className="service-icon">◷</span><div><b>{b.trip_type} · {b.vehicle||'Sedan'}</b><small>{b.date} · {b.time} · {b.hours} hours</small></div><span className={`status ${b.status==='Trip completed'?'done':''}`}>{b.status}</span></div><div className="route-detail"><span><i className="route-dot green"/>{b.pickup}</span><span><i className="route-dot blue"/>{b.destination}</span></div><div className="request-footer"><span>YOUR PAYOUT <b>{money(b.payout)}</b></span><div>{b.status==='Searching'&&!b.driver&&<button className="primary-button" onClick={()=>update(b,'Driver assigned')}>Accept booking <Navigation size={15}/></button>}{b.status==='Driver assigned'&&<button className="primary-button" onClick={()=>update(b,'Driver arriving')}>Mark on the way <Navigation size={15}/></button>}{b.status==='Driver arriving'&&<button className="primary-button" onClick={()=>update(b,'Trip started',prompt('Enter customer start OTP:')||'')}>Start trip · OTP <ArrowRight size={14}/></button>}{b.status==='Trip started'&&<button className="primary-button" onClick={()=>update(b,'Trip completed',prompt('Enter customer end OTP:')||'')}>Complete trip · OTP <Check size={14}/></button>}</div></div></div>):<div className="empty-state panel"><span className="empty-icon big"><CarFront/></span><h3>You're ready for your next ride.</h3><p>Booking requests appear after partner onboarding and approval for this service area.</p><p>Booking requests appear here when a request matches your approved service area.</p></div>}</>}
-function AdminPage({bookings,focus='Overview'}:any){const[summary,setSummary]=useState<any>({});const[filter,setFilter]=useState('All bookings');useEffect(()=>{api('/admin/summary').then(setSummary).catch(()=>{})},[bookings]);const t=summary.totals||{};return <><div className="page-title"><div><span className="eyebrow">OPERATIONS</span><h1>{focus==='Overview'?'Good morning, operations.':focus}</h1><p>Here’s your VaahanSathi network today.</p></div><span className="service-market">Operations</span></div><div className="admin-stats"><Stat label="TOTAL BOOKINGS" value={t.bookings||bookings.length} trend="Across all services" icon={<CalendarDays/>}/><Stat label="GROSS REVENUE" value={money(t.revenue||0)} trend="Driver time · INR" icon={<IndianRupee/>}/><Stat label="PLATFORM COMMISSION" value={money(t.commission||0)} trend="From saved booking records" icon={<Activity/>}/><Stat label="ACTIVE TRIPS" value={t.active||0} trend="Current booking records" icon={<Navigation/>}/></div><div className="admin-grid"><section className="panel admin-bookings"><div className="panel-title"><div><h3>Live bookings</h3><p>Monitor assignments and trip status</p></div><select value={filter} onChange={e=>setFilter(e.target.value)}><option>All bookings</option><option>Driver assigned</option><option>Trip started</option><option>Trip completed</option></select></div><table><thead><tr><th>BOOKING</th><th>CUSTOMER / DRIVER</th><th>SERVICE</th><th>FARE</th><th>STATUS</th></tr></thead><tbody>{bookings.filter((b:Booking)=>filter==='All bookings'||b.status===filter).map((b:Booking)=><tr><td><b>{b.id}</b><small>{b.date} · {b.time}</small></td><td>{b.pickup.split(',')[0]} → {b.destination.split(',')[0]}<small>Customer · {b.driver||'Searching for a driver'}</small></td><td>{b.trip_type}</td><td><b>{money(b.total)}</b><small>Driver {money(b.payout)}</small></td><td><span className="status">{b.status}</span></td></tr>)}</tbody></table>{bookings.length===0&&<div className="empty-admin">Bookings will appear here when customers confirm a driver.</div>}</section><section className="panel operations-panel"><div className="panel-title"><div><h3>Network health</h3><p>Supply & service overview</p></div><MoreHorizontal size={18}/></div><div className="network-row"><span className="network-icon"><Heart size={17}/></span><div><small>CUSTOMERS</small><b>{summary.customers||0}</b></div></div><div className="network-row"><span className="network-icon green-bg"><BadgeCheck size={17}/></span><div><small>VERIFIED DRIVERS</small><b>{summary.drivers||0}</b></div></div><div className="network-row"><span className="network-icon yellow-bg"><Star size={17}/></span><div><small>AVG. BOOKING VALUE</small><b>{t.bookings?money(Math.round(t.revenue/t.bookings)):'—'}</b></div><span className="neutral">All time</span></div></section></div><section className="panel audit-panel"><div className="panel-title"><div><h3>Recent activity</h3><p>Booking and operations timeline</p></div><button className="text-button" onClick={()=>setFilter('All bookings')}>View all <ArrowRight size={14}/></button></div>{(summary.history||[]).slice(0,3).map((h:any)=><div className="audit-row"><span className="audit-dot"/><span><b>{h.status}</b><small>Booking {h.booking_id} · VaahanSathi system</small></span><time>{new Date(h.at).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})}</time></div>)}{!summary.history?.length&&<p className="subhead">Operations activity will appear here when a booking is made.</p>}</section></>}
-function Stat({label,value,trend,icon}:any){return <div className="admin-stat"><span className="stat-icon">{icon}</span><small>{label}</small><b>{value}</b><span>{trend}</span></div>}
-function EarningsPage({bookings}:any){return <><div className="page-title"><div><span className="eyebrow">PARTNER EARNINGS</span><h1>Every trip adds up.</h1><p>Clear payouts, no surprises.</p></div></div><div className="earnings-hero panel"><span>AVAILABLE THIS WEEK</span><h2>{money(bookings.reduce((a:number,b:Booking)=>a+b.payout,0)||0)}</h2><p>Completed-trip earnings only. Payout schedules are set by operations.</p></div><div className="panel earning-list"><div className="panel-title"><div><h3>Recent earnings</h3><p>Trip payouts and incentives</p></div></div>{bookings.map((b:Booking)=><div className="earning-row"><span className="earning-arrow"><ArrowDownLeft size={16}/></span><span><b>{b.trip_type} · {b.pickup.split(',')[0]}</b><small>{b.date} · {b.id}</small></span><strong>+{money(b.payout)}</strong></div>)}</div></>}
-function WalletPage({receipts,bookings,onReceipt}:any){return <><div className="page-title"><div><span className="eyebrow">PAYMENTS</span><h1>Trip payments</h1><p>Demo checkout and receipts for your completed journeys.</p></div></div><div className="panel wallet-method"><div><span className="payment-icon">₹</span><span><b>Investor walkthrough checkout</b><small>Simulated only · no card is charged, no UPI request is sent, and no payment provider is connected.</small></span></div></div>{receipts.length?<section className="panel payment-history"><div className="panel-title"><div><h3>Payment receipts</h3><p>Saved on this device for this browser session/account.</p></div></div>{receipts.map((r:Receipt)=>{const b=bookings.find((x:Booking)=>x.id===r.bookingId);return <div className="receipt-row" key={r.bookingId}><span className="receipt-check"><Check size={16}/></span><span><b>{b?.trip_type||'Driver service'} · {r.bookingId}</b><small>{new Date(r.paidAt).toLocaleString('en-IN')} · {r.method} · DEMO</small></span><strong>{money(r.amount)}</strong>{b&&<button className="text-button" onClick={()=>onReceipt(b,r)}>Download receipt</button>}</div>})}</section>:<div className="empty-state panel"><span className="empty-icon big"><Wallet/></span><h3>No receipts yet</h3><p>A demo receipt will appear here after you complete checkout on a completed trip.</p></div>}</>}
-function HelpPage({flash}:any){return <div className="help-page"><div className="page-title"><div><span className="eyebrow">HERE WHEN YOU NEED US</span><h1>How can we help?</h1><p>Support channels for your service area.</p></div></div><div className="help-options"><button className="panel" onClick={()=>flash('Support contact details are not configured yet.')}><Headphones/><b>Contact support</b><small>Support contact details will appear here when configured.</small><span>Contact details unavailable <ArrowRight/></span></button><button className="panel" onClick={()=>flash('Support chat is not configured yet.')}><Activity/><b>Report a trip issue</b><small>Tell us what happened. We’ll make it right.</small><span>Start a conversation <ArrowRight/></span></button><button className="panel" onClick={()=>window.location.assign('tel:112')}><ShieldCheck/><b>Safety & emergency</b><small>Call India’s emergency services</small><span>Request assistance <ArrowRight/></span></button></div><div className="panel faq"><h3>Frequently asked</h3>{['Is VaahanSathi a cab service?','Who provides the car?','What if my driver cancels?','How do tolls and fuel work?'].map((x,i)=><details><summary>{x}<ChevronDown size={15}/></summary><p>{['No. VaahanSathi provides a verified professional driver for your own car. We do not provide or rent vehicles.','You do. The customer always uses their own car. You pay for the driver’s time and service.','A booking remains in search until a driver partner accepts. Cancel any unassigned request from Your trips.','Fuel, tolls, and parking are handled separately according to your trip policy and are not included in the driver service fare.'][i]}</p></details>)}</div></div>}
-function DriverProfile({user}:any){return <><div className="page-title"><div><span className="eyebrow">PARTNER PROFILE</span><h1>{user?.name||'Driver profile'}</h1><p>Account and service area details.</p></div></div><div className="profile-card panel"><span className="driver-photo large">{user?.name?.split(' ').map((x:string)=>x[0]).slice(0,2).join('')||'VS'}</span><div><h2>{user?.name||'Driver partner'}</h2><p>{user?.email}</p><span className="service-market">{user?.city||'Service area not set'}</span></div></div><div className="panel profile-section"><h3>Partner verification</h3><p>Driver onboarding and document verification must be completed by VaahanSathi operations before bookings are assigned.</p></div></>}
-function VoiceWidget({onClick}:any){return <button className="voice-float" onClick={onClick}><span><Headphones size={17}/></span><div><b>Trip assistant</b><small>Describe your booking</small></div><span className="voice-pulse"/></button>}
-function CheckoutModal({booking,onClose,onPay}:any){const[method,setMethod]=useState('UPI');if(!booking)return null;return <div className="overlay" onMouseDown={e=>e.target===e.currentTarget&&onClose()}><div className="modal checkout-modal"><button className="modal-close" onClick={onClose}><X/></button><span className="eyebrow">PAYMENT CHECKOUT</span><h2>Complete your trip payment</h2><p className="checkout-route">{booking.pickup} <ArrowRight size={13}/> {booking.destination}</p><div className="checkout-total"><span>Total due</span><b>{money(booking.total)}</b></div><div className="checkout-method-label">Choose a demo payment method</div><div className="checkout-methods">{[['UPI','UPI'],['Card','Card ·•••• 4242'],['Wallet','Wallet']].map(([id,label])=><button key={id} className={method===id?'selected':''} onClick={()=>setMethod(id)}>{id==='UPI'?<span className="method-mark">U</span>:id==='Card'?<CreditCard size={17}/>:<Wallet size={17}/>}<span>{label}</span>{method===id&&<Check size={15}/>}</button>)}</div><div className="demo-disclosure"><ShieldCheck size={16}/><span><b>Investor demo checkout</b><small>No money is moved. This records a demo receipt only; no payment provider is connected.</small></span></div><button className="primary-button wide" onClick={()=>onPay(booking,method)}>Simulate payment · {money(booking.total)} <ArrowRight size={15}/></button><button className="checkout-cancel" onClick={onClose}>Cancel</button></div></div>}
-function TrackingModal({booking,onClose}:any){const[progress,setProgress]=useState(0),[running,setRunning]=useState(true);useEffect(()=>{if(!running||progress>=100)return;const timer=window.setInterval(()=>setProgress(v=>Math.min(100,v+2)),700);return()=>window.clearInterval(timer)},[running,progress]);if(!booking)return null;const x=8+(progress*.84),y=82-Math.sin(progress/100*Math.PI)*53;const eta=Math.max(0,Math.ceil((100-progress)*.35));return <div className="overlay" onMouseDown={e=>e.target===e.currentTarget&&onClose()}><div className="modal tracking-modal"><button className="modal-close" onClick={onClose}><X/></button><span className="eyebrow">LIVE TRIP VIEW · SIMULATION</span><h2>{progress>=100?'Route preview complete':'Your driver is on the way'}</h2><p className="track-disclosure">Animated preview for the product walkthrough. This does not use a vehicle’s GPS or a maps provider.</p><div className="sim-map"><div className="sim-road road-a"/><div className="sim-road road-b"/><div className="sim-road road-c"/><div className="sim-route"><svg viewBox="0 0 100 100" preserveAspectRatio="none"><path className="route-base" d="M8 82 C20 68 20 49 38 53 S56 72 65 50 S80 32 92 18"/><path className="route-progress" pathLength="100" style={{strokeDasharray:`${progress} 100`}} d="M8 82 C20 68 20 49 38 53 S56 72 65 50 S80 32 92 18"/></svg><span className="sim-pin pickup-pin"><MapPin size={16}/></span><span className="sim-pin destination-pin"><MapPin size={16}/></span><span className="sim-car" style={{left:`${x}%`,top:`${y}%`}}><CarFront size={18}/></span></div><span className="map-label start-label">{booking.pickup.split(',')[0]}</span><span className="map-label end-label">{booking.destination.split(',')[0]}</span><span className="map-demo-tag"><span/> DEMO ROUTE</span></div><div className="track-trip-summary"><span><b>{booking.driver||'VaahanSathi driver'}</b><small>{booking.vehicle||'Sedan'} · {booking.id}</small></span><span className="eta-block"><b>{progress>=100?'Arrived':`${eta} min`}</b><small>{progress>=100?'preview finished':`${progress}% route preview`}</small></span></div><div className="track-progress"><span style={{width:`${progress}%`}}/></div><div className="track-endpoints"><span>{booking.pickup}</span><span>{booking.destination}</span></div>{progress>=100?<button className="primary-button wide" onClick={()=>{setProgress(0);setRunning(true)}}>Replay route simulation <Navigation size={15}/></button>:<button className="track-pause" onClick={()=>setRunning(v=>!v)}>{running?'Pause route simulation':'Resume route simulation'}</button>}</div></div>}
-function AuthModal({onClose,onLogin,onRegister,busy,storageReady}:any){const[mode,setMode]=useState('login'),[name,setName]=useState(''),[city,setCity]=useState('Bengaluru'),[email,setEmail]=useState(''),[password,setPassword]=useState('');const submit=(e:any)=>{e.preventDefault();mode==='login'?onLogin(email,password):onRegister(name,email,password,city)};return <div className="overlay" onMouseDown={e=>e.target===e.currentTarget&&onClose()}><div className="modal auth-modal"><button className="modal-close" onClick={onClose}><X/></button><div className="brand centered"><div className="brandmark"><CarFront/></div><span>vaahansathi<small>YOUR CAR. OUR DRIVER.</small></span></div><span className="eyebrow">{mode==='login'?'WELCOME BACK':'GET STARTED'}</span><h2>{mode==='login'?'Sign in to VaahanSathi.':'Create your account.'}</h2><p>{mode==='login'?'Manage your bookings and driver service.':'Book verified driver service for your own car.'}</p>{storageReady===false&&<div className="service-alert auth-alert"><ShieldCheck size={16}/><span><b>Account service is offline</b><small>Firebase storage is not connected yet. Sign-in and registration will be available once secure storage is configured.</small></span></div>}<form onSubmit={submit}>{mode==='register'&&<><label className="field"><span>Full name</span><input autoComplete="name" required minLength={2} value={name} onChange={e=>setName(e.target.value)}/></label><label className="field"><span>Home service area</span><select value={city} onChange={e=>setCity(e.target.value)}><option>Bengaluru</option><option>Delhi NCR</option><option>Gurugram</option></select></label></>}<label className="field"><span>Email address</span><input type="email" autoComplete="email" required value={email} onChange={e=>setEmail(e.target.value)}/></label><label className="field"><span>Password</span><input type="password" autoComplete={mode==='login'?'current-password':'new-password'} required minLength={mode==='register'?8:1} value={password} onChange={e=>setPassword(e.target.value)}/>{mode==='register'&&<small>Use at least 8 characters.</small>}</label><button className="primary-button wide" disabled={busy}>{busy?(mode==='login'?'Signing in…':'Creating account…'):mode==='login'?'Sign in securely':'Create account'} <ArrowRight size={15}/></button></form><div className="auth-bottom">{mode==='login'?<>New to VaahanSathi? <button className="text-button" onClick={()=>setMode('register')}>Create an account</button></>:<>Already have an account? <button className="text-button" onClick={()=>setMode('login')}>Sign in</button></>}</div></div></div>}
-function RatingModal({stars,setStars,onClose,onSubmit}:any){return <div className="overlay"><div className="modal rating-modal"><button className="modal-close" onClick={onClose}><X/></button><span className="eyebrow">TRIP COMPLETE</span><h2>How was your journey?</h2><p>Your feedback helps us recognise great drivers.</p><div className="rating-stars">{[1,2,3,4,5].map(n=><button onClick={()=>setStars(n)}><Star fill={n<=stars?'#edaa45':'none'} color={n<=stars?'#edaa45':'#b5c1cd'}/></button>)}</div><textarea placeholder="Add a note for your driver (optional)"/><button className="primary-button wide" onClick={onSubmit}>Share feedback <ArrowRight size={15}/></button></div></div>}
-function VoiceModal({onClose,text,setText,onConfirm}:any){return <div className="overlay"><div className="modal voice-modal"><button className="modal-close" onClick={onClose}><X/></button><span className="mic-orb"><Mic size={25}/></span><span className="eyebrow">VAahanSATHI TRIP ASSISTANT</span><h2>Tell us where you’re headed.</h2><p>Try “Book a driver tomorrow at 8 AM for 4 hours from Indiranagar to the airport.”</p><label className="field"><span>Your request</span><textarea value={text} onChange={e=>setText(e.target.value)} placeholder="I need a driver for…"/></label><small className="voice-note">You’ll review the trip and fare before we book anything.</small><button className="primary-button wide" disabled={!text.trim()} onClick={onConfirm}>Understand my request <ArrowRight size={15}/></button></div></div>}
-createRoot(document.getElementById('root')!).render(<App/>);
+import React, { useEffect, useState } from 'react';
+import { createRoot } from 'react-dom/client';
+import {
+  Activity,
+  CreditCard,
+  ArrowDownUp,
+  ArrowLeft,
+  ArrowRight,
+  ArrowUpRight,
+  BadgeCheck,
+  CalendarDays,
+  CarFront,
+  Check,
+  ChevronDown,
+  Clock3,
+  Database,
+  Headphones,
+  Heart,
+  IndianRupee,
+  MapPin,
+  Menu,
+  Mic,
+  MoreHorizontal,
+  Navigation,
+  Phone,
+  Plus,
+  ShieldCheck,
+  Star,
+  Wallet,
+  X,
+  Zap,
+  RotateCcw
+} from 'lucide-react';
+import './style.css';
 
+type User = {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  phone?: string;
+  city?: string;
+  vehicle?: string;
+  rating?: number;
+  trips?: number;
+  verificationStatus?: string;
+};
+
+type Booking = {
+  id: string;
+  userId?: string;
+  customer?: string;
+  driverId?: string;
+  trip_type: string;
+  pickup: string;
+  destination: string;
+  city?: string;
+  date: string;
+  time: string;
+  hours: number;
+  total: number;
+  payout: number;
+  commission?: number;
+  status: string;
+  start_otp: string;
+  end_otp: string;
+  payment_status: string;
+  driver?: string;
+  vehicle?: string;
+  createdAt?: string;
+};
+
+type Receipt = {
+  bookingId: string;
+  amount: number;
+  method: string;
+  paidAt: string;
+  customer: string;
+};
+
+const DEMO_DRIVERS = [
+  { id: 'usr-driver-1', name: 'Ramesh Kumar', city: 'Bengaluru', rating: 4.9, trips: 684, phone: '+91 98765 43211', status: 'Verified', vehicle: 'Sedan', earnings: 18450 },
+  { id: 'usr-driver-2', name: 'Kavita Singh', city: 'Delhi NCR', rating: 4.8, trips: 512, phone: '+91 98765 43213', status: 'Verified', vehicle: 'SUV', earnings: 16200 },
+  { id: 'demo-arjun', name: 'Arjun Malik', city: 'Gurugram', rating: 4.9, trips: 391, phone: '+91 98765 43214', status: 'Verified', vehicle: 'Sedan', earnings: 13750 }
+];
+
+const DEMO_REVIEWS = [
+  { id: 'r1', type: 'Driver review', name: 'Ananya Sharma', subject: 'Ramesh Kumar', city: 'Bengaluru', stars: 5, note: 'Ramesh arrived 10 mins early, handled Bangalore traffic with ease, and was extremely courteous.', date: 'Today · 10:32 AM' },
+  { id: 'r2', type: 'Customer review', name: 'Ramesh Kumar', subject: 'Ananya Sharma', city: 'Bengaluru', stars: 5, note: 'Car was clean, pickup location was precise, and pleasant trip throughout.', date: 'Today · 11:14 AM' },
+  { id: 'r3', type: 'Driver review', name: 'Meera Kapoor', subject: 'Kavita Singh', city: 'Delhi NCR', stars: 5, note: 'Excellent night driving skills on the expressway. Felt completely safe.', date: 'Yesterday · 8:40 PM' }
+];
+
+const money = (n: number) => '₹' + Number(n || 0).toLocaleString('en-IN');
+
+const api = async (path: string, options: RequestInit = {}) => {
+  const token = localStorage.getItem('vs_token');
+  const r = await fetch('/api' + path, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(options.headers || {})
+    }
+  });
+  const d = await r.json();
+  if (r.status === 401) {
+    localStorage.removeItem('vs_user');
+    localStorage.removeItem('vs_token');
+    window.dispatchEvent(new Event('vs-auth-expired'));
+  }
+  if (!r.ok) throw new Error(d.error || 'Something went wrong.');
+  return d;
+};
+
+const readReceipts = (): Receipt[] => {
+  try {
+    return JSON.parse(localStorage.getItem('vs_receipts') || '[]');
+  } catch {
+    return [];
+  }
+};
+
+function downloadReceipt(b: Booking, r: Receipt) {
+  const body = [
+    '====================================================',
+    '             VAAHANSATHI · PAYMENT RECEIPT          ',
+    '====================================================',
+    '',
+    `Receipt ID  : VS-RCP-${r.bookingId}`,
+    `Booking ID  : ${b.id}`,
+    `Customer    : ${r.customer}`,
+    `Date & Time : ${new Date(r.paidAt).toLocaleString('en-IN')}`,
+    `Payment Mode: ${r.method}`,
+    `Trip Type   : ${b.trip_type}`,
+    `Route       : ${b.pickup} → ${b.destination}`,
+    `City        : ${b.city || 'Bengaluru'}`,
+    `Vehicle     : ${b.vehicle || 'Sedan'} (Customer Owned)`,
+    `Driver      : ${b.driver || 'Verified Partner'}`,
+    '----------------------------------------------------',
+    `TOTAL PAID  : ${money(r.amount)}`,
+    '----------------------------------------------------',
+    '',
+    'Service Note: VaahanSathi provides professional verified drivers.',
+    'Customers provide their own vehicles.',
+    'Thank you for traveling with VaahanSathi!'
+  ];
+  const blob = new Blob([body.join('\n')], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${b.id}-receipt.txt`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function downloadInvoice(b: Booking) {
+  const lines = [
+    '====================================================',
+    '            VAAHANSATHI · TAX INVOICE               ',
+    '====================================================',
+    '',
+    `Invoice No   : INV-${b.id}`,
+    `Booking Ref  : ${b.id}`,
+    `Service Date : ${b.date} at ${b.time}`,
+    `Customer     : ${b.customer || 'Customer'}`,
+    `Driver       : ${b.driver || 'Assigned Driver'}`,
+    `Vehicle Type : ${b.vehicle || 'Sedan'} (Customer Car)`,
+    `Trip Type    : ${b.trip_type} (${b.hours} hours)`,
+    '',
+    `Pickup       : ${b.pickup}`,
+    `Destination  : ${b.destination}`,
+    '----------------------------------------------------',
+    `Driver Service Fee : ${money(Math.round(b.total * 0.8))}`,
+    `Platform & Mgmt Fee: ${money(Math.round(b.total * 0.15))}`,
+    `GST (5%)           : ${money(Math.round(b.total * 0.05))}`,
+    '----------------------------------------------------',
+    `TOTAL AMOUNT       : ${money(b.total)}`,
+    `PAYMENT STATUS     : ${b.payment_status}`,
+    '----------------------------------------------------',
+    '',
+    'VaahanSathi Mobility Technologies Pvt. Ltd.',
+    'Transparent Driver Services Across India.'
+  ];
+  const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${b.id}-tax-invoice.txt`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function App() {
+  let savedUser: User | null = null;
+  try {
+    savedUser = JSON.parse(localStorage.getItem('vs_user') || 'null');
+  } catch {
+    localStorage.removeItem('vs_user');
+    localStorage.removeItem('vs_token');
+  }
+
+  const [user, setUser] = useState<User | null>(savedUser);
+  const [page, setPage] = useState<string>(savedUser ? (savedUser.role === 'admin' ? 'Overview' : savedUser.role === 'driver' ? 'Requests' : 'Home') : 'Home');
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [toast, setToast] = useState('');
+  const [modal, setModal] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [tripType, setTripType] = useState('Hourly');
+  const [city, setCity] = useState(localStorage.getItem('vs_city') || 'Bengaluru');
+  const [pickup, setPickup] = useState('Indiranagar, Bengaluru');
+  const [destination, setDestination] = useState('Kempegowda International Airport, Bengaluru');
+  const [date, setDate] = useState(new Date(Date.now() + 86400000).toISOString().slice(0, 10));
+  const [time, setTime] = useState('08:00');
+  const [hours, setHours] = useState(4);
+  const [vehicle, setVehicle] = useState('Sedan');
+  const [fare, setFare] = useState<any>(null);
+  const [filter, setFilter] = useState('Upcoming');
+  const [rating, setRating] = useState(5);
+  const [voice, setVoice] = useState(false);
+  const [voiceText, setVoiceText] = useState('');
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [receipts, setReceipts] = useState<Receipt[]>(readReceipts);
+  const [storageReady, setStorageReady] = useState<boolean | null>(null);
+  const [fareError, setFareError] = useState('');
+
+  const flash = (s: string) => {
+    setToast(s);
+    setTimeout(() => setToast(''), 3500);
+  };
+
+  const checkHealth = async () => {
+    try {
+      const r = await fetch('/api/health');
+      const d = await r.json();
+      setStorageReady(!!(d.database || d.integrations?.database));
+    } catch {
+      setStorageReady(false);
+    }
+  };
+
+  useEffect(() => {
+    checkHealth();
+    const interval = setInterval(checkHealth, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    const expired = () => {
+      setUser(null);
+      setBookings([]);
+      setPage('Home');
+      setModal('auth');
+    };
+    window.addEventListener('vs-auth-expired', expired);
+    return () => window.removeEventListener('vs-auth-expired', expired);
+  }, []);
+
+  const chooseCity = (next: string) => {
+    setCity(next);
+    localStorage.setItem('vs_city', next);
+    const defaults: Record<string, [string, string]> = {
+      Bengaluru: ['Indiranagar, Bengaluru', 'Kempegowda International Airport, Bengaluru'],
+      'Delhi NCR': ['Connaught Place, New Delhi', 'Indira Gandhi International Airport, New Delhi'],
+      Gurugram: ['Cyber City, Gurugram', 'Huda City Centre, Gurugram']
+    };
+    if (defaults[next]) {
+      setPickup(defaults[next][0]);
+      setDestination(defaults[next][1]);
+    }
+    setFare(null);
+    flash(`Service city switched to ${next}`);
+  };
+
+  const refresh = async () => {
+    if (!user) return;
+    try {
+      const d = await api('/bookings');
+      setBookings(d.bookings || []);
+    } catch (e: any) {
+      console.warn('Booking refresh:', e.message);
+    }
+  };
+
+  useEffect(() => {
+    if (user) refresh();
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    const timer = window.setInterval(() => refresh(), 12000);
+    return () => window.clearInterval(timer);
+  }, [user]);
+
+  // Fare estimation
+  useEffect(() => {
+    if (pickup.trim() && destination.trim()) {
+      const timer = window.setTimeout(() => {
+        fetch('/api/fare/estimate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tripType, hours, date, time, vehicle, pickup, destination, city })
+        })
+          .then((r) => r.json())
+          .then((d) => {
+            setFare(d);
+            setFareError('');
+          })
+          .catch(() => {
+            setFareError('Using local estimation model');
+          });
+      }, 300);
+      return () => window.clearTimeout(timer);
+    }
+  }, [tripType, hours, date, time, vehicle, pickup, destination, city]);
+
+  const login = async (email: string, password: string) => {
+    setBusy(true);
+    try {
+      const d = await api('/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ email, password })
+      });
+      localStorage.setItem('vs_token', d.token);
+      localStorage.setItem('vs_user', JSON.stringify(d.user));
+      setUser(d.user);
+      if (d.user.role === 'admin') setPage('Overview');
+      else if (d.user.role === 'driver') setPage('Requests');
+      else setPage('Home');
+      setModal('');
+      flash(`Welcome back, ${d.user.name.split(' ')[0]}!`);
+    } catch (e: any) {
+      flash(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const register = async (name: string, email: string, password: string, accountCity: string, role = 'customer') => {
+    setBusy(true);
+    try {
+      const d = await api('/auth/register', {
+        method: 'POST',
+        body: JSON.stringify({ name, email, password, city: accountCity, role })
+      });
+      localStorage.setItem('vs_token', d.token);
+      localStorage.setItem('vs_user', JSON.stringify(d.user));
+      setUser(d.user);
+      chooseCity(accountCity);
+      setPage(d.user.role === 'driver' ? 'Requests' : 'Home');
+      setModal('');
+      flash(`Account created! Welcome to VaahanSathi, ${d.user.name.split(' ')[0]}.`);
+    } catch (e: any) {
+      flash(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const book = async () => {
+    if (!user) {
+      setModal('auth');
+      return;
+    }
+    setBusy(true);
+    try {
+      const d = await api('/bookings', {
+        method: 'POST',
+        body: JSON.stringify({ tripType, pickup, destination, date, time, hours, vehicle, city })
+      });
+      await refresh();
+      setPage('Your trips');
+      setModal('');
+      flash(`Booking confirmed! Reference: ${d.booking.id}`);
+    } catch (e: any) {
+      flash(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const updateStatus = async (b: Booking, status: string, otp?: string) => {
+    try {
+      await api(`/bookings/${b.id}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status, otp })
+      });
+      await refresh();
+      flash(
+        status === 'Trip started'
+          ? 'Trip started! Have a pleasant journey.'
+          : status === 'Trip completed'
+          ? 'Trip completed! Invoice & receipt ready.'
+          : `Booking updated: ${status}`
+      );
+    } catch (e: any) {
+      flash(e.message);
+    }
+  };
+
+  const completePayment = (b: Booking, method: string) => {
+    const receipt: Receipt = {
+      bookingId: b.id,
+      amount: b.total,
+      method,
+      paidAt: new Date().toISOString(),
+      customer: user?.name || 'Customer'
+    };
+    const next = [receipt, ...readReceipts().filter((x) => x.bookingId !== b.id)];
+    localStorage.setItem('vs_receipts', JSON.stringify(next));
+    setReceipts(next);
+    setModal('');
+    flash('Payment received! Receipt generated.');
+  };
+
+  const logout = () => {
+    localStorage.removeItem('vs_user');
+    localStorage.removeItem('vs_token');
+    setUser(null);
+    setBookings([]);
+    setPage('Home');
+    flash('You have safely signed out.');
+  };
+
+  const nav =
+    user?.role === 'admin'
+      ? ['Overview', 'Live trips', 'Drivers', 'Pricing', 'Activity']
+      : user?.role === 'driver'
+      ? ['Requests', 'My trips', 'Earnings', 'Profile']
+      : ['Home', 'Book a driver', 'Your trips', 'Wallet', 'Help'];
+
+  return (
+    <div className="app">
+      {/* Mobile Drawer Overlay */}
+      {mobileOpen && <div className="drawer-backdrop" onClick={() => setMobileOpen(false)} />}
+
+      <aside className={`sidebar ${mobileOpen ? 'open' : ''}`}>
+        <div className="brand">
+          <div className="brandmark">
+            <CarFront size={22} />
+          </div>
+          <div className="brand-text">
+            <span>VaahanSathi</span>
+            <small>YOUR CAR · OUR DRIVER</small>
+          </div>
+          <button className="close-menu" onClick={() => setMobileOpen(false)} aria-label="Close menu">
+            <X size={20} />
+          </button>
+        </div>
+
+        {/* User Card */}
+        <div className="profile-mini" onClick={() => (user ? null : setModal('auth'))}>
+          <div className="avatar">{user?.name?.split(' ').map((x) => x[0]).slice(0, 2).join('') || 'VS'}</div>
+          <div className="profile-details">
+            <b>{user?.name || 'Guest User'}</b>
+            <small>
+              {user?.role === 'driver' ? 'Driver Partner' : user?.role === 'admin' ? 'Operations Admin' : user ? 'Car Owner' : 'Tap to sign in'}
+            </small>
+          </div>
+          {user && <span className="role-tag">{user.role}</span>}
+        </div>
+
+        <div className="side-label">NAVIGATION</div>
+        <nav>
+          {nav.map((x) => (
+            <button
+              key={x}
+              className={`navitem ${page === x ? 'selected' : ''}`}
+              onClick={() => {
+                setPage(x);
+                setMobileOpen(false);
+              }}
+            >
+              <span className="nav-icon">
+                {x === 'Home' && <CarFront size={18} />}
+                {x === 'Book a driver' && <Plus size={18} />}
+                {x === 'Your trips' && <CalendarDays size={18} />}
+                {x === 'Requests' && <Navigation size={18} />}
+                {x === 'My trips' && <CalendarDays size={18} />}
+                {x === 'Earnings' && <Wallet size={18} />}
+                {x === 'Overview' && <Activity size={18} />}
+                {x === 'Live trips' && <Navigation size={18} />}
+                {x === 'Drivers' && <BadgeCheck size={18} />}
+                {x === 'Pricing' && <IndianRupee size={18} />}
+                {x === 'Activity' && <Clock3 size={18} />}
+                {x === 'Wallet' && <CreditCard size={18} />}
+                {x === 'Help' && <Headphones size={18} />}
+                {x === 'Profile' && <ShieldCheck size={18} />}
+              </span>
+              <span>{x}</span>
+              {x === 'Your trips' && bookings.length > 0 && <em className="badge">{bookings.length}</em>}
+              {x === 'Requests' && bookings.filter((b) => b.status === 'Searching').length > 0 && (
+                <em className="badge active">{bookings.filter((b) => b.status === 'Searching').length}</em>
+              )}
+            </button>
+          ))}
+        </nav>
+
+        <div className="sidebar-bottom">
+          <div className="db-indicator">
+            <span className={`db-pulse ${storageReady ? 'online' : 'connecting'}`} />
+            <div className="db-text">
+              <b>{storageReady ? 'Neon PostgreSQL' : 'Database syncing...'}</b>
+              <small>{storageReady ? 'Live Cloud Datastore' : 'Connecting'}</small>
+            </div>
+          </div>
+
+          <button className="auth-btn" onClick={() => (user ? logout() : setModal('auth'))}>
+            {user ? 'Sign Out' : 'Sign In / Register'} <ArrowRight size={16} />
+          </button>
+        </div>
+      </aside>
+
+      {/* Main Content Area */}
+      <main className="main">
+        <header className="topbar">
+          <div className="top-left">
+            <button className="hamburger" onClick={() => setMobileOpen(true)} aria-label="Open menu">
+              <Menu size={22} />
+            </button>
+            <div className="crumb">
+              <span>VaahanSathi</span>
+              <span className="crumb-sep">/</span>
+              <b>{page}</b>
+            </div>
+          </div>
+
+          <div className="top-actions">
+            {/* Database indicator pill */}
+            <div className={`db-pill ${storageReady ? 'connected' : 'connecting'}`} title="Neon DB status">
+              <Database size={14} />
+              <span>{storageReady ? 'Neon PostgreSQL' : 'Connecting...'}</span>
+            </div>
+
+            {/* City Selector */}
+            <label className="city-pill">
+              <MapPin size={15} className="city-pin" />
+              <select value={city} onChange={(e) => chooseCity(e.target.value)}>
+                <option value="Bengaluru">Bengaluru</option>
+                <option value="Delhi NCR">Delhi NCR</option>
+                <option value="Gurugram">Gurugram</option>
+              </select>
+              <ChevronDown size={14} />
+            </label>
+
+            <button className="icon-btn" title="Emergency Help" onClick={() => setPage('Help')}>
+              <Headphones size={18} />
+            </button>
+
+            {user ? (
+              <div className="user-avatar-btn" onClick={() => flash(`Signed in as ${user.name} (${user.role})`)}>
+                {user.name[0]}
+              </div>
+            ) : (
+              <button className="signin-header-btn" onClick={() => setModal('auth')}>
+                Sign In
+              </button>
+            )}
+          </div>
+        </header>
+
+        <div className="content">
+          {page === 'Home' && (
+            <>
+              <div className="welcome-banner">
+                <div>
+                  <span className="eyebrow">
+                    {new Date().toLocaleDateString('en-IN', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }).toUpperCase()}
+                  </span>
+                  <h1>Good day{user ? `, ${user.name.split(' ')[0]}` : ''}!</h1>
+                  <p className="subhead">Professional, verified drivers for your own car on-demand.</p>
+                </div>
+                <div className="quick-action-btns">
+                  <button className="primary-btn" onClick={() => setPage('Book a driver')}>
+                    <Plus size={17} /> Book a Driver
+                  </button>
+                </div>
+              </div>
+
+              {/* Hero Showcase */}
+              <section className="hero-card">
+                <div className="hero-content">
+                  <span className="hero-badge">YOUR CAR · OUR VERIFIED DRIVER</span>
+                  <h2>Professional Drivers For Your Own Vehicle.</h2>
+                  <p>
+                    Pay only for the driver's skilled time. Never pay for rental cars or expensive taxis. Hourly, airport, night trips,
+                    and outstation journeys.
+                  </p>
+                  <div className="hero-cta-row">
+                    <button className="hero-btn" onClick={() => setPage('Book a driver')}>
+                      Book Driver Now <ArrowRight size={17} />
+                    </button>
+                    {!user && (
+                      <button className="hero-btn-outline" onClick={() => setModal('auth')}>
+                        Sign in / Quick Demo
+                      </button>
+                    )}
+                  </div>
+                  <div className="hero-highlights">
+                    <span><ShieldCheck size={16} /> Thoroughly Police & Skill Verified</span>
+                    <span><MapPin size={16} /> {city} Service Area</span>
+                    <span><IndianRupee size={16} /> Transparent Fixed Fares</span>
+                  </div>
+                </div>
+                <div className="hero-graphic">
+                  <div className="car-circle">
+                    <CarFront size={80} strokeWidth={1.5} />
+                  </div>
+                </div>
+              </section>
+
+              {/* Service Grid */}
+              <div className="section-head">
+                <div>
+                  <h3>Choose a Driver Service</h3>
+                  <p>Transparent pricing tailored for every journey need.</p>
+                </div>
+              </div>
+
+              <div className="services-grid">
+                {[
+                  { id: 'Hourly', title: 'Hourly Driver', desc: 'From ₹599 · 4 Hours', icon: '⏱' },
+                  { id: 'Airport', title: 'Airport Transfer', desc: 'Stress-free terminal drops', icon: '✈' },
+                  { id: 'Night driver', title: 'Night Driver', desc: 'Party or late commute safely', icon: '🌙' },
+                  { id: 'Full day', title: 'Full Day Chauffeur', desc: '8-12 hrs seamless city travel', icon: '📅' },
+                  { id: 'Outstation', title: 'Outstation Trip', desc: 'Highway experienced drivers', icon: '🛣' },
+                  { id: 'Custom', title: 'Custom Duration', desc: 'Flexible schedule & stops', icon: '⚡' }
+                ].map((s) => (
+                  <button
+                    key={s.id}
+                    className={`service-card ${tripType === s.id ? 'active' : ''}`}
+                    onClick={() => {
+                      setTripType(s.id);
+                      setPage('Book a driver');
+                    }}
+                  >
+                    <span className="service-emoji">{s.icon}</span>
+                    <b className="service-title">{s.title}</b>
+                    <small className="service-desc">{s.desc}</small>
+                    <ArrowUpRight size={16} className="service-arrow" />
+                  </button>
+                ))}
+              </div>
+
+              {/* Bottom Quick Panels */}
+              <div className="home-panels-grid">
+                <section className="panel">
+                  <div className="panel-header">
+                    <div>
+                      <h3>Active / Upcoming Trips</h3>
+                      <p>Track your driver or view trip details</p>
+                    </div>
+                    {bookings.length > 0 && (
+                      <button className="link-btn" onClick={() => setPage('Your trips')}>
+                        View all <ArrowRight size={14} />
+                      </button>
+                    )}
+                  </div>
+
+                  {bookings.filter((b) => b.status !== 'Trip completed' && b.status !== 'Cancelled').length > 0 ? (
+                    <BookingRow
+                      booking={bookings.filter((b) => b.status !== 'Trip completed' && b.status !== 'Cancelled')[0]}
+                      onClick={() => setPage('Your trips')}
+                    />
+                  ) : (
+                    <div className="empty-panel">
+                      <CalendarDays size={32} className="empty-icon" />
+                      <h4>No rides scheduled right now</h4>
+                      <p>Book a professional driver whenever you need to commute in your own car.</p>
+                      <button className="primary-btn-sm" onClick={() => setPage('Book a driver')}>
+                        Schedule a Ride
+                      </button>
+                    </div>
+                  )}
+                </section>
+
+                <section className="panel promise-panel">
+                  <div className="promise-icon">
+                    <ShieldCheck size={28} />
+                  </div>
+                  <div>
+                    <span className="eyebrow green">VAAHANSATHI COMMITMENT</span>
+                    <h3>Arrive Safely, Relax Comfortably</h3>
+                    <p>
+                      Every driver is background-checked, vetted for manual and automatic transmissions, and arrives in uniform at your
+                      doorstep.
+                    </p>
+                    <div className="service-tags">
+                      <span>Bengaluru</span>
+                      <span>Delhi NCR</span>
+                      <span>Gurugram</span>
+                    </div>
+                  </div>
+                </section>
+              </div>
+
+              <VoiceWidget onClick={() => setVoice(true)} />
+            </>
+          )}
+
+          {page === 'Book a driver' && (
+            <BookingPage
+              tripType={tripType}
+              setTripType={setTripType}
+              pickup={pickup}
+              setPickup={setPickup}
+              destination={destination}
+              setDestination={setDestination}
+              date={date}
+              setDate={setDate}
+              time={time}
+              setTime={setTime}
+              hours={hours}
+              setHours={setHours}
+              vehicle={vehicle}
+              setVehicle={setVehicle}
+              fare={fare}
+              city={city}
+              onBack={() => setPage('Home')}
+              onBook={book}
+              busy={busy}
+              user={user}
+              onAuth={() => setModal('auth')}
+              storageReady={storageReady}
+              fareError={fareError}
+            />
+          )}
+
+          {page === 'Your trips' && (
+            <TripsPage
+              bookings={bookings}
+              filter={filter}
+              setFilter={setFilter}
+              update={updateStatus}
+              onRate={(b: Booking) => setModal('rate:' + b.id)}
+              onPay={(b: Booking) => setModal('payment:' + b.id)}
+              onTrack={(b: Booking) => setModal('track:' + b.id)}
+              onBook={() => setPage('Book a driver')}
+              receipts={receipts}
+            />
+          )}
+
+          {page === 'Requests' && <DriverPage bookings={bookings} update={updateStatus} user={user} />}
+          {page === 'My trips' && <TripsPage bookings={bookings} filter={filter} setFilter={setFilter} update={updateStatus} onRate={(b: Booking) => setModal('rate:' + b.id)} onPay={(b: Booking) => setModal('payment:' + b.id)} onTrack={(b: Booking) => setModal('track:' + b.id)} onBook={() => setPage('Book a driver')} receipts={receipts} />}
+          {page === 'Earnings' && <EarningsPage bookings={bookings} />}
+          {page === 'Wallet' && <WalletPage receipts={receipts} bookings={bookings} onReceipt={downloadReceipt} />}
+          {page === 'Help' && <HelpPage flash={flash} />}
+          {page === 'Profile' && <DriverProfile user={user} />}
+          {page === 'Overview' && <LiveAdminPage bookings={bookings} focus="Overview" />}
+          {page === 'Live trips' && <LiveAdminPage bookings={bookings} focus="Trips" />}
+          {page === 'Drivers' && <LiveAdminPage bookings={bookings} focus="Drivers" />}
+          {page === 'Pricing' && <LiveAdminPage bookings={bookings} focus="Pricing" flash={flash} />}
+          {page === 'Activity' && <LiveAdminPage bookings={bookings} focus="Activity" />}
+        </div>
+      </main>
+
+      {/* Modals */}
+      {modal === 'auth' && (
+        <AuthModal
+          onClose={() => setModal('')}
+          onLogin={login}
+          onRegister={register}
+          busy={busy}
+          storageReady={storageReady}
+        />
+      )}
+
+      {modal.startsWith('payment:') && (
+        <CheckoutModal
+          booking={bookings.find((b) => b.id === modal.slice(8))}
+          onClose={() => setModal('')}
+          onPay={completePayment}
+        />
+      )}
+
+      {modal.startsWith('track:') && (
+        <TrackingModal
+          booking={bookings.find((b) => b.id === modal.slice(6))}
+          onClose={() => setModal('')}
+        />
+      )}
+
+      {modal.startsWith('rate:') && (
+        <RatingModal
+          stars={rating}
+          setStars={setRating}
+          onClose={() => setModal('')}
+          onSubmit={async () => {
+            const id = modal.split(':')[1];
+            try {
+              await api(`/bookings/${id}/rating`, {
+                method: 'POST',
+                body: JSON.stringify({ stars: rating })
+              });
+              await refresh();
+              setModal('');
+              flash('Thank you for rating your driver!');
+            } catch (e: any) {
+              flash(e.message);
+            }
+          }}
+        />
+      )}
+
+      {voice && (
+        <VoiceModal
+          onClose={() => setVoice(false)}
+          text={voiceText}
+          setText={setVoiceText}
+          onConfirm={async () => {
+            try {
+              const intent = await api('/voice/intent', {
+                method: 'POST',
+                body: JSON.stringify({ text: voiceText })
+              });
+              setTripType(intent.tripType);
+              setHours(intent.hours);
+              setVoice(false);
+              setPage('Book a driver');
+              flash(`Trip details understood: ${intent.tripType} for ${intent.hours} hours.`);
+            } catch (e: any) {
+              flash(e.message);
+            }
+          }}
+        />
+      )}
+
+      {/* Floating Toast Notification */}
+      {toast && (
+        <div className="toast-notification">
+          <Check size={18} className="toast-icon" />
+          <span>{toast}</span>
+          <button onClick={() => setToast('')} className="toast-close">
+            <X size={16} />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ----------------- Booking Page Component -----------------
+function BookingPage(p: any) {
+  return (
+    <div className="booking-view">
+      <button className="back-link-btn" onClick={p.onBack}>
+        <ArrowLeft size={16} /> Back to Dashboard
+      </button>
+
+      <div className="booking-head">
+        <div>
+          <span className="eyebrow">YOUR CAR · PROFESSIONAL CHAUFFEUR</span>
+          <h1>Book a Verified Driver</h1>
+          <p>Tell us where you are headed. We will match you with a trusted partner.</p>
+        </div>
+        <div className="service-market-pill">
+          <MapPin size={15} /> {p.city} Area
+        </div>
+      </div>
+
+      <div className="booking-layout">
+        <div className="booking-form-card panel">
+          <h3>1. Select Service Type</h3>
+          <div className="trip-type-chips">
+            {['Hourly', 'Airport', 'Night driver', 'Full day', 'Outstation', 'Custom'].map((t) => (
+              <button
+                key={t}
+                className={`type-chip ${p.tripType === t ? 'active' : ''}`}
+                onClick={() => p.setTripType(t)}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+
+          <div className="notice-car">
+            <CarFront size={20} />
+            <div>
+              <b>Your Car, Our Driver</b>
+              <p>You provide the vehicle. Our verified driver takes the wheel so you can relax.</p>
+            </div>
+          </div>
+
+          <h3>2. Route & Schedule</h3>
+          <div className="form-fields-grid">
+            <label className="field-group full">
+              <span><MapPin size={15} /> Pickup Location</span>
+              <input
+                value={p.pickup}
+                onChange={(e) => p.setPickup(e.target.value)}
+                placeholder="Enter pickup address or landmark"
+              />
+            </label>
+
+            <button
+              className="swap-btn"
+              title="Swap locations"
+              onClick={() => {
+                const temp = p.pickup;
+                p.setPickup(p.destination);
+                p.setDestination(temp);
+              }}
+            >
+              <ArrowDownUp size={16} />
+            </button>
+
+            <label className="field-group full">
+              <span><Navigation size={15} /> Destination</span>
+              <input
+                value={p.destination}
+                onChange={(e) => p.setDestination(e.target.value)}
+                placeholder="Enter destination address or landmark"
+              />
+            </label>
+
+            <label className="field-group">
+              <span><CalendarDays size={15} /> Date</span>
+              <input
+                type="date"
+                value={p.date}
+                min={new Date().toISOString().slice(0, 10)}
+                onChange={(e) => p.setDate(e.target.value)}
+              />
+            </label>
+
+            <label className="field-group">
+              <span><Clock3 size={15} /> Pickup Time</span>
+              <input type="time" value={p.time} onChange={(e) => p.setTime(e.target.value)} />
+            </label>
+
+            {(p.tripType === 'Hourly' || p.tripType === 'Custom') && (
+              <label className="field-group">
+                <span><Clock3 size={15} /> Duration</span>
+                <select value={p.hours} onChange={(e) => p.setHours(Number(e.target.value))}>
+                  {[4, 5, 6, 8, 10, 12].map((n) => (
+                    <option key={n} value={n}>{n} Hours</option>
+                  ))}
+                </select>
+              </label>
+            )}
+
+            <label className="field-group">
+              <span><CarFront size={15} /> Your Car Type</span>
+              <select value={p.vehicle} onChange={(e) => p.setVehicle(e.target.value)}>
+                {['Hatchback', 'Sedan', 'SUV', 'Luxury'].map((x) => (
+                  <option key={x} value={x}>{x}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <div className="booking-policy-box">
+            <ShieldCheck size={18} />
+            <div>
+              <b>Zero Hidden Charges</b>
+              <p>Transparent driver hourly and distance charges. Fuel, tolls, and parking are handled by the car owner.</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Fare Summary Card */}
+        <aside className="fare-card panel">
+          <span className="eyebrow">TRANSPARENT FARE</span>
+          <h2>{p.fare ? money(p.fare.total) : 'Calculating...'}</h2>
+          <p className="fare-sub">For professional driver time · {p.vehicle}</p>
+
+          <div className="fare-divider" />
+
+          {p.fare?.distanceKm && (
+            <FareLine name={`Estimated Distance (${p.fare.distanceKm} km)`} value={p.fare.distanceCharge || 0} />
+          )}
+          <FareLine name="Driver Service" value={p.fare?.base || 0} />
+          {p.fare?.night > 0 && <FareLine name="Night Driving Charge" value={p.fare.night} />}
+          {p.fare?.vehicleExtra > 0 && <FareLine name="Vehicle Class Add-on" value={p.fare.vehicleExtra} />}
+          <FareLine name="Platform & Safety Fee" value={p.fare?.serviceFee || 0} />
+          <FareLine name="GST (5%)" value={p.fare?.gst || 0} />
+
+          <div className="fare-divider" />
+
+          <div className="fare-total-row">
+            <span>Total Payable</span>
+            <b>{p.fare ? money(p.fare.total) : '—'}</b>
+          </div>
+
+          <div className="driver-share-box">
+            <span className="share-icon"><IndianRupee size={16} /></span>
+            <div>
+              <b>{money(p.fare?.payout || 0)} goes directly to driver</b>
+              <small>80% driver payout share</small>
+            </div>
+          </div>
+
+          <button
+            className="primary-btn-wide"
+            onClick={p.user ? p.onBook : p.onAuth}
+            disabled={p.busy || !p.fare}
+          >
+            {p.busy ? 'Dispatching driver...' : p.user ? 'Confirm & Book Driver' : 'Sign in to Book Driver'} <ArrowRight size={17} />
+          </button>
+
+          <small className="payment-terms-note">
+            <ShieldCheck size={14} /> Pay securely after completion. No advance deposit required.
+          </small>
+        </aside>
+      </div>
+    </div>
+  );
+}
+
+function FareLine({ name, value }: { name: string; value: number }) {
+  return (
+    <div className="fare-line-row">
+      <span>{name}</span>
+      <b>{money(value || 0)}</b>
+    </div>
+  );
+}
+
+function BookingRow({ booking: b, onClick }: any) {
+  if (!b) return null;
+  return (
+    <div className="booking-item-row" onClick={onClick}>
+      <div className="date-tile">
+        <b>{new Date(b.date + 'T00:00').toLocaleDateString('en-IN', { day: '2-digit' })}</b>
+        <small>{new Date(b.date + 'T00:00').toLocaleDateString('en-IN', { month: 'short' }).toUpperCase()}</small>
+      </div>
+      <div className="route-info">
+        <b>
+          {b.trip_type} · {b.pickup.split(',')[0]} <ArrowRight size={13} /> {b.destination.split(',')[0]}
+        </b>
+        <small>
+          {b.time} · {b.hours} hrs · {b.vehicle || 'Sedan'}
+        </small>
+      </div>
+      <span className={`status-pill ${b.status === 'Trip completed' ? 'done' : b.status === 'Trip started' ? 'active' : ''}`}>
+        {b.status}
+      </span>
+      <b className="fare-amount">{money(b.total)}</b>
+      <ArrowRight size={16} className="arrow-icon" />
+    </div>
+  );
+}
+
+// ----------------- Trips Page -----------------
+function TripsPage({ bookings, filter, setFilter, update, onRate, onPay, onTrack, onBook, receipts }: any) {
+  const filters = ['Upcoming', 'Completed', 'Cancelled'];
+  const list = bookings.filter((b: Booking) =>
+    filter === 'Upcoming'
+      ? ['Searching', 'Driver assigned', 'Driver arriving', 'Trip started'].includes(b.status)
+      : filter === 'Completed'
+      ? ['Trip completed', 'Rated'].includes(b.status)
+      : b.status === 'Cancelled'
+  );
+
+  return (
+    <div className="trips-view">
+      <div className="section-head">
+        <div>
+          <span className="eyebrow">YOUR TRAVEL LOG</span>
+          <h1>My Rides & Bookings</h1>
+          <p>Real-time trip management and ride history.</p>
+        </div>
+        <button className="primary-btn" onClick={onBook}>
+          <Plus size={16} /> Book Driver
+        </button>
+      </div>
+
+      <div className="tabs-row">
+        {filters.map((f) => (
+          <button
+            key={f}
+            className={`tab-btn ${f === filter ? 'active' : ''}`}
+            onClick={() => setFilter(f)}
+          >
+            {f}
+            <span className="tab-count">
+              {
+                bookings.filter((b: Booking) =>
+                  f === 'Upcoming'
+                    ? ['Searching', 'Driver assigned', 'Driver arriving', 'Trip started'].includes(b.status)
+                    : f === 'Completed'
+                    ? ['Trip completed', 'Rated'].includes(b.status)
+                    : b.status === 'Cancelled'
+                ).length
+              }
+            </span>
+          </button>
+        ))}
+      </div>
+
+      {list.length === 0 ? (
+        <div className="panel empty-state">
+          <CalendarDays size={42} className="empty-icon" />
+          <h3>{filter === 'Upcoming' ? 'No rides in progress' : 'No completed rides yet'}</h3>
+          <p>Book a driver for your daily commute, airport runs, or weekend outstations.</p>
+          <button className="primary-btn" onClick={onBook}>
+            Book a Driver Now <ArrowRight size={16} />
+          </button>
+        </div>
+      ) : (
+        <div className="trips-cards-list">
+          {list.map((b: Booking) => (
+            <div className="trip-card panel" key={b.id}>
+              <div className="trip-card-header">
+                <div>
+                  <span className="trip-id-tag">{b.id}</span>
+                  <span className="trip-date">{b.date} at {b.time}</span>
+                </div>
+                <span className={`status-pill ${b.status === 'Trip completed' ? 'done' : b.status === 'Trip started' ? 'active' : ''}`}>
+                  {b.status}
+                </span>
+              </div>
+
+              <div className="trip-route-display">
+                <div className="route-point">
+                  <span className="dot green" />
+                  <div>
+                    <small>PICKUP</small>
+                    <b>{b.pickup}</b>
+                  </div>
+                </div>
+                <div className="route-point">
+                  <span className="dot blue" />
+                  <div>
+                    <small>DESTINATION</small>
+                    <b>{b.destination}</b>
+                  </div>
+                </div>
+              </div>
+
+              {/* OTP Cards for active trips */}
+              {['Driver assigned', 'Driver arriving', 'Trip started'].includes(b.status) && (
+                <div className="otp-banner">
+                  <div className="otp-box">
+                    <small>START OTP</small>
+                    <b>{b.start_otp || '----'}</b>
+                  </div>
+                  {b.status === 'Trip started' && (
+                    <div className="otp-box end">
+                      <small>END OTP</small>
+                      <b>{b.end_otp || '----'}</b>
+                    </div>
+                  )}
+                  <div className="otp-hint">
+                    <ShieldCheck size={16} />
+                    <span>Share OTP with driver only when you are in your car.</span>
+                  </div>
+                </div>
+              )}
+
+              <div className="trip-card-footer">
+                <div className="driver-assigned-info">
+                  <span className="driver-avatar">{b.driver ? b.driver[0] : 'V'}</span>
+                  <div>
+                    <small>ASSIGNED DRIVER</small>
+                    <b>{b.driver || 'Matching nearby driver...'}</b>
+                  </div>
+                </div>
+
+                <div className="trip-actions-row">
+                  {['Driver assigned', 'Driver arriving', 'Trip started'].includes(b.status) && (
+                    <button className="action-btn track" onClick={() => onTrack(b)}>
+                      <Navigation size={15} /> Track Route
+                    </button>
+                  )}
+                  {b.status === 'Trip completed' && (
+                    <>
+                      <button className="action-btn" onClick={() => onRate(b)}>
+                        <Star size={15} /> Rate Driver
+                      </button>
+                      <button className="action-btn pay" onClick={() => onPay(b)}>
+                        <CreditCard size={15} /> Pay {money(b.total)}
+                      </button>
+                      <button className="action-btn" onClick={() => downloadInvoice(b)}>
+                        Invoice
+                      </button>
+                      {receipts.some((r: Receipt) => r.bookingId === b.id) && (
+                        <button
+                          className="action-btn"
+                          onClick={() => downloadReceipt(b, receipts.find((r: Receipt) => r.bookingId === b.id)!)}
+                        >
+                          Receipt
+                        </button>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ----------------- Driver Partner Page -----------------
+function DriverPage({ bookings, update, user }: any) {
+  const own = bookings.filter(
+    (b: Booking) => b.driverId === user?.id || ['Searching', 'Driver assigned', 'Driver arriving', 'Trip started'].includes(b.status)
+  );
+
+  return (
+    <div className="driver-view">
+      <div className="section-head">
+        <div>
+          <span className="eyebrow">PARTNER PORTAL</span>
+          <h1>Welcome, {user?.name || 'Driver Partner'}</h1>
+          <p>Manage your daily bookings, accept passenger rides, and track earnings.</p>
+        </div>
+        <div className="service-market-pill">
+          <BadgeCheck size={16} color="#087f72" /> Verified Partner ({user?.city || 'Bengaluru'})
+        </div>
+      </div>
+
+      <div className="stats-cards-grid">
+        <div className="stat-card panel">
+          <small>TODAY'S EARNINGS</small>
+          <b>
+            {money(
+              bookings
+                .filter((b: Booking) => b.driverId === user?.id && b.status === 'Trip completed')
+                .reduce((s: number, b: Booking) => s + b.payout, 0)
+            )}
+          </b>
+          <span>80% driver direct share</span>
+        </div>
+        <div className="stat-card panel">
+          <small>COMPLETED TRIPS</small>
+          <b>{bookings.filter((b: Booking) => b.driverId === user?.id && b.status === 'Trip completed').length}</b>
+          <span>This week</span>
+        </div>
+        <div className="stat-card panel">
+          <small>PARTNER RATING</small>
+          <b>★ 4.9</b>
+          <span>Top rated partner</span>
+        </div>
+        <div className="stat-card panel">
+          <small>DUTY STATUS</small>
+          <b className="status-online">● Online</b>
+          <span>Accepting requests</span>
+        </div>
+      </div>
+
+      <div className="section-head">
+        <div>
+          <h3>Ride Requests & Active Duties</h3>
+          <p>Pick up requests in your approved zone.</p>
+        </div>
+      </div>
+
+      {own.length === 0 ? (
+        <div className="panel empty-state">
+          <CarFront size={42} className="empty-icon" />
+          <h3>All caught up!</h3>
+          <p>New booking requests in {user?.city || 'your city'} will show up here automatically.</p>
+        </div>
+      ) : (
+        <div className="trips-cards-list">
+          {own.map((b: Booking) => (
+            <div className="panel trip-card" key={b.id}>
+              <div className="trip-card-header">
+                <div>
+                  <span className="trip-id-tag">{b.id}</span>
+                  <span className="trip-date">{b.trip_type} · {b.vehicle || 'Sedan'}</span>
+                </div>
+                <b className="payout-highlight">Earn: {money(b.payout)}</b>
+              </div>
+
+              <div className="trip-route-display">
+                <div className="route-point">
+                  <span className="dot green" />
+                  <div>
+                    <small>PICKUP</small>
+                    <b>{b.pickup}</b>
+                  </div>
+                </div>
+                <div className="route-point">
+                  <span className="dot blue" />
+                  <div>
+                    <small>DESTINATION</small>
+                    <b>{b.destination}</b>
+                  </div>
+                </div>
+              </div>
+
+              <div className="driver-action-footer">
+                <span>Customer: <b>{b.customer || 'Car Owner'}</b></span>
+
+                <div className="action-buttons-group">
+                  {b.status === 'Searching' && (
+                    <button className="primary-btn" onClick={() => update(b, 'Driver assigned')}>
+                      Accept Booking <Check size={16} />
+                    </button>
+                  )}
+                  {b.status === 'Driver assigned' && (
+                    <button className="primary-btn" onClick={() => update(b, 'Driver arriving')}>
+                      Mark On the Way <Navigation size={16} />
+                    </button>
+                  )}
+                  {b.status === 'Driver arriving' && (
+                    <button
+                      className="primary-btn"
+                      onClick={() => {
+                        const code = prompt('Ask the customer for their 4-digit START OTP:');
+                        if (code) update(b, 'Trip started', code);
+                      }}
+                    >
+                      Start Trip (Enter OTP) <ArrowRight size={16} />
+                    </button>
+                  )}
+                  {b.status === 'Trip started' && (
+                    <button
+                      className="primary-btn success"
+                      onClick={() => {
+                        const code = prompt('Ask the customer for their 4-digit END OTP:');
+                        if (code) update(b, 'Trip completed', code);
+                      }}
+                    >
+                      Complete Trip (Enter OTP) <Check size={16} />
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ----------------- Admin Operations Page -----------------
+function LiveAdminPage({ bookings, focus = 'Overview', flash }: any) {
+  const [summary, setSummary] = useState<any>({});
+  const [filter, setFilter] = useState('All');
+  const [hourlyRate, setHourlyRate] = useState(599);
+
+  const fetchSummary = async () => {
+    try {
+      const d = await api('/admin/summary');
+      setSummary(d);
+      const h = d.pricing?.find((p: any) => p.key === 'hourly');
+      if (h) setHourlyRate(h.value);
+    } catch {}
+  };
+
+  useEffect(() => {
+    fetchSummary();
+  }, [bookings]);
+
+  const savePricing = async () => {
+    try {
+      await api('/admin/pricing', {
+        method: 'PATCH',
+        body: JSON.stringify({ hourly: Number(hourlyRate) })
+      });
+      flash?.('Pricing updated in Neon DB!');
+      fetchSummary();
+    } catch (e: any) {
+      flash?.(e.message);
+    }
+  };
+
+  const t = summary.totals || {};
+
+  return (
+    <div className="admin-view">
+      <div className="section-head">
+        <div>
+          <span className="eyebrow">OPERATIONS CONSOLE</span>
+          <h1>VaahanSathi Network Control</h1>
+          <p>Real-time city bookings, driver verification, revenue, and pricing engine.</p>
+        </div>
+        <div className="service-market-pill">
+          <Database size={15} /> Neon DB Live
+        </div>
+      </div>
+
+      <div className="stats-cards-grid">
+        <div className="stat-card panel">
+          <small>TOTAL BOOKINGS</small>
+          <b>{t.bookings || bookings.length}</b>
+          <span>All recorded trips</span>
+        </div>
+        <div className="stat-card panel">
+          <small>GROSS REVENUE</small>
+          <b>{money(t.revenue || 0)}</b>
+          <span>Total customer billings</span>
+        </div>
+        <div className="stat-card panel">
+          <small>PLATFORM REVENUE</small>
+          <b>{money(t.commission || 0)}</b>
+          <span>20% platform share</span>
+        </div>
+        <div className="stat-card panel">
+          <small>ACTIVE TRIPS</small>
+          <b className="status-online">{t.active || 0}</b>
+          <span>Currently in progress</span>
+        </div>
+      </div>
+
+      {focus === 'Pricing' ? (
+        <section className="panel pricing-panel">
+          <h3>Pricing Engine Configuration</h3>
+          <p>Update base rates and commission stored in Neon DB.</p>
+          <div className="pricing-grid">
+            <label className="field-group">
+              <span>Hourly Base Fare (4 Hours) · INR</span>
+              <input
+                type="number"
+                value={hourlyRate}
+                onChange={(e) => setHourlyRate(Number(e.target.value))}
+              />
+            </label>
+            <div className="pricing-breakdown">
+              <div><span>Airport Drop Base</span><b>₹599</b></div>
+              <div><span>Night Surcharge (10PM - 6AM)</span><b>₹120</b></div>
+              <div><span>Platform Commission</span><b>20%</b></div>
+              <div><span>GST Rate</span><b>5%</b></div>
+            </div>
+          </div>
+          <button className="primary-btn" onClick={savePricing}>
+            Save New Pricing to Neon DB <Check size={16} />
+          </button>
+        </section>
+      ) : focus === 'Drivers' ? (
+        <section className="panel drivers-admin-panel">
+          <h3>Driver Partner Network</h3>
+          <div className="drivers-list">
+            {DEMO_DRIVERS.map((d) => (
+              <div className="driver-admin-row" key={d.id}>
+                <span className="driver-avatar">{d.name[0]}</span>
+                <div className="driver-admin-info">
+                  <b>{d.name}</b>
+                  <small>{d.city} · {d.vehicle} · {d.phone}</small>
+                  <span>★ {d.rating} · {d.trips} completed trips</span>
+                </div>
+                <span className="status-pill done">Verified</span>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : (
+        <section className="panel bookings-table-panel">
+          <div className="panel-header">
+            <div>
+              <h3>Live Network Bookings</h3>
+              <p>Real-time booking and dispatch status</p>
+            </div>
+            <select value={filter} onChange={(e) => setFilter(e.target.value)}>
+              <option value="All">All Bookings</option>
+              <option value="Driver assigned">Driver assigned</option>
+              <option value="Trip started">Trip started</option>
+              <option value="Trip completed">Trip completed</option>
+            </select>
+          </div>
+
+          <div className="table-responsive">
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th>BOOKING ID</th>
+                  <th>ROUTE</th>
+                  <th>CUSTOMER / DRIVER</th>
+                  <th>SERVICE</th>
+                  <th>TOTAL</th>
+                  <th>STATUS</th>
+                </tr>
+              </thead>
+              <tbody>
+                {bookings
+                  .filter((b: Booking) => filter === 'All' || b.status === filter)
+                  .map((b: Booking) => (
+                    <tr key={b.id}>
+                      <td><b>{b.id}</b><small>{b.date} · {b.time}</small></td>
+                      <td>{b.pickup.split(',')[0]} → {b.destination.split(',')[0]}<small>{b.city}</small></td>
+                      <td>{b.customer || 'Customer'}<small>Driver: {b.driver || 'Searching...'}</small></td>
+                      <td>{b.trip_type}</td>
+                      <td><b>{money(b.total)}</b></td>
+                      <td><span className="status-pill">{b.status}</span></td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}
+
+// ----------------- Other Support Pages -----------------
+function EarningsPage({ bookings }: any) {
+  const completed = bookings.filter((b: Booking) => b.status === 'Trip completed');
+  const total = completed.reduce((s: number, b: Booking) => s + b.payout, 0);
+
+  return (
+    <div className="earnings-view">
+      <div className="section-head">
+        <div>
+          <span className="eyebrow">DRIVER WALLET</span>
+          <h1>Earnings Summary</h1>
+          <p>Transparent breakdown of every completed ride.</p>
+        </div>
+      </div>
+
+      <div className="panel earnings-hero-card">
+        <span className="eyebrow white">TOTAL EARNINGS</span>
+        <h2>{money(total)}</h2>
+        <p>Direct bank settlements processed weekly.</p>
+      </div>
+
+      <div className="panel recent-earnings-card">
+        <h3>Trip Payout History</h3>
+        {completed.length === 0 ? (
+          <p className="subhead">Completed trip payouts will show here.</p>
+        ) : (
+          completed.map((b: Booking) => (
+            <div className="earning-item-row" key={b.id}>
+              <div>
+                <b>{b.trip_type} · {b.pickup.split(',')[0]}</b>
+                <small>{b.date} · {b.id}</small>
+              </div>
+              <strong className="green-text">+{money(b.payout)}</strong>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+function WalletPage({ receipts, bookings, onReceipt }: any) {
+  return (
+    <div className="wallet-view">
+      <div className="section-head">
+        <div>
+          <span className="eyebrow">CUSTOMER RECEIPTS</span>
+          <h1>Trip Payments & Receipts</h1>
+          <p>Official tax invoices and payment vouchers.</p>
+        </div>
+      </div>
+
+      <section className="panel receipts-panel">
+        <h3>Payment Receipts</h3>
+        {receipts.length === 0 ? (
+          <div className="empty-state">
+            <ReceiptIcon size={38} className="empty-icon" />
+            <p>Receipts will appear once you pay for a completed trip.</p>
+          </div>
+        ) : (
+          receipts.map((r: Receipt) => {
+            const b = bookings.find((x: Booking) => x.id === r.bookingId);
+            return (
+              <div className="receipt-item-row" key={r.bookingId}>
+                <div>
+                  <b>{b?.trip_type || 'Driver Service'} · {r.bookingId}</b>
+                  <small>{new Date(r.paidAt).toLocaleString('en-IN')} · Mode: {r.method}</small>
+                </div>
+                <b>{money(r.amount)}</b>
+                {b && (
+                  <button className="primary-btn-sm" onClick={() => onReceipt(b, r)}>
+                    Download Receipt
+                  </button>
+                )}
+              </div>
+            );
+          })
+        )}
+      </section>
+    </div>
+  );
+}
+
+function HelpPage({ flash }: any) {
+  return (
+    <div className="help-view">
+      <div className="section-head">
+        <div>
+          <span className="eyebrow">SUPPORT & ASSISTANCE</span>
+          <h1>How Can We Help You?</h1>
+          <p>24x7 safety and ride assistance across all active cities.</p>
+        </div>
+      </div>
+
+      <div className="help-cards-grid">
+        <button className="panel help-action-card" onClick={() => flash('Connecting with priority customer care...')}>
+          <Headphones size={28} />
+          <b>Ride Support</b>
+          <p>Assistance with bookings, route changes, or driver coordination.</p>
+          <span>Contact Support <ArrowRight size={14} /></span>
+        </button>
+
+        <button className="panel help-action-card" onClick={() => window.location.assign('tel:112')}>
+          <ShieldCheck size={28} />
+          <b>Emergency Assistance</b>
+          <p>Immediate connection to 112 national emergency helpline.</p>
+          <span>Call 112 Helpline <ArrowRight size={14} /></span>
+        </button>
+
+        <button className="panel help-action-card" onClick={() => flash('Dispute review request logged.')}>
+          <Activity size={28} />
+          <b>Fare Clarification</b>
+          <p>Submit questions about tolls, parking, or night charges.</p>
+          <span>Raise Ticket <ArrowRight size={14} /></span>
+        </button>
+      </div>
+
+      <div className="panel faq-card">
+        <h3>Frequently Asked Questions</h3>
+        <details>
+          <summary>Does VaahanSathi provide the car? <ChevronDown size={16} /></summary>
+          <p>No. VaahanSathi is exclusively an on-demand professional driver service for your own car. You provide the car; we provide the verified chauffeur.</p>
+        </details>
+        <details>
+          <summary>How are fuel, tolls, and parking handled? <ChevronDown size={16} /></summary>
+          <p>Fuel, fastag tolls, and parking fees are paid directly by the car owner and are never included in driver service billing.</p>
+        </details>
+        <details>
+          <summary>What if I need to cancel my booking? <ChevronDown size={16} /></summary>
+          <p>You can cancel without any charge before a driver partner begins traveling to your pickup location.</p>
+        </details>
+      </div>
+    </div>
+  );
+}
+
+function DriverProfile({ user }: any) {
+  return (
+    <div className="profile-view">
+      <div className="section-head">
+        <div>
+          <span className="eyebrow">PARTNER PROFILE</span>
+          <h1>Driver Account</h1>
+          <p>Personal and verification details.</p>
+        </div>
+      </div>
+
+      <div className="panel profile-hero-card">
+        <div className="profile-avatar-large">{user?.name ? user.name[0] : 'V'}</div>
+        <div>
+          <h2>{user?.name || 'Driver Partner'}</h2>
+          <p>{user?.email} · {user?.phone || '+91 98765 43211'}</p>
+          <span className="status-pill done">Verified Partner · {user?.city || 'Bengaluru'}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function VoiceWidget({ onClick }: any) {
+  return (
+    <button className="voice-float-btn" onClick={onClick} title="Voice Assistant">
+      <Mic size={20} />
+      <span>Trip Assistant</span>
+    </button>
+  );
+}
+
+// ----------------- Interactive Modals -----------------
+function AuthModal({ onClose, onLogin, onRegister, busy, storageReady }: any) {
+  const [mode, setMode] = useState<'login' | 'register'>('login');
+  const [name, setName] = useState('');
+  const [city, setCity] = useState('Bengaluru');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (mode === 'login') onLogin(email, password);
+    else onRegister(name, email, password, city);
+  };
+
+  return (
+    <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="modal auth-modal-box">
+        <button className="modal-close-btn" onClick={onClose}><X size={18} /></button>
+
+        <div className="modal-brand">
+          <CarFront size={26} />
+          <span>VaahanSathi</span>
+        </div>
+
+        <h2>{mode === 'login' ? 'Sign In to Your Account' : 'Create Customer Account'}</h2>
+        <p className="modal-sub">
+          {mode === 'login' ? 'Access your rides and bookings' : 'Book verified drivers for your personal vehicle'}
+        </p>
+
+        {/* 1-Click Quick Demo Sign-In */}
+        <div className="quick-demo-box">
+          <span className="quick-label">⚡ 1-Click Quick Sign-In (Neon DB Connected):</span>
+          <div className="quick-buttons">
+            <button type="button" onClick={() => onLogin('ananya@vaahansathi.demo', 'password123')}>
+              👤 Customer (Ananya)
+            </button>
+            <button type="button" onClick={() => onLogin('ramesh@vaahansathi.demo', 'password123')}>
+              🚗 Driver (Ramesh)
+            </button>
+            <button type="button" onClick={() => onLogin('admin@vaahansathi.demo', 'password123')}>
+              🛡️ Admin (Ops)
+            </button>
+          </div>
+        </div>
+
+        <form onSubmit={submit} className="auth-form">
+          {mode === 'register' && (
+            <>
+              <label className="field-group">
+                <span>Full Name</span>
+                <input required value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Rahul Sharma" />
+              </label>
+              <label className="field-group">
+                <span>City / Service Area</span>
+                <select value={city} onChange={(e) => setCity(e.target.value)}>
+                  <option value="Bengaluru">Bengaluru</option>
+                  <option value="Delhi NCR">Delhi NCR</option>
+                  <option value="Gurugram">Gurugram</option>
+                </select>
+              </label>
+            </>
+          )}
+
+          <label className="field-group">
+            <span>Email Address</span>
+            <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@example.com" />
+          </label>
+
+          <label className="field-group">
+            <span>Password</span>
+            <input type="password" required minLength={mode === 'register' ? 8 : 1} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" />
+          </label>
+
+          <button className="primary-btn-wide" type="submit" disabled={busy}>
+            {busy ? 'Processing...' : mode === 'login' ? 'Sign In' : 'Create Account'}
+          </button>
+        </form>
+
+        <div className="auth-toggle-row">
+          {mode === 'login' ? (
+            <span>
+              New to VaahanSathi?{' '}
+              <button className="link-btn-inline" onClick={() => setMode('register')}>
+                Create Account
+              </button>
+            </span>
+          ) : (
+            <span>
+              Already have an account?{' '}
+              <button className="link-btn-inline" onClick={() => setMode('login')}>
+                Sign In
+              </button>
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CheckoutModal({ booking, onClose, onPay }: any) {
+  const [method, setMethod] = useState('UPI');
+  if (!booking) return null;
+
+  return (
+    <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="modal checkout-modal-box">
+        <button className="modal-close-btn" onClick={onClose}><X size={18} /></button>
+        <span className="eyebrow">SECURE CHECKOUT</span>
+        <h2>Complete Trip Payment</h2>
+        <p className="checkout-route">{booking.pickup} → {booking.destination}</p>
+
+        <div className="total-due-banner">
+          <span>Total Fare Amount</span>
+          <b>{money(booking.total)}</b>
+        </div>
+
+        <div className="payment-options-list">
+          {['UPI / GooglePay / PhonePe', 'Credit / Debit Card', 'Net Banking'].map((m) => (
+            <button
+              key={m}
+              className={`payment-method-row ${method === m ? 'selected' : ''}`}
+              onClick={() => setMethod(m)}
+            >
+              <CreditCard size={18} />
+              <span>{m}</span>
+              {method === m && <Check size={16} className="selected-check" />}
+            </button>
+          ))}
+        </div>
+
+        <button className="primary-btn-wide" onClick={() => onPay(booking, method)}>
+          Pay {money(booking.total)} Securely <ArrowRight size={17} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function TrackingModal({ booking, onClose }: any) {
+  const [progress, setProgress] = useState(35);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setProgress((p) => (p >= 100 ? 0 : p + 4));
+    }, 800);
+    return () => clearInterval(timer);
+  }, []);
+
+  if (!booking) return null;
+
+  return (
+    <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="modal tracking-modal-box">
+        <button className="modal-close-btn" onClick={onClose}><X size={18} /></button>
+        <span className="eyebrow">LIVE RIDE TRACKING</span>
+        <h2>Your Driver is on the Move</h2>
+        <p className="subhead">{booking.driver || 'Ramesh Kumar'} is driving your car to destination.</p>
+
+        <div className="simulated-map-container">
+          <div className="map-road-line">
+            <div className="map-car-icon" style={{ left: `${progress}%` }}>
+              <CarFront size={20} />
+            </div>
+          </div>
+          <div className="map-labels">
+            <span><MapPin size={14} /> {booking.pickup.split(',')[0]}</span>
+            <span><Navigation size={14} /> {booking.destination.split(',')[0]}</span>
+          </div>
+        </div>
+
+        <div className="eta-counter-box">
+          <div>
+            <b>{Math.max(1, Math.round((100 - progress) * 0.25))} mins</b>
+            <small>Estimated Arrival</small>
+          </div>
+          <div className="otp-pill">Start OTP: {booking.start_otp || '4821'}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RatingModal({ stars, setStars, onClose, onSubmit }: any) {
+  return (
+    <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="modal rating-modal-box">
+        <button className="modal-close-btn" onClick={onClose}><X size={18} /></button>
+        <span className="eyebrow">RIDE FEEDBACK</span>
+        <h2>Rate Your Driver Partner</h2>
+        <p>Your feedback ensures high quality and safety standards.</p>
+
+        <div className="stars-picker-row">
+          {[1, 2, 3, 4, 5].map((n) => (
+            <button key={n} type="button" onClick={() => setStars(n)}>
+              <Star size={32} fill={n <= stars ? '#f59e0b' : 'none'} color={n <= stars ? '#f59e0b' : '#cbd5e1'} />
+            </button>
+          ))}
+        </div>
+
+        <button className="primary-btn-wide" onClick={onSubmit}>
+          Submit Rating <Check size={16} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function VoiceModal({ onClose, text, setText, onConfirm }: any) {
+  return (
+    <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="modal voice-modal-box">
+        <button className="modal-close-btn" onClick={onClose}><X size={18} /></button>
+        <div className="voice-mic-circle">
+          <Mic size={28} />
+        </div>
+        <h2>Trip Voice Assistant</h2>
+        <p>Speak or type your request: "Book a driver for 4 hours to airport in Bengaluru."</p>
+
+        <textarea
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="e.g. I need an airport driver tomorrow at 8am from Indiranagar..."
+          rows={3}
+        />
+
+        <button className="primary-btn-wide" onClick={onConfirm} disabled={!text.trim()}>
+          Process Request <ArrowRight size={16} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ReceiptIcon(props: any) {
+  return <CreditCard {...props} />;
+}
+
+createRoot(document.getElementById('root')!).render(<App />);

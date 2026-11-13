@@ -14,4 +14,5 @@ services:
         generateValue: true
       - key: DATA_PATH
         value: ./data/app.json
-
+      - key: DATABASE_URL
+        sync: false
