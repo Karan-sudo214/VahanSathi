@@ -2037,3 +2037,8 @@ button, input, select, textarea { outline-color: var(--blue); }
 .voice-agent-hint { display: flex; align-items: center; gap: 7px; color: var(--slate-500); font-size: 12px; margin: 8px 0 10px; }
 .voice-agent-notice { color: var(--slate-700); background: var(--slate-50); border: 1px solid var(--slate-200); border-radius: 8px; padding: 10px 12px; font-size: 13px; margin: 10px 0; }
 @media (max-width: 560px) { .hero-cta-row { flex-wrap: wrap; } .hero-voice-btn, .hero-btn { flex: 1; justify-content: center; } .voice-agent-header h2 { font-size: 21px; } }
+.voice-confirm-card { display: flex; flex-direction: column; gap: 6px; padding: 16px; background: var(--slate-50); border: 1px solid var(--slate-200); border-radius: 9px; margin: 4px 0 12px; }
+.voice-confirm-card b { color: var(--navy); font-size: 16px; }
+.voice-confirm-card span { color: var(--slate-800); font-size: 14px; }
+.voice-confirm-card small { color: var(--slate-500); font-size: 12px; }
+.voice-change-btn { width: 100%; justify-content: center; margin-top: 10px; }

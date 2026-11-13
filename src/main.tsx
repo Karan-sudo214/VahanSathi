@@ -389,8 +389,41 @@ function App() {
     if (intent.time) setTime(intent.time);
     setFare(null);
     setPage('Book a driver');
-    setVoiceAgentOpen(false);
-    flash('Trip details added. Review the fare and confirm when ready.');
+    flash('Trip details understood. Confirm the booking with the voice agent.');
+  };
+
+  const bookFromVoice = async (intent: any) => {
+    if (!user) {
+      applyVoiceTrip(intent);
+      setVoiceAgentOpen(false);
+      setModal('auth');
+      flash('Sign in once to complete this voice booking. Your trip details are saved.');
+      return;
+    }
+    setBusy(true);
+    try {
+      const d = await api('/bookings', {
+        method: 'POST',
+        body: JSON.stringify({
+          tripType: intent.tripType || tripType,
+          pickup: intent.pickup || pickup,
+          destination: intent.destination || destination,
+          date: intent.date || date,
+          time: intent.time || time,
+          hours: Number(intent.hours || hours),
+          vehicle,
+          city: intent.city || city
+        })
+      });
+      await refresh();
+      setVoiceAgentOpen(false);
+      setPage('Your trips');
+      flash(`Voice booking confirmed: ${d.booking.id}`);
+    } catch (e: any) {
+      flash(e.message || 'The booking could not be completed.');
+    } finally {
+      setBusy(false);
+    }
   };
 
   const updateStatus = async (b: Booking, status: string, otp?: string) => {
@@ -770,7 +803,7 @@ function App() {
 
       {/* Modals */}
       {voiceAgentOpen && (
-        <VoiceAgentModal onClose={() => setVoiceAgentOpen(false)} onApply={applyVoiceTrip} city={city} />
+        <VoiceAgentModal onClose={() => setVoiceAgentOpen(false)} onApply={applyVoiceTrip} onBook={bookFromVoice} city={city} />
       )}
       {modal === 'auth' && (
         <AuthModal
@@ -1679,7 +1712,7 @@ function DriverProfile({ user }: any) {
 }
 
 // ----------------- Interactive Modals -----------------
-function VoiceAgentModal({ onClose, onApply, city }: { onClose: () => void; onApply: (intent: any) => void; city: string }) {
+function VoiceAgentModal({ onClose, onApply, onBook, city }: { onClose: () => void; onApply: (intent: any) => void; onBook: (intent: any) => void; city: string }) {
   const languages = [
     { label: 'English', code: 'en-IN', speech: 'Tell me your pickup, destination, duration, and preferred time.' },
     { label: 'हिन्दी', code: 'hi-IN', speech: 'पिकअप, गंतव्य, अवधि और समय बताइए।' },
@@ -1693,9 +1726,9 @@ function VoiceAgentModal({ onClose, onApply, city }: { onClose: () => void; onAp
   const [listening, setListening] = useState(false);
   const [interpreting, setInterpreting] = useState(false);
   const [notice, setNotice] = useState('');
+  const [stage, setStage] = useState<'capture' | 'confirm'>('capture');
+  const [intent, setIntent] = useState<any>(null);
   const recognitionRef = React.useRef<any>(null);
-  const recognitionSupported = typeof window !== 'undefined' && !!((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
-
   const speak = (text: string) => {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
     window.speechSynthesis.cancel();
@@ -1704,17 +1737,23 @@ function VoiceAgentModal({ onClose, onApply, city }: { onClose: () => void; onAp
     utterance.rate = 0.96;
     window.speechSynthesis.speak(utterance);
   };
-  const startListening = () => {
+  const startListening = (confirmation = false) => {
     const Recognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!Recognition) { setNotice('Voice capture is not available in this browser. Type your request below instead.'); return; }
     const recognition = new Recognition();
     recognition.lang = language.code;
     recognition.continuous = false;
     recognition.interimResults = true;
-    recognition.onstart = () => { setListening(true); setNotice('Listening…'); };
+    recognition.onstart = () => { setListening(true); setNotice(confirmation ? 'Listening for your confirmation…' : 'Listening…'); };
     recognition.onresult = (event: any) => {
       const value = Array.from(event.results).map((result: any) => result[0]?.transcript || '').join('');
-      setTranscript(value);
+      if (confirmation) {
+        const accepted = /confirm|book|yes|okay|ok|हाँ|हां|पक्का|कर दो|ಹೌದು|சரி|అవును/i.test(value);
+        setNotice(accepted ? 'Confirmed. Booking your trip…' : 'I heard that, but I need “confirm” to book.');
+        if (accepted && intent) onBook(intent);
+      } else {
+        setTranscript(value);
+      }
     };
     recognition.onerror = () => { setListening(false); setNotice('I could not hear that clearly. Please try again or type it below.'); };
     recognition.onend = () => setListening(false);
@@ -1722,28 +1761,43 @@ function VoiceAgentModal({ onClose, onApply, city }: { onClose: () => void; onAp
     recognition.start();
   };
   const stopListening = () => { recognitionRef.current?.stop(); setListening(false); };
-  useEffect(() => () => { recognitionRef.current?.stop(); window.speechSynthesis?.cancel(); }, []);
+  useEffect(() => {
+    const timer = window.setTimeout(() => startListening(false), 250);
+    return () => { window.clearTimeout(timer); recognitionRef.current?.stop(); window.speechSynthesis?.cancel(); };
+  }, []);
   const interpret = async () => {
     if (!transcript.trim()) { setNotice('Tell me where you are starting, where you are going, and when you need the driver.'); return; }
     setInterpreting(true); setNotice('Understanding your request…');
     try {
       const result = await api('/voice/intent', { method: 'POST', body: JSON.stringify({ text: transcript, language: language.code, city }) });
-      setNotice(result.summary || 'I have filled in the trip details for your review.');
-      speak(result.summary || 'I have filled in the trip details for your review.');
-      window.setTimeout(() => onApply(result), 650);
+      setIntent(result);
+      onApply(result);
+      setStage('confirm');
+      const confirmation = `${result.summary || 'I have understood your trip.'} Say confirm to book, or review the details first.`;
+      setNotice(confirmation);
+      speak(confirmation);
     } catch (e: any) { setNotice(e.message || 'I could not understand that request.'); }
     finally { setInterpreting(false); }
   };
+  const confirmByVoice = () => startListening(true);
   return <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
     <div className="modal voice-agent-modal">
       <button className="modal-close-btn" onClick={onClose} aria-label="Close voice booking"><X size={18} /></button>
-      <div className="voice-agent-header"><div className={`voice-agent-mark ${listening ? 'listening' : ''}`}><Mic size={22} /></div><div><span className="eyebrow">VOICE BOOKING</span><h2>Tell me about your trip</h2><p className="modal-sub">Speak naturally. I will fill the booking form for you.</p></div></div>
-      <label className="field-group"><span>Your language</span><select value={language.code + language.label} onChange={(e) => setLanguage(languages.find((item) => item.code + item.label === e.target.value) || languages[0])}>{languages.map((item) => <option key={item.code + item.label} value={item.code + item.label}>{item.label}</option>)}</select></label>
-      <button className={`listen-btn ${listening ? 'recording' : ''}`} onClick={listening ? stopListening : startListening}><Mic size={18} /> {listening ? 'Stop listening' : 'Start speaking'}</button>
-      <textarea value={transcript} onChange={(e) => setTranscript(e.target.value)} rows={4} placeholder={`Example: “${language.speech}”`} aria-label="Trip request" />
-      <div className="voice-agent-hint"><MapPin size={15} /> Service area: {city} · Your words stay in this booking session.</div>
-      {notice && <p className="voice-agent-notice">{notice}</p>}
-      <button className="primary-btn-wide" onClick={interpret} disabled={interpreting || !transcript.trim()}>{interpreting ? 'Understanding…' : 'Review trip details'} <ArrowRight size={17} /></button>
+      <div className="voice-agent-header"><div className={`voice-agent-mark ${listening ? 'listening' : ''}`}><Mic size={22} /></div><div><span className="eyebrow">VOICE BOOKING</span><h2>{stage === 'capture' ? 'Tell me about your trip' : 'Ready to book?'}</h2><p className="modal-sub">{stage === 'capture' ? 'Speak naturally. I will listen and prepare the trip.' : 'I have filled the booking details. Confirm when ready.'}</p></div></div>
+      {stage === 'capture' ? <>
+        <label className="field-group"><span>Your language</span><select value={language.code + language.label} onChange={(e) => setLanguage(languages.find((item) => item.code + item.label === e.target.value) || languages[0])}>{languages.map((item) => <option key={item.code + item.label} value={item.code + item.label}>{item.label}</option>)}</select></label>
+        <button className={`listen-btn ${listening ? 'recording' : ''}`} onClick={listening ? stopListening : () => startListening(false)}><Mic size={18} /> {listening ? 'Stop listening' : 'Start speaking'}</button>
+        <textarea value={transcript} onChange={(e) => setTranscript(e.target.value)} rows={4} placeholder={`Example: “${language.speech}”`} aria-label="Trip request" />
+        <div className="voice-agent-hint"><MapPin size={15} /> Service area: {city} · The agent will speak back in your selected language.</div>
+        {notice && <p className="voice-agent-notice">{notice}</p>}
+        <button className="primary-btn-wide" onClick={interpret} disabled={interpreting || !transcript.trim()}>{interpreting ? 'Understanding…' : 'Review trip details'} <ArrowRight size={17} /></button>
+      </> : <>
+        <div className="voice-confirm-card"><b>{intent?.tripType || 'Driver'} · {intent?.hours || 4} hours</b><span>{intent?.pickup || 'Pickup'} → {intent?.destination || 'Destination'}</span><small>{intent?.date || 'Date'} at {intent?.time || 'Time'}</small></div>
+        {notice && <p className="voice-agent-notice">{notice}</p>}
+        <button className={`listen-btn ${listening ? 'recording' : ''}`} onClick={listening ? stopListening : confirmByVoice}><Mic size={18} /> {listening ? 'Listening for confirm' : 'Say confirm to book'}</button>
+        <button className="primary-btn-wide" onClick={() => onBook(intent)} disabled={listening}>Confirm and book <ArrowRight size={17} /></button>
+        <button className="link-btn voice-change-btn" onClick={() => { setStage('capture'); setNotice('Tell me the corrected trip details.'); }}>Change details</button>
+      </>}
     </div>
   </div>;
 }
