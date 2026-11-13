@@ -1,53 +1,30 @@
 # VaahanSathi
 
-A hackathon presentation app for the idea: **your car, our verified driver, pay only for the driver's time.** It is designed to make the customer experience and business model easy to understand in a short investor demo.
+VaahanSathi connects car owners with professional drivers who drive the customer’s own car. The customer pays for the driver’s time and service, not a rented vehicle.
 
 ## Run locally
 
-Requires Node.js 20 or later.
+Requires Node.js 20 or later. Run `npm install`, copy `.env.example` to `.env`, set a strong `JWT_SECRET`, then run `npm run dev`. The web client runs on port 5173 and the Express API on port 4000.
 
-```bash
-npm install
-npm run dev
-```
+New customers create an account from the sign-in screen and choose Bengaluru, Delhi NCR, or Gurugram. Driver requests remain pending until a partner accepts them. The customer sees the start OTP; the driver must submit it to start a trip. At completion, payment remains due until collected outside the app.
 
-Open `http://localhost:5173`. The Express API runs on port 4000. For a production build, use `npm run build`; with `NODE_ENV=production`, `npm start` serves the built site and API.
+## Production data
 
-## 3–5 minute demo
+Production API routes require Firestore connectivity. Set `FIREBASE_PROJECT_ID` and `FIREBASE_SERVICE_ACCOUNT_JSON` in the hosting provider’s secret environment settings. Use a rotated service-account key with Firestore access. Do not commit the JSON or paste it into source files. Set `JWT_SECRET` to a long random value. The JSON file store is only for local development; Render’s ephemeral filesystem is not durable. `/api/health` reports whether Firestore is connected.
 
-Use the **Sign in** control in the left sidebar. Demo accounts share the password `demo1234`:
+Firestore collections currently used are `users`, `bookings`, `ratings`, `history`, and `pricingConfig`. Browser access is denied by `firestore.rules`; database access goes through the Express API.
 
-| Role | Email |
-| --- | --- |
-| Customer | `ananya@vaahansathi.demo` |
-| Bengaluru driver | `ramesh@vaahansathi.demo` |
-| Delhi NCR customer | `priya@vaahansathi.demo` |
-| Delhi NCR driver | `amit@vaahansathi.demo` |
-| Gurugram customer | `neha@vaahansathi.demo` |
-| Gurugram driver | `arjun@vaahansathi.demo` |
-| Admin | `admin@vaahansathi.demo` |
+## Fare estimates and service areas
 
-1. Sign in as the customer and book an hourly Sedan driver from Indiranagar to the airport. The estimate updates from trip type, hours, vehicle, time, city, and recognized pickup and destination zones.
-2. Open **Your trips**, advance the driver to arriving, and start the trip with the displayed OTP.
-3. End the trip with the end OTP, rate the driver, then sign in as Ramesh or the admin to show earnings or the operations dashboard.
+Fare estimates update from trip type, service duration, pickup time, vehicle class, and recognized Bengaluru, Delhi NCR, or Gurugram zones. Distance is approximate and only available for recognized area names. Maps is not integrated.
 
-The demo state persists in `data/demo.json`. Stop the app, delete that file, then restart to reset all demo data and restore the seed accounts. Do not put personal or production customer data in this local demo database.
+## Current operational requirements
 
-## Current demo scope
+A driver must be onboarded and added to the service before requests can be accepted. Driver verification and document storage are not implemented. Online checkout, wallet, live GPS, masked calling, and support routing are not enabled. The app does not mark a payment complete automatically. Configure those services before accepting real customer journeys.
 
-The Express API provides password authentication, role checks, fare estimates, unique bookings, driver assignment, OTP-gated trip transitions, ratings, driver earnings, and admin totals. When the Firebase service-account environment variables are configured, Express hydrates and persists users, bookings, ratings, booking history, and pricing in Cloud Firestore. The local JSON file remains a development fallback. Three service markets are currently included: Bengaluru, Delhi NCR, and Gurugram. Demo payment status is clearly labelled and is not a real charge. The map is a designed tracking illustration, not live GPS.
+Razorpay order and signature routes and the ElevenLabs token route require their corresponding environment secrets. They do not activate without provider configuration.
 
-Razorpay order creation and signature verification routes are present but require Razorpay **test mode** credentials. The ElevenLabs server token route uses the supplied public Agent ID and requires an ElevenLabs API key. The voice assistant's text request path works without provider credentials. Fares update for known service-area landmarks in Bengaluru, Delhi NCR, and Gurugram using clearly labelled approximate zone distances. Maps is intentionally not used. Never put server secrets in frontend variables.
+## Render
 
-## Optional environment settings
-
-Copy `.env.example` to `.env` and set a strong `JWT_SECRET`. To connect Firestore, enable Cloud Firestore in Native mode, revoke the exposed service-account key, create a replacement service account key with Firestore access, and put its complete JSON in `FIREBASE_SERVICE_ACCOUNT_JSON`; set `FIREBASE_PROJECT_ID` to `vahansathi-4ffae`. Keep `.env` out of source control. Firestore access is server-side only; `firestore.rules` denies direct client access.
-
-## Deployment
-
-The project includes a Render Blueprint (`render.yaml`), a Vite production build, and an Express static-file fallback. Render supplies the port and generates `JWT_SECRET`. In the Render service Environment page, add `FIREBASE_PROJECT_ID` and `FIREBASE_SERVICE_ACCOUNT_JSON` (the rotated service-account JSON); redeploy and check `/api/health` for `integrations.firebase: true`. Without those credentials, it deliberately runs in local-demo mode and JSON data may reset when the free service restarts.
-
-## Credential safety
-
-A Firebase service-account private key was pasted into the setup chat. It is not included in this project. Revoke that key in Google Cloud IAM and issue a replacement before connecting Firebase; treat the pasted value as exposed.
+The Render Blueprint builds the Vite client and serves it through Express. `JWT_SECRET` is generated by Render. Add the Firebase environment variables in the Render service’s Environment settings. The Firebase private key previously supplied in chat must be rotated before use; keep the replacement in Render secrets only.
 
