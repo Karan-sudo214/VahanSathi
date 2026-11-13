@@ -20,10 +20,14 @@ Use the **Sign in** control in the left sidebar. Demo accounts share the passwor
 | Role | Email |
 | --- | --- |
 | Customer | `ananya@vaahansathi.demo` |
-| Driver | `ramesh@vaahansathi.demo` |
+| Bengaluru driver | `ramesh@vaahansathi.demo` |
+| Delhi NCR customer | `priya@vaahansathi.demo` |
+| Delhi NCR driver | `amit@vaahansathi.demo` |
+| Gurugram customer | `neha@vaahansathi.demo` |
+| Gurugram driver | `arjun@vaahansathi.demo` |
 | Admin | `admin@vaahansathi.demo` |
 
-1. Sign in as the customer and book an hourly Sedan driver from Indiranagar to the airport. The four-hour demo estimate is ₹599 including service fee and GST; it shows ₹479 to the driver and ₹120 as VaahanSathi's share.
+1. Sign in as the customer and book an hourly Sedan driver from Indiranagar to the airport. The estimate updates from trip type, hours, vehicle, time, city, and recognized pickup and destination zones.
 2. Open **Your trips**, advance the driver to arriving, and start the trip with the displayed OTP.
 3. End the trip with the end OTP, rate the driver, then sign in as Ramesh or the admin to show earnings or the operations dashboard.
 
@@ -31,17 +35,17 @@ The demo state persists in `data/demo.json`. Stop the app, delete that file, the
 
 ## Current demo scope
 
-The Express API provides password authentication, role checks, fare estimates, unique bookings, driver assignment, OTP-gated trip transitions, ratings, driver earnings, and admin totals. When the Firebase service-account environment variables are configured, Express hydrates and persists users, bookings, ratings, booking history, and pricing in Cloud Firestore. The local JSON file remains a development fallback. Demo payment status is clearly labelled and is not a real charge. The map is a designed tracking illustration, not live GPS.
+The Express API provides password authentication, role checks, fare estimates, unique bookings, driver assignment, OTP-gated trip transitions, ratings, driver earnings, and admin totals. When the Firebase service-account environment variables are configured, Express hydrates and persists users, bookings, ratings, booking history, and pricing in Cloud Firestore. The local JSON file remains a development fallback. Three service markets are currently included: Bengaluru, Delhi NCR, and Gurugram. Demo payment status is clearly labelled and is not a real charge. The map is a designed tracking illustration, not live GPS.
 
-Razorpay order creation and signature verification routes are present but require Razorpay **test mode** credentials. The ElevenLabs server token route uses the supplied public Agent ID and requires an ElevenLabs API key. The voice assistant's text request path works without provider credentials. Google Routes is used for road distance when `GOOGLE_MAPS_SERVER_API_KEY` is set; otherwise, known Bengaluru landmarks use a clearly labelled straight-line route estimate. Never put server secrets in frontend variables.
+Razorpay order creation and signature verification routes are present but require Razorpay **test mode** credentials. The ElevenLabs server token route uses the supplied public Agent ID and requires an ElevenLabs API key. The voice assistant's text request path works without provider credentials. Fares update for known service-area landmarks in Bengaluru, Delhi NCR, and Gurugram using clearly labelled approximate zone distances. Maps is intentionally not used. Never put server secrets in frontend variables.
 
 ## Optional environment settings
 
-Copy `.env.example` to `.env` and set a strong `JWT_SECRET`. To connect Firestore, enable Cloud Firestore in Native mode, revoke the exposed service-account key, create a replacement service account key with Firestore access, and put its complete JSON in `FIREBASE_SERVICE_ACCOUNT_JSON`; set `FIREBASE_PROJECT_ID` to `vahansathi-4ffae`. For exact live road distance, enable Google Routes API and set `GOOGLE_MAPS_SERVER_API_KEY` to a server-restricted key. Keep `.env` out of source control. Firestore access is server-side only; `firestore.rules` denies direct client access.
+Copy `.env.example` to `.env` and set a strong `JWT_SECRET`. To connect Firestore, enable Cloud Firestore in Native mode, revoke the exposed service-account key, create a replacement service account key with Firestore access, and put its complete JSON in `FIREBASE_SERVICE_ACCOUNT_JSON`; set `FIREBASE_PROJECT_ID` to `vahansathi-4ffae`. Keep `.env` out of source control. Firestore access is server-side only; `firestore.rules` denies direct client access.
 
 ## Deployment
 
-The project includes a Render Blueprint (`render.yaml`), a Vite production build, and an Express static-file fallback. Render supplies the port and generates `JWT_SECRET`. In the Render service Environment page, add `FIREBASE_PROJECT_ID`, `FIREBASE_SERVICE_ACCOUNT_JSON` (the rotated service-account JSON), and optionally `GOOGLE_MAPS_SERVER_API_KEY`; redeploy and check `/api/health` for `integrations.firebase: true` and `integrations.maps: true`. Without those credentials, it deliberately runs in local-demo mode and JSON data may reset when the free service restarts.
+The project includes a Render Blueprint (`render.yaml`), a Vite production build, and an Express static-file fallback. Render supplies the port and generates `JWT_SECRET`. In the Render service Environment page, add `FIREBASE_PROJECT_ID` and `FIREBASE_SERVICE_ACCOUNT_JSON` (the rotated service-account JSON); redeploy and check `/api/health` for `integrations.firebase: true`. Without those credentials, it deliberately runs in local-demo mode and JSON data may reset when the free service restarts.
 
 ## Credential safety
 
