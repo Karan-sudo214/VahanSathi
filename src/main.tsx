@@ -2324,10 +2324,20 @@ function VoiceAgentModal({ onClose, onApply, onBook, city }: { onClose: () => vo
   }
 
   function startListening() {
+    // SpeechRecognition is optional: Safari/iOS and some embedded browsers do not expose it.
+    // Keep the typed route path available in every browser rather than blocking booking.
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      setErr('Voice input is not supported by this browser. Please use the latest supported Chrome or type your trip below.');
+    if (!window.isSecureContext && location.hostname !== 'localhost') {
+      setErr('Microphone features require the secure HTTPS website. You can still type your trip below.');
       return;
+    }
+    if (!SpeechRecognition) {
+      setErr('Voice dictation is not available in this browser version. Type your trip below to continue booking.');
+      return;
+    }
+    if (recognitionRef.current) {
+      try { recognitionRef.current.abort(); } catch {}
+      recognitionRef.current = null;
     }
     try {
       setErr('');
@@ -2339,36 +2349,46 @@ function VoiceAgentModal({ onClose, onApply, onBook, city }: { onClose: () => vo
       recognition.continuous = false;
       recognition.interimResults = true;
       recognition.maxAlternatives = 1;
+      recognition.onstart = () => setStage('listening');
       recognition.onresult = (event: any) => {
-        let transcript = '';
+        const parts: string[] = [];
         for (let i = 0; i < event.results.length; i++) {
-          transcript += event.results[i][0]?.transcript || '';
+          const result = event.results[i];
+          const transcript = result?.[0]?.transcript;
+          if (transcript) parts.push(transcript);
         }
-        setFinal(transcript.trim());
+        if (parts.length) setFinal(parts.join(' ').replace(/\\s+/g, ' ').trim());
       };
       recognition.onerror = (event: any) => {
-        setStage('idle');
+        if (recognitionRef.current === recognition) recognitionRef.current = null;
+        if (event.error === 'aborted') {
+          setStage('idle');
+          return;
+        }
         const messages: Record<string, string> = {
-          'not-allowed': 'Microphone permission is blocked. Allow microphone access in your browser settings, then try again.',
-          'service-not-allowed': 'This browser or device has blocked speech recognition. Please type your trip instead.',
+          'not-allowed': 'Microphone permission is blocked. Allow microphone access for this site in your browser settings, then try again.',
+          'service-not-allowed': 'Your browser or device does not allow its speech service. Type your trip below to continue.',
           'no-speech': 'No speech was detected. Tap the microphone and speak clearly, or type your trip.',
-          'audio-capture': 'No microphone is available. Please check your device or type your trip.',
-          network: 'The browser speech service is unavailable. Check your connection or type your trip.'
+          'audio-capture': 'No microphone is available. Check your device microphone or type your trip.',
+          network: 'The browser speech service could not connect. Check your internet connection or type your trip.',
+          'language-not-supported': 'This browser does not support the selected recognition language. Choose English or type your trip.'
         };
-        setErr(messages[event.error] || 'Voice recognition stopped unexpectedly. Please try again or type your trip.');
+        setErr(messages[event.error] || 'Voice dictation stopped. You can try again or type your trip below.');
+        setStage('idle');
       };
       recognition.onend = () => {
         if (recognitionRef.current === recognition) recognitionRef.current = null;
         setStage(current => current === 'listening' ? 'idle' : current);
       };
+      // start() must run directly from the user's tap for mobile browser permission policies.
       recognition.start();
       setStage('listening');
     } catch (error: any) {
-      recognitionRef.current = null;
+      if (recognitionRef.current) recognitionRef.current = null;
       setStage('idle');
-      setErr(error?.name === 'NotAllowedError'
-        ? 'Microphone permission is blocked. Allow microphone access in your browser settings, then try again.'
-        : 'Could not start voice recognition on this device. Please type your trip instead.');
+      setErr(error?.name === 'NotAllowedError' || error?.name === 'SecurityError'
+        ? 'Microphone permission is blocked. Allow microphone access for this site, then try again.'
+        : 'Could not start voice dictation on this device. Type your trip below to continue.');
     }
   }
 
@@ -2438,7 +2458,7 @@ function VoiceAgentModal({ onClose, onApply, onBook, city }: { onClose: () => vo
               {stage === 'processing' && 'Understanding your trip…'}
               {stage === 'confirm' && 'Review your trip'}
             </h2>
-            <p style={{fontSize:'12px',color:'var(--t5)',lineHeight:1.4}}>Tap the microphone, speak naturally, then review the trip before booking.</p>
+            <p style={{fontSize:'12px',color:'var(--t5)',lineHeight:1.4}}>If your browser supports voice dictation, tap the microphone. Otherwise, type your trip below — booking works either way.</p>
           </div>
         </div>
         <div className="va-lang-row">
