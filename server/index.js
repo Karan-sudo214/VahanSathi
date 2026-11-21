@@ -408,7 +408,7 @@ async function loadNeon() {
 
 // ----------------- Helpers & Routes -----------------
 const normalizeServiceCity = (value) => {
-  const city = String(value || '').trim().toLowerCase().replace(/\\s+/g, ' ');
+  const city = String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
   if (['gurgaon', 'gurugram', 'gurugram city'].includes(city)) return 'gurugram';
   if (['delhi', 'new delhi', 'nct of delhi', 'delhi ncr'].includes(city)) return 'delhi';
   return city;
