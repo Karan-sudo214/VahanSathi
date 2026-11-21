@@ -39,6 +39,12 @@ import {
 } from 'lucide-react';
 import './style.css';
 import { LanguageSwitcher } from './i18n';
+import {
+  firebaseCustomerCreate,
+  firebaseCustomerSignIn,
+  firebaseGoogleSignIn,
+  firebaseSignOut
+} from './firebase';
 
 type User = {
   id: string;
@@ -350,20 +356,58 @@ function App() {
     }
   };
 
-  const googleLogin = async (credential: string, accountCity = 'Delhi') => {
+  const completeFirebaseLogin = async (firebaseUser: any, accountCity = 'Delhi', phone = '') => {
+    const idToken = await firebaseUser.getIdToken();
+    const response = await fetch('/api/auth/firebase', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        idToken,
+        city: accountCity,
+        phone,
+        name: firebaseUser.displayName || ''
+      })
+    });
+    const d = await response.json();
+    if (!response.ok) throw new Error(d.error || 'Firebase sign-in could not be completed.');
+    localStorage.setItem('vs_token', d.token);
+    localStorage.setItem('vs_user', JSON.stringify(d.user));
+    setUser(d.user);
+    if (d.user.city === 'Delhi' || d.user.city === 'Gurugram') chooseCity(d.user.city);
+    setPage('Home');
+    setModal('');
+    flash(`Welcome to VaahanSathi, ${d.user.name.split(' ')[0]}!`);
+  };
+
+  const firebaseCustomerLogin = async (email: string, password: string) => {
     setBusy(true);
     try {
-      const d = await api('/auth/google', {
-        method: 'POST',
-        body: JSON.stringify({ credential, city: accountCity })
-      });
-      localStorage.setItem('vs_token', d.token);
-      localStorage.setItem('vs_user', JSON.stringify(d.user));
-      setUser(d.user);
-      if (d.user.city === 'Delhi' || d.user.city === 'Gurugram') chooseCity(d.user.city);
-      setPage('Home');
-      setModal('');
-      flash(`Welcome to VaahanSathi, ${d.user.name.split(' ')[0]}!`);
+      const credential = await firebaseCustomerSignIn(email, password);
+      await completeFirebaseLogin(credential.user);
+    } catch (e: any) {
+      flash(e.message || 'Customer sign-in failed. Please check your details.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const firebaseCustomerRegister = async (name: string, email: string, password: string, accountCity: string, phone = '') => {
+    setBusy(true);
+    try {
+      const credential = await firebaseCustomerCreate(name, email, password);
+      await completeFirebaseLogin(credential.user, accountCity, phone);
+    } catch (e: any) {
+      flash(e.message || 'Customer account could not be created.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const firebaseGoogleLogin = async (accountCity = 'Delhi') => {
+    setBusy(true);
+    try {
+      const credential = await firebaseGoogleSignIn();
+      await completeFirebaseLogin(credential.user, accountCity);
     } catch (e: any) {
       flash(e.message || 'Google sign-in could not be completed.');
     } finally {
@@ -546,6 +590,9 @@ function App() {
   };
 
   const logout = () => {
+    if (user?.role === 'customer') {
+      firebaseSignOut().catch(() => {});
+    }
     localStorage.removeItem('vs_user');
     localStorage.removeItem('vs_token');
     setUser(null);
@@ -909,7 +956,9 @@ function App() {
           onClose={() => setModal('')}
           onLogin={login}
           onRegister={register}
-          onGoogleCredential={googleLogin}
+          onCustomerLogin={firebaseCustomerLogin}
+          onCustomerRegister={firebaseCustomerRegister}
+          onGoogleLogin={firebaseGoogleLogin}
           busy={busy}
           storageReady={storageReady}
         />
@@ -2598,8 +2647,9 @@ function VoiceAgentModal({ onClose, onApply, onBook, city }: { onClose: () => vo
     </div>
   );
 }
-function AuthModal({ onClose, onLogin, onRegister, onGoogleCredential, busy, storageReady }: any) {
+function AuthModal({ onClose, onLogin, onRegister, onCustomerLogin, onCustomerRegister, onGoogleLogin, busy, storageReady }: any) {
   const [mode, setMode] = useState<'login' | 'register'>('login');
+  const [loginRole, setLoginRole] = useState<'customer' | 'partner'>('customer');
   const [registerRole, setRegisterRole] = useState<'customer' | 'driver'>('customer');
   const [name, setName] = useState('');
   const [city, setCity] = useState('Delhi');
@@ -2608,48 +2658,17 @@ function AuthModal({ onClose, onLogin, onRegister, onGoogleCredential, busy, sto
   const [licenseNumber, setLicenseNumber] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const googleButtonRef = useRef<HTMLDivElement>(null);
-  const googleCallback = useRef(onGoogleCredential);
-  googleCallback.current = onGoogleCredential;
-  const googleClientId = (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID || '';
-
-  useEffect(() => {
-    if (!googleClientId || registerRole !== 'customer') return;
-    let cancelled = false;
-    const renderGoogleButton = () => {
-      const google = (window as any).google;
-      if (cancelled || !google?.accounts?.id || !googleButtonRef.current) return;
-      google.accounts.id.initialize({
-        client_id: googleClientId,
-        callback: (response: any) => {
-          if (response?.credential) googleCallback.current(response.credential, city);
-        }
-      });
-      google.accounts.id.renderButton(googleButtonRef.current, {
-        type: 'standard', theme: 'outline', size: 'large', shape: 'rectangular',
-        text: mode === 'register' ? 'signup_with' : 'signin_with',
-        logo_alignment: 'left', width: Math.min(340, googleButtonRef.current.clientWidth || 340)
-      });
-    };
-    const existing = document.querySelector('script[data-google-identity]');
-    if ((window as any).google?.accounts?.id) renderGoogleButton();
-    else if (existing) existing.addEventListener('load', renderGoogleButton, { once: true });
-    else {
-      const script = document.createElement('script');
-      script.src = 'https://accounts.google.com/gsi/client';
-      script.async = true;
-      script.defer = true;
-      script.dataset.googleIdentity = 'true';
-      script.onload = renderGoogleButton;
-      document.head.appendChild(script);
-    }
-    return () => { cancelled = true; };
-  }, [googleClientId, registerRole, mode, city]);
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (mode === 'login') onLogin(email, password);
-    else onRegister(name, email, password, city, phone, registerRole, vehicle, licenseNumber);
+    if (mode === 'login') {
+      if (loginRole === 'customer') onCustomerLogin(email, password);
+      else onLogin(email, password);
+    } else if (registerRole === 'customer') {
+      onCustomerRegister(name, email, password, city, phone);
+    } else {
+      onRegister(name, email, password, city, phone, registerRole, vehicle, licenseNumber);
+    }
   };
 
   return (
@@ -2668,10 +2687,19 @@ function AuthModal({ onClose, onLogin, onRegister, onGoogleCredential, busy, sto
         </p>
 
         {mode === 'login' && (
+          <label className="field-group">
+            <span>Account Type</span>
+            <select value={loginRole} onChange={(e) => setLoginRole(e.target.value as 'customer' | 'partner')}>
+              <option value="customer">Customer</option>
+              <option value="partner">Driver / Admin</option>
+            </select>
+          </label>
+        )}
+
+        {mode === 'login' && (
           <div className="quick-demo-box">
             <span className="quick-label">Quick demo sign-in · password: password123</span>
             <div className="quick-buttons">
-              <button type="button" onClick={() => onLogin('ananya@vaahansathi.demo', 'password123')}>Customer</button>
               <button type="button" onClick={() => onLogin('ramesh@vaahansathi.demo', 'password123')}>Driver (Gurugram)</button>
               <button type="button" onClick={() => onLogin('priya@vaahansathi.demo', 'password123')}>Driver (Delhi)</button>
               <button type="button" onClick={() => onLogin('admin@vaahansathi.demo', 'password123')}>Admin</button>
@@ -2681,21 +2709,23 @@ function AuthModal({ onClose, onLogin, onRegister, onGoogleCredential, busy, sto
 
         {registerRole === 'customer' && (
           <div className="google-auth-section">
-            {googleClientId ? (
-              <>
-                <div className="auth-divider"><span>OR CONTINUE WITH</span></div>
-                <div className="google-button-wrap" ref={googleButtonRef} />
-              </>
-            ) : (
-              <p className="google-auth-note">Google sign-in is being configured. You can use email and password meanwhile.</p>
-            )}
+            <div className="auth-divider"><span>OR CONTINUE WITH</span></div>
+            <button
+              type="button"
+              className="firebase-google-btn"
+              onClick={() => onGoogleLogin(city)}
+              disabled={busy}
+            >
+              <span className="firebase-google-mark">G</span>
+              Continue with Google
+            </button>
+            <p className="google-auth-note">Secure sign-in powered by Firebase Authentication.</p>
           </div>
         )}
 
         <form onSubmit={submit} className="auth-form">
           {mode === 'register' && (
             <>
-              {/* Role selector */}
               <div className="role-switcher">
                 <button
                   type="button"
@@ -2795,7 +2825,6 @@ function AuthModal({ onClose, onLogin, onRegister, onGoogleCredential, busy, sto
     </div>
   );
 }
-
 function CheckoutModal({ booking, onClose, onPay }: any) {
   if (!booking) return null;
   return (
