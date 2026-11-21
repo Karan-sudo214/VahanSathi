@@ -17,6 +17,7 @@ import {
   Heart,
   IndianRupee,
   MapPin,
+  LockKeyhole,
   Menu,
   Mic,
   MoreHorizontal,
@@ -143,7 +144,7 @@ function downloadReceipt(b: Booking, r: Receipt) {
     `TOTAL PAID  : ${money(r.amount)}`,
     '----------------------------------------------------',
     '',
-    'Service Note: VaahanSathi provides professional verified drivers.',
+    'Service Note: VaahanSathi provides driver-booking services for customer-owned vehicles.',
     'Customers provide their own vehicles.',
     'Thank you for traveling with VaahanSathi!'
   ];
@@ -181,8 +182,8 @@ function downloadInvoice(b: Booking) {
     `PAYMENT STATUS     : ${b.payment_status}`,
     '----------------------------------------------------',
     '',
-    'VaahanSathi Mobility Technologies Pvt. Ltd.',
-    'Transparent Driver Services Across India.'
+    'VaahanSathi · Driver booking service',
+    'Service area and fare details are shown in the booking.'
   ];
   const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
   const url = URL.createObjectURL(blob);
@@ -465,10 +466,62 @@ function App() {
     }
   };
 
-  const completePayment = (_b: Booking, _method: string) => {
-    // No payment-creation or payment-verification endpoint is currently configured.
-    // Never generate a receipt or claim that money was collected without a verified provider response.
-    flash('Online payment is not connected yet. No payment was charged. Please contact support.');
+  const completePayment = async (b: Booking) => {
+    if (!b) return;
+    setBusy(true);
+    try {
+      const orderData = await api('/payments/razorpay/order', {
+        method: 'POST',
+        body: JSON.stringify({ bookingId: b.id })
+      });
+      if (!orderData?.keyId || !orderData?.order?.id) throw new Error('Secure checkout could not be started. Please try again.');
+      const loadCheckout = () => new Promise<void>((resolve, reject) => {
+        if ((window as any).Razorpay) return resolve();
+        const script = document.createElement('script');
+        script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+        script.onload = () => resolve();
+        script.onerror = () => reject(new Error('Razorpay Checkout could not load. Check your connection and try again.'));
+        document.body.appendChild(script);
+      });
+      await loadCheckout();
+      setBusy(false);
+      const checkout = new (window as any).Razorpay({
+        key: orderData.keyId,
+        amount: orderData.order.amount,
+        currency: orderData.order.currency,
+        name: 'VaahanSathi',
+        description: 'Driver service booking ' + b.id,
+        order_id: orderData.order.id,
+        prefill: { name: user?.name || '', email: user?.email || '', contact: user?.phone || '' },
+        theme: { color: '#0f766e' },
+        handler: async (response: any) => {
+          try {
+            await api('/payments/razorpay/verify', {
+              method: 'POST',
+              body: JSON.stringify({
+                bookingId: b.id,
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature: response.razorpay_signature
+              })
+            });
+            await refresh();
+            setModal('');
+            flash('Payment verified successfully. Your booking is paid.');
+          } catch (error: any) {
+            flash(error?.message || 'Payment verification is pending. Please contact support before paying again.');
+          }
+        },
+        modal: { ondismiss: () => flash('Checkout closed. No payment was confirmed.') }
+      });
+      checkout.on('payment.failed', (event: any) => {
+        flash(event?.error?.description || 'Payment failed. No paid status was recorded.');
+      });
+      checkout.open();
+    } catch (error: any) {
+      setBusy(false);
+      flash(error?.message || 'Could not start secure payment.');
+    }
   };
 
   const logout = () => {
@@ -565,10 +618,10 @@ function App() {
 
         <div className="sidebar-bottom">
           <div className="db-indicator">
-            <span className={`db-pulse ${storageReady ? 'online' : 'connecting'}`} />
+            <span className={`db-pulse ${storageReady === null ? 'connecting' : storageReady ? 'online' : 'offline'}`} />
             <div className="db-text">
-              <b>{storageReady ? 'Cloud data connected' : 'Syncing workspace...'}</b>
-              <small>{storageReady ? 'All systems operational' : 'Checking connection'}</small>
+              <b>{storageReady === null ? 'Checking cloud storage…' : storageReady ? 'Cloud data connected' : 'Cloud storage unavailable'}</b>
+              <small>{storageReady === null ? 'Checking connection' : storageReady ? 'Changes sync to the database' : 'Demo data may reset after a restart'}</small>
             </div>
           </div>
 
@@ -626,16 +679,16 @@ function App() {
                     {new Date().toLocaleDateString('en-IN', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }).toUpperCase()}
                   </span>
                   <h1>Good day{user ? `, ${user.name.split(' ')[0]}` : ''}!</h1>
-                  <p className="subhead">Professional, verified drivers for your own car on-demand.</p>
+                  <p className="subhead">Professional drivers for your own car, with clear booking details at every step.</p>
                 </div>
               </div>
 
               {/* Hero Showcase */}
               <section className="hero-card">
                 <div className="hero-content">
-                  <span className="hero-badge">YOUR CAR · OUR VERIFIED DRIVER</span>
+                  <span className="hero-badge">YOUR CAR · OUR DRIVER</span>
                   <h2>Professional Drivers For Your Own Vehicle</h2>
-                  <p>Pay only for the driver's time. Verified, uniformed chauffeurs across Delhi & Gurugram.</p>
+                  <p>Pay for driver service for your own vehicle across Delhi & Gurugram. Review your fare estimate before booking.</p>
                   <div className="hero-cta-row">
                     <button className="hero-btn" onClick={() => setPage('Book a driver')}>
                       Book a Driver <ArrowRight size={16} />
@@ -647,7 +700,7 @@ function App() {
                     )}
                   </div>
                   <div className="hero-highlights">
-                    <span><ShieldCheck size={14} /> Police Verified</span>
+                    <span><ShieldCheck size={14} /> Driver review process</span>
                     <span><MapPin size={14} /> {city}</span>
                     <span><IndianRupee size={14} /> From ₹599</span>
                   </div>
@@ -683,25 +736,26 @@ function App() {
                 ))}
               </div>
 
-              {/* Brand trust points */}
-              <section className="trust-strip" aria-label="Why choose VaahanSathi">
+              {/* Trust is earned through clear information, not big promises. */}
+              <section className="trust-strip trust-experience" aria-label="The VaahanSathi experience">
                 <div className="trust-strip-heading">
-                  <span className="eyebrow">A BETTER WAY TO GET THERE</span>
-                  <h3>Convenience, with confidence.</h3>
-                  <p>Professional driver service designed around the car you already own.</p>
+                  <span className="eyebrow">BUILT AROUND YOUR PEACE OF MIND</span>
+                  <h3>Know what to expect. Stay in control.</h3>
+                  <p>A professional driver for your own car, with the important trip details kept clear at every step.</p>
+                  <button className="trust-learn-link" onClick={() => setPage('Help')}>Questions before you book? Visit Help <ArrowRight size={14} /></button>
                 </div>
                 <div className="trust-points">
                   <article className="trust-point">
                     <span className="trust-point-icon"><ShieldCheck size={19} /></span>
-                    <div><b>Verification-led</b><small>Driver onboarding and review process</small></div>
+                    <div><b>Driver review process</b><small>New driver accounts are reviewed before they can accept trips</small></div>
                   </article>
                   <article className="trust-point">
                     <span className="trust-point-icon"><IndianRupee size={19} /></span>
-                    <div><b>Clear fare breakdown</b><small>See the estimate before you book</small></div>
+                    <div><b>See the estimate first</b><small>Review the available fare estimate before placing a booking</small></div>
                   </article>
                   <article className="trust-point">
-                    <span className="trust-point-icon"><CarFront size={19} /></span>
-                    <div><b>Your car. Your journey.</b><small>A driver for the vehicle you own</small></div>
+                    <span className="trust-point-icon"><LockKeyhole size={19} /></span>
+                    <div><b>OTP-led trip stages</b><small>Use your trip OTP at the appropriate start and completion steps</small></div>
                   </article>
                 </div>
               </section>
@@ -744,10 +798,10 @@ function App() {
                   </div>
                   <div>
                     <span className="eyebrow green">VAAHANSATHI COMMITMENT</span>
-                    <h3>Arrive Safely, Relax Comfortably</h3>
+                    <h3>Your journey, with clearer expectations.</h3>
                     <p>
-                      Every driver is background-checked, vetted for manual and automatic transmissions, and arrives in uniform at your
-                      doorstep.
+                      VaahanSathi connects car owners with professional drivers. Review your trip details, driver assignment and booking
+                      status in the app. We will keep improving the experience with clear information at every step.
                     </p>
                     <div className="service-tags">
                       <span>Delhi</span>
@@ -976,8 +1030,8 @@ function BookingPage(p: any) {
       <div className="booking-head">
         <div>
           <span className="eyebrow">YOUR CAR · PROFESSIONAL CHAUFFEUR</span>
-          <h1>Book a Verified Driver</h1>
-          <p>Tell us where you are headed. We will match you with a trusted partner.</p>
+          <h1>Book a Professional Driver</h1>
+          <p>Share your route and schedule. You can review the driver assignment and trip details before your journey.</p>
         </div>
         <div className="service-market-pill">
           <MapPin size={15} /> {p.city} Area
@@ -1006,7 +1060,7 @@ function BookingPage(p: any) {
             <CarFront size={20} />
             <div>
               <b>Your Car, Our Driver</b>
-              <p>You provide the vehicle. Our verified driver takes the wheel so you can relax.</p>
+              <p>You provide the vehicle. Your assigned driver takes the wheel so you can focus on the journey.</p>
             </div>
           </div>
 
@@ -1288,6 +1342,29 @@ function TripsPage({ bookings, filter, setFilter, update, onRate, onPay, onTrack
                   </div>
                 </div>
               </div>
+
+              {/* Live, transparent trip progress */}
+              {b.status !== 'Cancelled' && (() => {
+                const stages = ['Searching', 'Driver assigned', 'Driver arriving', 'Trip started', 'Trip completed'];
+                const current = Math.max(0, stages.indexOf(b.status));
+                return (
+                  <section className="trip-progress" aria-label="Trip progress">
+                    <div className="trip-progress-heading">
+                      <div><b>Trip progress</b><small>Updates as your booking moves forward</small></div>
+                      <span>{b.status === 'Trip completed' ? 'Completed' : `${current + 1} of ${stages.length}`}</span>
+                    </div>
+                    <ol className="trip-progress-steps">
+                      {stages.map((stage, index) => (
+                        <li key={stage} className={index < current ? 'complete' : index === current ? 'current' : ''}>
+                          <span className="trip-progress-dot">{index < current ? <Check size={12} /> : index + 1}</span>
+                          <span>{stage === 'Searching' ? 'Finding a driver' : stage}</span>
+                        </li>
+                      ))}
+                    </ol>
+                    <p className="trip-progress-note"><ShieldCheck size={14} /> Only share your start OTP when you are with your assigned driver.</p>
+                  </section>
+                );
+              })()}
 
               {/* OTP Cards for active trips */}
               {['Driver assigned', 'Driver arriving', 'Trip started'].includes(b.status) && (
@@ -2093,7 +2170,7 @@ function HelpPage({ flash, onDispute }: any) {
         <h3>Frequently Asked Questions</h3>
         <details>
           <summary>Does VaahanSathi provide the car? <ChevronDown size={16} /></summary>
-          <p>No. VaahanSathi is exclusively an on-demand professional driver service for your own car. You provide the car; we provide the verified chauffeur.</p>
+          <p>No. VaahanSathi connects car owners with drivers for the customer's own vehicle. Review the assigned driver's details in your booking before the trip.</p>
         </details>
         <details>
           <summary>How are fuel, tolls, and parking handled? <ChevronDown size={16} /></summary>
@@ -2220,117 +2297,98 @@ function VoiceAgentModal({ onClose, onApply, onBook, city }: { onClose: () => vo
   const [intent, setIntent] = useState<any>(null);
   const [err, setErr] = useState('');
   const [booking, setBooking] = useState(false);
-  const recorderRef = useRef<MediaRecorder | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
+  const recognitionRef = useRef<any>(null);
   const LANGS = [
     { label: 'English', code: 'en-IN', srv: 'en-IN', ph: 'Example: Take me from Connaught Place to IGI Airport tomorrow at 6 AM' },
     { label: 'हिन्दी', code: 'hi-IN', srv: 'hi-IN', ph: 'उदाहरण: कल सुबह कनॉट प्लेस से एयरपोर्ट जाना है' },
-    { label: 'Hinglish', code: 'hi-IN', srv: 'hi-hinglish', ph: 'Example: Kal subah Connaught Place se airport jaana hai' },
+    { label: 'Hinglish', code: 'en-IN', srv: 'hi-hinglish', ph: 'Example: Kal subah Connaught Place se airport jaana hai' },
   ];
   const [lang, setLang] = useState(() => {
     const saved = localStorage.getItem('vs_language');
     return LANGS[saved === 'hi' ? 1 : saved === 'hinglish' ? 2 : 0];
   });
 
-  function releaseMic() {
-    streamRef.current?.getTracks().forEach(track => track.stop());
-    streamRef.current = null;
-  }
-
   useEffect(() => () => {
-    try { recorderRef.current?.stop(); } catch {}
-    recorderRef.current = null;
-    releaseMic();
+    try { recognitionRef.current?.abort(); } catch {}
+    recognitionRef.current = null;
     if ('speechSynthesis' in window) window.speechSynthesis.cancel();
   }, []);
 
   function stopListening() {
-    const recorder = recorderRef.current;
-    if (recorder && recorder.state !== 'inactive') {
-      setStage('processing');
-      try { recorder.stop(); } catch {
-        recorderRef.current = null;
-        releaseMic();
-        setStage('idle');
-        setErr('Could not finish the recording. Please try again or type your trip.');
-      }
-    } else {
-      releaseMic();
+    try { recognitionRef.current?.stop(); }
+    catch {
+      recognitionRef.current = null;
       setStage('idle');
+      setErr('Could not stop voice recognition. Please type your trip instead.');
     }
   }
 
-  async function startListening() {
+  function startListening() {
+    // SpeechRecognition is optional: Safari/iOS and some embedded browsers do not expose it.
+    // Keep the typed route path available in every browser rather than blocking booking.
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!window.isSecureContext && location.hostname !== 'localhost') {
-      setErr('Microphone access requires a secure HTTPS connection. Open the secure VaahanSathi website or type your trip.');
+      setErr('Microphone features require the secure HTTPS website. You can still type your trip below.');
       return;
     }
-    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
-      setErr('Audio recording is not supported in this browser. Please use the latest Safari or Chrome, or type your trip below.');
+    if (!SpeechRecognition) {
+      setErr('Voice dictation is not available in this browser version. Type your trip below to continue booking.');
       return;
+    }
+    if (recognitionRef.current) {
+      try { recognitionRef.current.abort(); } catch {}
+      recognitionRef.current = null;
     }
     try {
       setErr('');
       setFinal('');
       setIntent(null);
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
-      });
-      streamRef.current = stream;
-      const candidates = ['audio/webm;codecs=opus', 'audio/mp4', 'audio/webm', 'audio/ogg;codecs=opus'];
-      const mimeType = candidates.find(type => MediaRecorder.isTypeSupported?.(type));
-      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
-      recorderRef.current = recorder;
-      const chunks: BlobPart[] = [];
-      recorder.ondataavailable = event => {
-        if (event.data && event.data.size > 0) chunks.push(event.data);
+      const recognition = new SpeechRecognition();
+      recognitionRef.current = recognition;
+      recognition.lang = lang.code;
+      recognition.continuous = false;
+      recognition.interimResults = true;
+      recognition.maxAlternatives = 1;
+      recognition.onstart = () => setStage('listening');
+      recognition.onresult = (event: any) => {
+        const parts: string[] = [];
+        for (let i = 0; i < event.results.length; i++) {
+          const result = event.results[i];
+          const transcript = result?.[0]?.transcript;
+          if (transcript) parts.push(transcript);
+        }
+        if (parts.length) setFinal(parts.join(' ').replace(/\s+/g, ' ').trim());
       };
-      recorder.onerror = () => {
-        recorderRef.current = null;
-        releaseMic();
-        setStage('idle');
-        setErr('Recording failed. Check microphone permission and try again, or type your trip.');
-      };
-      recorder.onstop = async () => {
-        recorderRef.current = null;
-        releaseMic();
-        const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' });
-        if (blob.size < 1000) {
+      recognition.onerror = (event: any) => {
+        if (recognitionRef.current === recognition) recognitionRef.current = null;
+        if (event.error === 'aborted') {
           setStage('idle');
-          setErr('The recording was too short. Please hold the microphone and speak for a moment.');
           return;
         }
-        try {
-          setStage('processing');
-          const mime = blob.type.split(';')[0] || 'audio/webm';
-          const result = await api('/voice/transcribe?language=' + encodeURIComponent(lang.srv), {
-            method: 'POST',
-            body: blob,
-            headers: { 'Content-Type': mime }
-          });
-          const transcript = typeof result?.text === 'string' ? result.text.trim() : '';
-          if (!transcript) throw new Error('No words were detected. Please try again or type your trip.');
-          setFinal(transcript);
-          setStage('idle');
-          setErr('');
-        } catch (error: any) {
-          setStage('idle');
-          setErr(error?.message || 'Voice transcription failed. Please try again or type your trip.');
-        }
+        const messages: Record<string, string> = {
+          'not-allowed': 'Microphone permission is blocked. Allow microphone access for this site in your browser settings, then try again.',
+          'service-not-allowed': 'Your browser or device does not allow its speech service. Type your trip below to continue.',
+          'no-speech': 'No speech was detected. Tap the microphone and speak clearly, or type your trip.',
+          'audio-capture': 'No microphone is available. Check your device microphone or type your trip.',
+          network: 'The browser speech service could not connect. Check your internet connection or type your trip.',
+          'language-not-supported': 'This browser does not support the selected recognition language. Choose English or type your trip.'
+        };
+        setErr(messages[event.error] || 'Voice dictation stopped. You can try again or type your trip below.');
+        setStage('idle');
       };
-      recorder.start(250);
+      recognition.onend = () => {
+        if (recognitionRef.current === recognition) recognitionRef.current = null;
+        setStage(current => current === 'listening' ? 'idle' : current);
+      };
+      // start() must run directly from the user's tap for mobile browser permission policies.
+      recognition.start();
       setStage('listening');
     } catch (error: any) {
-      releaseMic();
+      if (recognitionRef.current) recognitionRef.current = null;
       setStage('idle');
-      const name = error?.name;
-      setErr(name === 'NotAllowedError' || name === 'SecurityError'
-        ? 'Microphone permission is blocked. Allow microphone access in your phone browser settings, then try again.'
-        : name === 'NotFoundError'
-          ? 'No microphone was found on this device. Please type your trip.'
-          : name === 'NotReadableError'
-            ? 'Your microphone is busy in another app. Close other apps using it and try again.'
-            : 'Could not access the microphone. Check your browser permission or type your trip below.');
+      setErr(error?.name === 'NotAllowedError' || error?.name === 'SecurityError'
+        ? 'Microphone permission is blocked. Allow microphone access for this site, then try again.'
+        : 'Could not start voice dictation on this device. Type your trip below to continue.');
     }
   }
 
@@ -2400,14 +2458,14 @@ function VoiceAgentModal({ onClose, onApply, onBook, city }: { onClose: () => vo
               {stage === 'processing' && 'Understanding your trip…'}
               {stage === 'confirm' && 'Review your trip'}
             </h2>
-            <p style={{fontSize:'12px',color:'var(--t5)',lineHeight:1.4}}>Tap the microphone, speak naturally, then review the trip before booking.</p>
+            <p style={{fontSize:'12px',color:'var(--t5)',lineHeight:1.4}}>If your browser supports voice dictation, tap the microphone. Otherwise, type your trip below — booking works either way.</p>
           </div>
         </div>
         <div className="va-lang-row">
           {LANGS.map(option => (
             <button key={option.label} type="button" className={'va-lang-btn' + (lang.label === option.label ? ' active' : '')}
               onClick={() => {
-                if (recorderRef.current?.state === 'recording') stopListening();
+                if (recognitionRef.current) stopListening();
                 setLang(option); setErr(''); setFinal(''); setIntent(null);
               }}>{option.label}</button>
           ))}
@@ -2490,7 +2548,7 @@ function AuthModal({ onClose, onLogin, onRegister, busy, storageReady }: any) {
 
         <h2>{mode === 'login' ? 'Sign In to Your Account' : registerRole === 'driver' ? 'Join as Driver Partner' : 'Create Customer Account'}</h2>
         <p className="modal-sub">
-          {mode === 'login' ? 'Access your rides and bookings' : registerRole === 'driver' ? 'Drive customers in your city and earn 80% of every fare' : 'Book verified drivers for your personal vehicle'}
+          {mode === 'login' ? 'Access your rides and bookings' : registerRole === 'driver' ? 'Drive customers in your city and earn 80% of every fare' : 'Book professional drivers for your personal vehicle'}
         </p>
 
         {mode === 'login' && (
@@ -2610,38 +2668,21 @@ function AuthModal({ onClose, onLogin, onRegister, busy, storageReady }: any) {
 }
 
 function CheckoutModal({ booking, onClose, onPay }: any) {
-  const [method, setMethod] = useState('UPI');
   if (!booking) return null;
-
   return (
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal checkout-modal-box">
         <button className="modal-close-btn" onClick={onClose}><X size={18} /></button>
-        <span className="eyebrow">SECURE CHECKOUT</span>
+        <span className="eyebrow">RAZORPAY SECURE CHECKOUT</span>
         <h2>Complete Trip Payment</h2>
         <p className="checkout-route">{booking.pickup} → {booking.destination}</p>
-
         <div className="total-due-banner">
           <span>Total Fare Amount</span>
           <b>{money(booking.total)}</b>
         </div>
-
-        <div className="payment-options-list">
-          {['UPI / GooglePay / PhonePe', 'Credit / Debit Card', 'Net Banking'].map((m) => (
-            <button
-              key={m}
-              className={`payment-method-row ${method === m ? 'selected' : ''}`}
-              onClick={() => setMethod(m)}
-            >
-              <CreditCard size={18} />
-              <span>{m}</span>
-              {method === m && <Check size={16} className="selected-check" />}
-            </button>
-          ))}
-        </div>
-
-        <button className="primary-btn-wide" onClick={() => onPay(booking, method)}>
-          Pay {money(booking.total)} Securely <ArrowRight size={17} />
+        <p className="modal-sub">Pay securely using UPI, cards, or net banking through Razorpay. VaahanSathi records payment only after server verification.</p>
+        <button className="primary-btn-wide" onClick={() => onPay(booking)}>
+          Continue to secure payment <ArrowRight size={17} />
         </button>
       </div>
     </div>

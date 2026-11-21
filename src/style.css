@@ -1703,3 +1703,91 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 @media (prefers-reduced-motion: reduce) {
   .service-card, .panel, .hero-btn, .primary-btn, .primary-btn-wide, .estimate-fare-btn { transition: none; }
 }
+
+
+/* Premium trust experience — calm, specific and honest. */
+.trust-experience {
+  position: relative;
+  overflow: hidden;
+  border-color: #dce7f2;
+  background:
+    radial-gradient(circle at 100% 0%, rgba(219,235,250,.72), transparent 34%),
+    linear-gradient(115deg, #fff 0%, #f7faff 100%);
+}
+.trust-experience::after {
+  content: '';
+  position: absolute;
+  width: 190px;
+  height: 190px;
+  right: -105px;
+  bottom: -125px;
+  border: 1px solid rgba(47,104,164,.13);
+  border-radius: 50%;
+  box-shadow: 0 0 0 22px rgba(47,104,164,.025), 0 0 0 45px rgba(47,104,164,.02);
+  pointer-events: none;
+}
+.trust-experience .trust-strip-heading { position: relative; z-index: 1; }
+.trust-learn-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 13px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #1b5a91;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.trust-learn-link:hover { color: #0b3c6c; }
+.trust-experience .trust-point {
+  position: relative;
+  z-index: 1;
+  align-items: flex-start;
+  padding: 13px;
+  border: 1px solid rgba(222,232,243,.9);
+  border-radius: 15px;
+  background: rgba(255,255,255,.78);
+}
+.trust-experience .trust-point-icon {
+  width: 42px;
+  height: 42px;
+  flex-basis: 42px;
+  border: 1px solid #e0ebf7;
+  background: linear-gradient(145deg,#f2f7fd,#e9f2fb);
+}
+.trust-experience .trust-point b { font-size: 13px; letter-spacing: -.01em; }
+.trust-experience .trust-point small { font-size: 11px; line-height: 1.55; }
+.promise-panel {
+  border-color: #d9e8e8;
+  background: linear-gradient(135deg,#f5fbfb 0%,#edf7f6 100%);
+}
+.promise-panel p { max-width: 54ch; }
+@media (max-width: 768px) {
+  .trust-experience { padding: 19px; }
+  .trust-experience .trust-points { gap: 9px; }
+  .trust-experience .trust-point { padding: 11px; }
+  .trust-learn-link { min-height: 38px; }
+}
+
+
+/* Trust-first trip progress */
+.trip-progress{margin:18px 0;padding:18px 20px;border:1px solid #dce7f3;border-radius:16px;background:linear-gradient(135deg,#f8fbff 0%,#f1f7fb 100%)}
+.trip-progress-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px}
+.trip-progress-heading b{display:block;color:#102a43;font-size:14px;font-weight:800}
+.trip-progress-heading small{display:block;color:#64778b;font-size:11px;margin-top:3px}
+.trip-progress-heading>span{font-size:11px;font-weight:800;color:#155e75;background:#dff5f2;padding:6px 10px;border-radius:99px;white-space:nowrap}
+.trip-progress-steps{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px;list-style:none;padding:0;margin:0}
+.trip-progress-steps li{display:flex;flex-direction:column;align-items:center;gap:7px;text-align:center;color:#8a9aab;font-size:10px;font-weight:650;line-height:1.3}
+.trip-progress-dot{width:25px;height:25px;border:1px solid #d6e0eb;border-radius:50%;display:grid;place-items:center;background:#fff;color:#8292a4;font-size:10px;font-weight:800}
+.trip-progress-steps li.complete .trip-progress-dot{background:#0f766e;border-color:#0f766e;color:#fff}
+.trip-progress-steps li.current{color:#123b67}
+.trip-progress-steps li.current .trip-progress-dot{background:#1d4ed8;border:3px solid #dbeafe;color:#fff;box-shadow:0 0 0 3px #eff6ff}
+.trip-progress-note{display:flex;align-items:center;gap:7px;margin:15px 0 0;padding-top:12px;border-top:1px solid #dce7f3;color:#49647c;font-size:11px;line-height:1.45}
+.trip-progress-note svg{flex-shrink:0;color:#0f766e}
+@media(max-width:520px){.trip-progress{padding:15px 12px}.trip-progress-steps{gap:2px}.trip-progress-steps li{font-size:9px}.trip-progress-dot{width:22px;height:22px}}
+
+/* Clear degraded-storage state: never present a disconnected database as syncing. */
+.db-pulse.offline{background:#d97706;box-shadow:0 0 0 3px rgba(217,119,6,.12)}
+.db-text small{max-width:190px;line-height:1.35}
