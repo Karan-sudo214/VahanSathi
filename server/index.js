@@ -1051,7 +1051,7 @@ app.get('/api/bookings', auth, (req, res) => {
       (b) => b.driverId === req.user.id || (
         b.status === 'Searching' && b.city === currentUser?.city &&
         (!b.requestedDriverStyle || b.requestedDriverStyle === 'any' ||
-          (Array.isArray(currentUser?.driverStyleTags) && currentUser.driverStyleTags.includes(b.requestedDriverStyle)))
+          (Array.isArray(currentUser?.driverStyleTags) ? currentUser.driverStyleTags : ['friendly']).includes(b.requestedDriverStyle))
       )
     );
   }
@@ -1098,7 +1098,7 @@ app.post(
     // Match only verified, online drivers who have declared the customer's requested communication style.
     const eligibleDrivers = data.users.filter((u) =>
       u.role === 'driver' && u.city === city && u.available === true && u.verificationStatus === 'verified' &&
-      (driverStyle === 'any' || (Array.isArray(u.driverStyleTags) && u.driverStyleTags.includes(driverStyle)))
+      (driverStyle === 'any' || (Array.isArray(u.driverStyleTags) ? u.driverStyleTags : ['friendly']).includes(driverStyle))
     );
     const availableDriver = eligibleDrivers.sort((a, b) =>
       Number(b.rating || 0) - Number(a.rating || 0) || Number(b.trips || 0) - Number(a.trips || 0)
@@ -1178,7 +1178,7 @@ app.patch(
           return res.status(403).json({ error: 'Your driver account must be verified and on duty to accept rides.' });
         }
         if (b.requestedDriverStyle && b.requestedDriverStyle !== 'any' &&
-            !(Array.isArray(currentUser?.driverStyleTags) && currentUser.driverStyleTags.includes(b.requestedDriverStyle))) {
+            !(Array.isArray(currentUser?.driverStyleTags) ? currentUser.driverStyleTags : ['friendly']).includes(b.requestedDriverStyle)) {
           return res.status(403).json({ error: 'This customer requested a different communication style. Update your driver style tags to receive matching requests.' });
         }
         b.driverId = req.user.id;
