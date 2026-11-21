@@ -1050,7 +1050,9 @@ app.patch('/api/admin/bookings/:id/cancel', auth, adminOnly, asyncRoute(async (r
 // Voice booking intent parser. The browser handles listening; this endpoint normalises
 // the transcript into the same fields used by the real booking form.
 app.post('/api/voice/intent', (req, res) => {
-  const raw = String(req.body.text || '').trim();
+  const raw = typeof req.body?.text === 'string' ? req.body.text.trim() : '';
+  if (!raw) return res.status(400).json({ error: 'Please speak or type your pickup and destination.' });
+  if (raw.length > 500) return res.status(413).json({ error: 'Trip description is too long. Please keep it under 500 characters.' });
   const text = raw.toLowerCase();
   const language = String(req.body.language || 'en-IN');
   const requestedCity = String(req.body.city || 'Delhi');
