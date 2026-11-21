@@ -17,6 +17,7 @@ import {
   Heart,
   IndianRupee,
   MapPin,
+  LockKeyhole,
   Menu,
   Mic,
   MoreHorizontal,
@@ -683,25 +684,26 @@ function App() {
                 ))}
               </div>
 
-              {/* Brand trust points */}
-              <section className="trust-strip" aria-label="Why choose VaahanSathi">
+              {/* Trust is earned through clear information, not big promises. */}
+              <section className="trust-strip trust-experience" aria-label="The VaahanSathi experience">
                 <div className="trust-strip-heading">
-                  <span className="eyebrow">A BETTER WAY TO GET THERE</span>
-                  <h3>Convenience, with confidence.</h3>
-                  <p>Professional driver service designed around the car you already own.</p>
+                  <span className="eyebrow">BUILT AROUND YOUR PEACE OF MIND</span>
+                  <h3>Know what to expect. Stay in control.</h3>
+                  <p>A professional driver for your own car, with the important trip details kept clear at every step.</p>
+                  <button className="trust-learn-link" onClick={() => setPage('Help')}>Questions before you book? Visit Help <ArrowRight size={14} /></button>
                 </div>
                 <div className="trust-points">
                   <article className="trust-point">
                     <span className="trust-point-icon"><ShieldCheck size={19} /></span>
-                    <div><b>Verification-led</b><small>Driver onboarding and review process</small></div>
+                    <div><b>Driver review process</b><small>New driver accounts are reviewed before they can accept trips</small></div>
                   </article>
                   <article className="trust-point">
                     <span className="trust-point-icon"><IndianRupee size={19} /></span>
-                    <div><b>Clear fare breakdown</b><small>See the estimate before you book</small></div>
+                    <div><b>See the estimate first</b><small>Review the available fare estimate before placing a booking</small></div>
                   </article>
                   <article className="trust-point">
-                    <span className="trust-point-icon"><CarFront size={19} /></span>
-                    <div><b>Your car. Your journey.</b><small>A driver for the vehicle you own</small></div>
+                    <span className="trust-point-icon"><LockKeyhole size={19} /></span>
+                    <div><b>OTP-led trip stages</b><small>Use your trip OTP at the appropriate start and completion steps</small></div>
                   </article>
                 </div>
               </section>
@@ -744,10 +746,10 @@ function App() {
                   </div>
                   <div>
                     <span className="eyebrow green">VAAHANSATHI COMMITMENT</span>
-                    <h3>Arrive Safely, Relax Comfortably</h3>
+                    <h3>Your journey, with clearer expectations.</h3>
                     <p>
-                      Every driver is background-checked, vetted for manual and automatic transmissions, and arrives in uniform at your
-                      doorstep.
+                      VaahanSathi connects car owners with professional drivers. Review your trip details, driver assignment and booking
+                      status in the app. We will keep improving the experience with clear information at every step.
                     </p>
                     <div className="service-tags">
                       <span>Delhi</span>
