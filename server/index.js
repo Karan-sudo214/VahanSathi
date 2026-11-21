@@ -1231,6 +1231,112 @@ app.post('/api/voice/transcribe', express.raw({
   res.json({ text: transcript });
 }));
 
+// Voice place vocabulary: canonical labels plus common spoken/transcribed variants.
+// Deterministic normalisation improves known Delhi-NCR landmark matching; it is not model training.
+const VOICE_PLACE_ALIASES = [
+  { city: 'Delhi', name: 'Jhilmil Colony, Shahdara, Delhi', aliases: ['jhilmil colony shahdara', 'jhilmil colony', 'jhilmil', 'झिलमिल कॉलोनी', 'झिलमिल'] },
+  { city: 'Delhi', name: 'Jhilmil Industrial Area, Delhi', aliases: ['jhilmil industrial area', 'jhilmil industrial'] },
+  { city: 'Delhi', name: 'Shahdara, Delhi', aliases: ['shahdara', 'शाहदरा'] },
+  { city: 'Delhi', name: 'Dilshad Garden, Delhi', aliases: ['dilshad garden', 'dilshad'] },
+  { city: 'Delhi', name: 'Vivek Vihar, Delhi', aliases: ['vivek vihar'] },
+  { city: 'Delhi', name: 'Surajmal Vihar, Delhi', aliases: ['surajmal vihar'] },
+  { city: 'Delhi', name: 'GTB Enclave, Delhi', aliases: ['gtb enclave', 'guru teg bahadur enclave'] },
+  { city: 'Delhi', name: 'Mansarovar Park, Delhi', aliases: ['mansarovar park'] },
+  { city: 'Delhi', name: 'Seemapuri, Delhi', aliases: ['seemapuri'] },
+  { city: 'Delhi', name: 'Naveen Shahdara, Delhi', aliases: ['naveen shahdara'] },
+  { city: 'Delhi', name: 'Bhola Nath Nagar, Delhi', aliases: ['bhola nath nagar', 'bholanath nagar'] },
+  { city: 'Delhi', name: 'Welcome, Shahdara, Delhi', aliases: ['welcome shahdara', 'welcome metro', 'welcome'] },
+  { city: 'Delhi', name: 'Krishna Nagar, Delhi', aliases: ['krishna nagar'] },
+  { city: 'Delhi', name: 'Karkardooma, Delhi', aliases: ['karkardooma'] },
+  { city: 'Delhi', name: 'Yamuna Vihar, Delhi', aliases: ['yamuna vihar'] },
+  { city: 'Delhi', name: 'Babarpur, Delhi', aliases: ['babarpur'] },
+  { city: 'Delhi', name: 'Gandhi Nagar, Delhi', aliases: ['gandhi nagar delhi'] },
+  { city: 'Delhi', name: 'Geeta Colony, Delhi', aliases: ['geeta colony'] },
+  { city: 'Delhi', name: 'Connaught Place, Delhi', aliases: ['connaught place', 'cp delhi', 'कनॉट प्लेस'] },
+  { city: 'Delhi', name: 'India Gate, Delhi', aliases: ['india gate'] },
+  { city: 'Delhi', name: 'IGI Airport Terminal 3, Delhi', aliases: ['igi airport terminal 3', 'igi terminal 3', 'terminal 3 airport', 'indira gandhi airport', 'igi airport'] },
+  { city: 'Delhi', name: 'New Delhi Railway Station, Delhi', aliases: ['new delhi railway station', 'ndls'] },
+  { city: 'Delhi', name: 'Old Delhi Railway Station, Delhi', aliases: ['old delhi railway station', 'delhi junction'] },
+  { city: 'Delhi', name: 'Kashmere Gate ISBT, Delhi', aliases: ['kashmere gate'] },
+  { city: 'Delhi', name: 'Anand Vihar, Delhi', aliases: ['anand vihar'] },
+  { city: 'Delhi', name: 'Sarai Kale Khan ISBT, Delhi', aliases: ['sarai kale khan'] },
+  { city: 'Delhi', name: 'Karol Bagh, Delhi', aliases: ['karol bagh'] },
+  { city: 'Delhi', name: 'Rajouri Garden, Delhi', aliases: ['rajouri garden'] },
+  { city: 'Delhi', name: 'Dwarka, Delhi', aliases: ['dwarka delhi', 'द्वारका'] },
+  { city: 'Delhi', name: 'Rohini, Delhi', aliases: ['rohini delhi', 'रोहिणी'] },
+  { city: 'Delhi', name: 'Pitampura, Delhi', aliases: ['pitampura'] },
+  { city: 'Delhi', name: 'Janakpuri, Delhi', aliases: ['janakpuri'] },
+  { city: 'Delhi', name: 'Vasant Kunj, Delhi', aliases: ['vasant kunj'] },
+  { city: 'Delhi', name: 'Saket, Delhi', aliases: ['saket delhi', 'साकेत'] },
+  { city: 'Delhi', name: 'Hauz Khas, Delhi', aliases: ['hauz khas'] },
+  { city: 'Delhi', name: 'Greater Kailash, Delhi', aliases: ['greater kailash', 'gk one', 'gk two'] },
+  { city: 'Delhi', name: 'Lajpat Nagar, Delhi', aliases: ['lajpat nagar'] },
+  { city: 'Delhi', name: 'Nehru Place, Delhi', aliases: ['nehru place'] },
+  { city: 'Delhi', name: 'Chandni Chowk, Delhi', aliases: ['chandni chowk'] },
+  { city: 'Delhi', name: 'Laxmi Nagar, Delhi', aliases: ['laxmi nagar', 'lakshmi nagar'] },
+  { city: 'Delhi', name: 'Preet Vihar, Delhi', aliases: ['preet vihar'] },
+  { city: 'Delhi', name: 'Mayur Vihar, Delhi', aliases: ['mayur vihar'] },
+  { city: 'Delhi', name: 'Aerocity, Delhi', aliases: ['aerocity', 'aero city'] },
+  { city: 'Delhi', name: 'AIIMS, Delhi', aliases: ['aiims delhi', 'aiims'] },
+  { city: 'Delhi', name: 'Pragati Maidan, Delhi', aliases: ['pragati maidan'] },
+  { city: 'Delhi', name: 'Jasola, Delhi', aliases: ['jasola'] },
+  { city: 'Gurugram', name: 'Cyber City, Gurugram', aliases: ['cyber city', 'dlf cyber city', 'साइबर सिटी'] },
+  { city: 'Gurugram', name: 'Millennium City Centre, Gurugram', aliases: ['huda city centre', 'huda city center', 'millennium city centre', 'millennium city center'] },
+  { city: 'Gurugram', name: 'MG Road, Gurugram', aliases: ['mg road gurugram', 'mg road gurgaon'] },
+  { city: 'Gurugram', name: 'Golf Course Road, Gurugram', aliases: ['golf course road'] },
+  { city: 'Gurugram', name: 'Golf Course Extension Road, Gurugram', aliases: ['golf course extension road', 'gcer'] },
+  { city: 'Gurugram', name: 'Sohna Road, Gurugram', aliases: ['sohna road'] },
+  { city: 'Gurugram', name: 'Udyog Vihar Phase 1, Gurugram', aliases: ['udyog vihar phase 1', 'udyog vihar one'] },
+  { city: 'Gurugram', name: 'Udyog Vihar Phase 2, Gurugram', aliases: ['udyog vihar phase 2', 'udyog vihar two'] },
+  { city: 'Gurugram', name: 'Udyog Vihar Phase 3, Gurugram', aliases: ['udyog vihar phase 3', 'udyog vihar three'] },
+  { city: 'Gurugram', name: 'Sector 14, Gurugram', aliases: ['sector 14'] },
+  { city: 'Gurugram', name: 'Sector 29, Gurugram', aliases: ['sector 29'] },
+  { city: 'Gurugram', name: 'Sector 31, Gurugram', aliases: ['sector 31'] },
+  { city: 'Gurugram', name: 'Sector 43, Gurugram', aliases: ['sector 43'] },
+  { city: 'Gurugram', name: 'Sector 45, Gurugram', aliases: ['sector 45'] },
+  { city: 'Gurugram', name: 'Sector 46, Gurugram', aliases: ['sector 46'] },
+  { city: 'Gurugram', name: 'Sector 47, Gurugram', aliases: ['sector 47'] },
+  { city: 'Gurugram', name: 'Sector 48, Gurugram', aliases: ['sector 48'] },
+  { city: 'Gurugram', name: 'Sector 49, Gurugram', aliases: ['sector 49'] },
+  { city: 'Gurugram', name: 'Sector 50, Gurugram', aliases: ['sector 50'] },
+  { city: 'Gurugram', name: 'Sector 56, Gurugram', aliases: ['sector 56'] },
+  { city: 'Gurugram', name: 'Sector 57, Gurugram', aliases: ['sector 57'] },
+  { city: 'Gurugram', name: 'Sector 62, Gurugram', aliases: ['sector 62'] },
+  { city: 'Gurugram', name: 'Sector 65, Gurugram', aliases: ['sector 65'] },
+  { city: 'Gurugram', name: 'Sector 67, Gurugram', aliases: ['sector 67'] },
+  { city: 'Gurugram', name: 'Sector 69, Gurugram', aliases: ['sector 69'] },
+  { city: 'Gurugram', name: 'DLF Phase 1, Gurugram', aliases: ['dlf phase 1', 'dlf one'] },
+  { city: 'Gurugram', name: 'DLF Phase 2, Gurugram', aliases: ['dlf phase 2', 'dlf two'] },
+  { city: 'Gurugram', name: 'DLF Phase 3, Gurugram', aliases: ['dlf phase 3', 'dlf three'] },
+  { city: 'Gurugram', name: 'DLF Phase 4, Gurugram', aliases: ['dlf phase 4', 'dlf four'] },
+  { city: 'Gurugram', name: 'Palam Vihar, Gurugram', aliases: ['palam vihar'] },
+  { city: 'Gurugram', name: 'South City 1, Gurugram', aliases: ['south city 1', 'south city one'] },
+  { city: 'Gurugram', name: 'South City 2, Gurugram', aliases: ['south city 2', 'south city two'] },
+  { city: 'Gurugram', name: 'Nirvana Country, Gurugram', aliases: ['nirvana country'] },
+  { city: 'Gurugram', name: 'Ambience Mall, Gurugram', aliases: ['ambience mall'] },
+  { city: 'Gurugram', name: 'Medanta Hospital, Gurugram', aliases: ['medanta', 'medanta hospital'] },
+  { city: 'Gurugram', name: 'Artemis Hospital, Gurugram', aliases: ['artemis', 'artemis hospital'] },
+  { city: 'Gurugram', name: 'Gurugram Railway Station, Gurugram', aliases: ['gurugram railway station', 'gurgaon railway station'] },
+  { city: 'Gurugram', name: 'Dwarka Expressway, Gurugram', aliases: ['dwarka expressway'] },
+  { city: 'Gurugram', name: 'Badshahpur, Gurugram', aliases: ['badshahpur'] },
+  { city: 'Gurugram', name: 'IMT Manesar, Gurugram', aliases: ['imt manesar', 'manesar'] },
+  { city: 'Gurugram', name: 'Gwal Pahari, Gurugram', aliases: ['gwal pahari'] }
+];
+
+function normaliseVoicePlace(value) {
+  if (!value) return value;
+  const input = ' ' + String(value).toLocaleLowerCase('en-IN').replace(/[^\\p{L}\\p{N}]+/gu, ' ').trim() + ' ';
+  const matches = [];
+  for (const place of VOICE_PLACE_ALIASES) {
+    for (const alias of place.aliases) {
+      const needle = ' ' + alias.toLocaleLowerCase('en-IN').replace(/[^\\p{L}\\p{N}]+/gu, ' ').trim() + ' ';
+      if (input.includes(needle)) matches.push({ name: place.name, length: needle.length });
+    }
+  }
+  matches.sort((a, b) => b.length - a.length);
+  return matches[0]?.name || String(value).trim();
+}
+
 // Voice booking intent parser. The browser handles listening; this endpoint normalises
 // the transcript into the same fields used by the real booking form.
 app.post('/api/voice/intent', (req, res) => {
@@ -1242,9 +1348,12 @@ app.post('/api/voice/intent', (req, res) => {
   const requestedCity = String(req.body.city || 'Delhi');
 
   // ── City detection ───────────────────────────────────────────────────────
+  const matchedPlace = VOICE_PLACE_ALIASES.find((place) =>
+    place.aliases.some((alias) => text.includes(alias.toLocaleLowerCase('en-IN')))
+  );
   const city =
-    /gurugram|gurgaon|साइबर सिटी|गुरुग्राम|cyber city|huda/.test(text) ? 'Gurugram' :
-    /delhi|दिल्ली|connaught|igi airport|indira gandhi|dwarka|rohini|karol bagh|saket/.test(text) ? 'Delhi' :
+    /gurugram|gurgaon|गुरुग्राम/.test(text) || matchedPlace?.city === 'Gurugram' ? 'Gurugram' :
+    /delhi|दिल्ली/.test(text) || matchedPlace?.city === 'Delhi' ? 'Delhi' :
     requestedCity;
 
   // ── Trip type ────────────────────────────────────────────────────────────
@@ -1293,8 +1402,8 @@ app.post('/api/voice/intent', (req, res) => {
         .replace(/\s+(kal|aaj|abhi|tomorrow|today|कल|आज)\s*.*$/i, '')
         .replace(/\s+(at|around|ko)\s+\d.*/i, '')
         .replace(/[,.?।]+$/, '').trim();
-      pickup = clean(m[1]);
-      destination = clean(m[2]);
+      pickup = normaliseVoicePlace(clean(m[1]));
+      destination = normaliseVoicePlace(clean(m[2]));
       if (pickup && destination) break;
     }
   }
