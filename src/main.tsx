@@ -144,7 +144,7 @@ function downloadReceipt(b: Booking, r: Receipt) {
     `TOTAL PAID  : ${money(r.amount)}`,
     '----------------------------------------------------',
     '',
-    'Service Note: VaahanSathi provides professional verified drivers.',
+    'Service Note: VaahanSathi provides driver-booking services for customer-owned vehicles.',
     'Customers provide their own vehicles.',
     'Thank you for traveling with VaahanSathi!'
   ];
@@ -182,8 +182,8 @@ function downloadInvoice(b: Booking) {
     `PAYMENT STATUS     : ${b.payment_status}`,
     '----------------------------------------------------',
     '',
-    'VaahanSathi Mobility Technologies Pvt. Ltd.',
-    'Transparent Driver Services Across India.'
+    'VaahanSathi · Driver booking service',
+    'Service area and fare details are shown in the booking.'
   ];
   const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
   const url = URL.createObjectURL(blob);
@@ -636,7 +636,7 @@ function App() {
                 <div className="hero-content">
                   <span className="hero-badge">YOUR CAR · OUR DRIVER</span>
                   <h2>Professional Drivers For Your Own Vehicle</h2>
-                  <p>Pay only for the driver's time. Verified, uniformed chauffeurs across Delhi & Gurugram.</p>
+                  <p>Pay for driver service for your own vehicle across Delhi & Gurugram. Review your fare estimate before booking.</p>
                   <div className="hero-cta-row">
                     <button className="hero-btn" onClick={() => setPage('Book a driver')}>
                       Book a Driver <ArrowRight size={16} />
@@ -2118,7 +2118,7 @@ function HelpPage({ flash, onDispute }: any) {
         <h3>Frequently Asked Questions</h3>
         <details>
           <summary>Does VaahanSathi provide the car? <ChevronDown size={16} /></summary>
-          <p>No. VaahanSathi is exclusively an on-demand professional driver service for your own car. You provide the car; we provide the verified chauffeur.</p>
+          <p>No. VaahanSathi connects car owners with drivers for the customer's own vehicle. Review the assigned driver's details in your booking before the trip.</p>
         </details>
         <details>
           <summary>How are fuel, tolls, and parking handled? <ChevronDown size={16} /></summary>
