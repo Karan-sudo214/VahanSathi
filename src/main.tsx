@@ -2240,7 +2240,7 @@ function AdminModulePage({ module, bookings, flash }: { module: string; bookings
                       </tr>
                     ) : module === 'payments' ? (
                       <tr key={r.id || i}>
-                        <td><b>{r.provider === 'cash' ? (r.action || 'Cash event').replaceAll('_', ' ') : r.provider || 'Payment'}</b><small>{r.id || '—'}</small></td>
+                        <td><b>{r.provider === 'cash' ? (r.action || 'Cash event').replace(/_/g, ' ') : r.provider || 'Payment'}</b><small>{r.id || '—'}</small></td>
                         <td>{r.bookingId || r.booking_id || '—'}</td>
                         <td>{money(r.amount || r.total || 0)}</td>
                         <td>{r.actorName || r.actorRole || r.method || '—'}<small>{r.actorRole || ''}</small></td>
