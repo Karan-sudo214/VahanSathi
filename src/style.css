@@ -228,7 +228,7 @@ nav{display:flex;flex-direction:column;gap:2px;overflow-y:auto;flex:1}
 
 /* CONTENT */
 .content{
-  padding:20px 16px calc(var(--bnav) + 20px);
+  padding:20px 16px 180px;
   width:100%;max-width:1340px;margin:0 auto;
 }
 
@@ -862,7 +862,7 @@ nav{display:flex;flex-direction:column;gap:2px;overflow-y:auto;flex:1}
    TOAST
 ───────────────────────────────────────────── */
 .toast-notification{
-  position:fixed;bottom:calc(var(--bnav) + 10px);left:50%;
+  position:fixed;bottom:140px;left:50%;
   transform:translateX(-50%);
   background:var(--ink);color:#fff;
   padding:12px 18px;border-radius:11px;
@@ -885,40 +885,87 @@ nav{display:flex;flex-direction:column;gap:2px;overflow-y:auto;flex:1}
 .empty-state p{font-size:13px;color:var(--t5);max-width:360px;line-height:1.55}
 
 /* ─────────────────────────────────────────────
-   BOTTOM NAV
+   BOTTOM NAV — floating pill, not a bottom bar
 ───────────────────────────────────────────── */
-.bottom-nav{
-  display:flex;
-  position:fixed;bottom:0;left:0;right:0;
-  height:var(--bnav);
-  background:rgba(255,255,255,.97);
-  backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
-  border-top:1px solid var(--border);
-  z-index:40;padding:0 6px;
-  padding-bottom:env(safe-area-inset-bottom,0);
-  align-items:stretch;
-  box-shadow:0 -2px 20px rgba(12,26,46,.07);
+.bottom-nav {
+  display: flex;
+  position: fixed;
+  bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+  left: 50%;
+  transform: translateX(-50%);
+  width: calc(100% - 32px);
+  max-width: 400px;
+  height: 62px;
+  background: #fff;
+  border-radius: 20px;
+  z-index: 40;
+  padding: 0 6px;
+  align-items: stretch;
+  box-shadow:
+    0 4px 20px rgba(12,26,46,.12),
+    0 1px 4px rgba(12,26,46,.06),
+    inset 0 1px 0 rgba(255,255,255,.8);
+  border: 1px solid rgba(12,26,46,.07);
 }
-.bottom-nav-item{
-  flex:1;display:flex;flex-direction:column;
-  align-items:center;justify-content:center;gap:3px;
-  background:none;color:var(--t4);
-  font-size:10px;font-weight:600;
-  padding:6px 2px 8px;position:relative;
-  border-radius:10px;min-height:0;min-width:0;
-  transition:color .15s;
+/* Content must clear the pill */
+.content {
+  padding-bottom: calc(62px + 28px + env(safe-area-inset-bottom, 0px));
 }
-.bottom-nav-item.active{color:var(--ink)}
-.bottom-nav-item.active::before{
-  content:'';position:absolute;top:6px;left:50%;transform:translateX(-50%);
-  width:30px;height:30px;background:#e8f0fb;border-radius:9px;z-index:-1;
+.toast-notification {
+  bottom: calc(62px + 28px + env(safe-area-inset-bottom, 0px) + 8px);
 }
-.bnav-badge{
-  position:absolute;top:5px;right:calc(50% - 22px);
-  background:#ef4444;color:#fff;
-  font-size:9px;font-weight:800;
-  min-width:16px;height:16px;border-radius:8px;
-  display:flex;align-items:center;justify-content:center;padding:0 3px;
+
+.bottom-nav-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  background: none;
+  color: var(--t4);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 8px 4px;
+  position: relative;
+  border-radius: 15px;
+  min-height: 0;
+  min-width: 0;
+  transition: color .18s;
+  letter-spacing: .01em;
+}
+.bottom-nav-item.active {
+  color: var(--ink);
+}
+/* pill highlight behind active icon */
+.bottom-nav-item.active::before {
+  content: '';
+  position: absolute;
+  top: 7px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 36px;
+  height: 32px;
+  background: var(--canvas);
+  border-radius: 10px;
+  z-index: -1;
+}
+.bnav-badge {
+  position: absolute;
+  top: 5px;
+  right: calc(50% - 20px);
+  background: #ef4444;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 800;
+  min-width: 16px;
+  height: 16px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 3px;
+  z-index: 1;
 }
 
 /* ─────────────────────────────────────────────
@@ -935,6 +982,7 @@ nav{display:flex;flex-direction:column;gap:2px;overflow-y:auto;flex:1}
   .modal{border-radius:var(--r-xl);max-width:460px;padding:32px 28px}
   .modal::before{display:none}
   .bottom-nav{display:none}
+  .content{padding:30px 36px 60px}
   .toast-notification{bottom:24px}
   .services-grid{grid-template-columns:repeat(3,1fr)}
   .home-panels-grid{display:grid;grid-template-columns:1.4fr 1fr}

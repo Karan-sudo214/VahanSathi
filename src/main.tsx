@@ -875,29 +875,29 @@ function App() {
         />
       )}
 
-      {/* Mobile bottom nav bar */}
+      {/* Mobile bottom nav — floating pill, not a bar */}
       {user && (
         <nav className="bottom-nav">
           {(user.role === 'customer'
             ? [
-                { label: 'Home', icon: <CarFront size={20} />, page: 'Home' },
-                { label: 'Book', icon: <Plus size={20} />, page: 'Book a driver' },
-                { label: 'Trips', icon: <CalendarDays size={20} />, page: 'Your trips', badge: bookings.filter(b => ['Searching','Driver assigned','Driver arriving','Trip started'].includes(b.status)).length },
-                { label: 'Wallet', icon: <Wallet size={20} />, page: 'Wallet' },
-                { label: 'Help', icon: <Headphones size={20} />, page: 'Help' },
+                { label: 'Home', icon: 'home', page: 'Home' },
+                { label: 'Book', icon: 'book', page: 'Book a driver' },
+                { label: 'Trips', icon: 'trips', page: 'Your trips', badge: bookings.filter(b => ['Searching','Driver assigned','Driver arriving','Trip started'].includes(b.status)).length },
+                { label: 'Wallet', icon: 'wallet', page: 'Wallet' },
+                { label: 'Help', icon: 'help', page: 'Help' },
               ]
             : user.role === 'driver'
             ? [
-                { label: 'Dashboard', icon: <Navigation size={20} />, page: 'Requests', badge: bookings.filter(b => b.status === 'Searching').length },
-                { label: 'My Trips', icon: <CalendarDays size={20} />, page: 'My trips' },
-                { label: 'Earnings', icon: <Wallet size={20} />, page: 'Earnings' },
-                { label: 'Profile', icon: <UserIcon size={20} />, page: 'Profile' },
+                { label: 'Rides', icon: 'rides', page: 'Requests', badge: bookings.filter(b => b.status === 'Searching').length },
+                { label: 'History', icon: 'trips', page: 'My trips' },
+                { label: 'Earnings', icon: 'earnings', page: 'Earnings' },
+                { label: 'Profile', icon: 'profile', page: 'Profile' },
               ]
             : [
-                { label: 'Overview', icon: <Activity size={20} />, page: 'Overview' },
-                { label: 'Bookings', icon: <CalendarDays size={20} />, page: 'Bookings' },
-                { label: 'Drivers', icon: <BadgeCheck size={20} />, page: 'Drivers' },
-                { label: 'Disputes', icon: <Headphones size={20} />, page: 'Disputes' },
+                { label: 'Overview', icon: 'overview', page: 'Overview' },
+                { label: 'Bookings', icon: 'trips', page: 'Bookings' },
+                { label: 'Drivers', icon: 'drivers', page: 'Drivers' },
+                { label: 'Disputes', icon: 'help', page: 'Disputes' },
               ]
           ).map((item) => (
             <button
@@ -906,7 +906,7 @@ function App() {
               onClick={() => { setPage(item.page); setMobileOpen(false); }}
             >
               {(item as any).badge > 0 && <span className="bnav-badge">{(item as any).badge}</span>}
-              {item.icon}
+              <NavIcon name={item.icon} />
               <span>{item.label}</span>
             </button>
           ))}
@@ -2576,6 +2576,35 @@ function DisputeModal({ bookings, onClose, onSubmit }: any) {
 
 function ReceiptIcon(props: any) {
   return <CreditCard {...props} />;
+}
+
+// Hand-coded SVG icons — no library
+function NavIcon({ name }: { name: string }) {
+  const s = { width: 22, height: 22, fill: 'none', stroke: 'currentColor', strokeWidth: 1.75, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
+  switch (name) {
+    case 'home':
+      return <svg {...s} viewBox="0 0 24 24"><path d="M3 10.5L12 3l9 7.5V21a1 1 0 01-1 1H5a1 1 0 01-1-1V10.5z"/><path d="M9 22V12h6v10"/></svg>;
+    case 'book':
+      return <svg {...s} viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/><path d="M12 7v-1" strokeWidth={1.5}/></svg>;
+    case 'trips':
+      return <svg {...s} viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><path d="M8 14h4m-4 4h8" strokeWidth={1.6}/></svg>;
+    case 'wallet':
+      return <svg {...s} viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="14" rx="2"/><path d="M2 10h20"/><circle cx="17" cy="15" r="1.5" fill="currentColor" stroke="none"/></svg>;
+    case 'help':
+      return <svg {...s} viewBox="0 0 24 24"><path d="M18 8.5a6 6 0 10-9.33 4.99L6 21l5.5-2.5a6 6 0 006.5-10z"/><path d="M12 11v.5m0 3v.01" strokeWidth={2}/></svg>;
+    case 'rides':
+      return <svg {...s} viewBox="0 0 24 24"><path d="M5 17H3v-5l2.5-5h11l2.5 5v5h-2"/><circle cx="7.5" cy="17" r="2"/><circle cx="16.5" cy="17" r="2"/><path d="M5 12h14"/></svg>;
+    case 'earnings':
+      return <svg {...s} viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="14" rx="2"/><path d="M12 10v6m-2-4h4m-4-2a2 2 0 014 0" strokeWidth={1.6}/></svg>;
+    case 'profile':
+      return <svg {...s} viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>;
+    case 'overview':
+      return <svg {...s} viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/></svg>;
+    case 'drivers':
+      return <svg {...s} viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2 20c0-3.3 3.1-6 7-6s7 2.7 7 6"/><path d="M18 7l-1 4h-2l-1-4"/><circle cx="17" cy="6" r="1.5" fill="currentColor" stroke="none"/><path d="M20 20c0-2.5-1.3-4.5-3-5.3"/></svg>;
+    default:
+      return <svg {...s} viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/></svg>;
+  }
 }
 
 createRoot(document.getElementById('root')!).render(<App />);
