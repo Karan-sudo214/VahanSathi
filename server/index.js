@@ -1323,13 +1323,21 @@ const VOICE_PLACE_ALIASES = [
   { city: 'Gurugram', name: 'Gwal Pahari, Gurugram', aliases: ['gwal pahari'] }
 ];
 
+// Add the commonly used Gurugram sectors to voice place matching.
+for (const sector of [9, 10, 14, 15, 21, 22, 23, 29, 31, 38, 40, 41, 42, 43, 45, 46, 47, 48, 49, 50, 52, 53, 54, 55, 56, 57, 58, 59, 60, 62, 63, 65, 66, 67, 69, 70, 71, 72, 73, 74, 76, 77, 78, 79, 82, 83, 84, 85, 86, 90, 91, 92, 93, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112]) {
+  const name = 'Sector ' + sector + ', Gurugram';
+  if (!VOICE_PLACE_ALIASES.some((place) => place.name === name)) {
+    VOICE_PLACE_ALIASES.push({ city: 'Gurugram', name, aliases: ['sector ' + sector, 'sector number ' + sector] });
+  }
+}
+
 function normaliseVoicePlace(value) {
   if (!value) return value;
-  const input = ' ' + String(value).toLocaleLowerCase('en-IN').replace(/[^\\p{L}\\p{N}]+/gu, ' ').trim() + ' ';
+  const input = ' ' + String(value).toLocaleLowerCase('en-IN').replace(/[^a-z0-9\\u0900-\\u097F]+/gi, ' ').trim() + ' ';
   const matches = [];
   for (const place of VOICE_PLACE_ALIASES) {
     for (const alias of place.aliases) {
-      const needle = ' ' + alias.toLocaleLowerCase('en-IN').replace(/[^\\p{L}\\p{N}]+/gu, ' ').trim() + ' ';
+      const needle = ' ' + alias.toLocaleLowerCase('en-IN').replace(/[^a-z0-9\\u0900-\\u097F]+/gi, ' ').trim() + ' ';
       if (input.includes(needle)) matches.push({ name: place.name, length: needle.length });
     }
   }
@@ -1406,6 +1414,10 @@ app.post('/api/voice/intent', (req, res) => {
       destination = normaliseVoicePlace(clean(m[2]));
       if (pickup && destination) break;
     }
+  }
+
+  if (pickup && destination && pickup.toLocaleLowerCase('en-IN') === destination.toLocaleLowerCase('en-IN')) {
+    return res.status(422).json({ error: 'Pickup and destination were recognised as the same place. Please say both locations clearly, for example: from Jhilmil Colony to Cyber City.' });
   }
 
   // ── Time parsing — English + Hindi + Hinglish ────────────────────────────
