@@ -1222,3 +1222,28 @@ img{max-width:100%}
 .va-confirm-row:last-child { border-bottom: none; }
 .va-confirm-row span { color: var(--t5); flex-shrink: 0; }
 .va-confirm-row b { color: var(--t7); font-weight: 700; text-align: right; }
+
+/* Language picker inside voice modal */
+.va-lang-row {
+  display: flex;
+  gap: 7px;
+  margin-bottom: 10px;
+}
+.va-lang-btn {
+  flex: 1;
+  padding: 8px 10px;
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  background: var(--t0);
+  color: var(--t6);
+  font-size: 13px;
+  font-weight: 600;
+  min-height: 36px;
+  transition: border-color .15s, background .15s, color .15s;
+}
+.va-lang-btn:hover { border-color: var(--blue); color: var(--blue); }
+.va-lang-btn.active {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: #fff;
+}

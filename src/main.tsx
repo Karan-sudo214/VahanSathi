@@ -2207,6 +2207,12 @@ function VoiceAgentModal({ onClose, onApply, onBook, city }: { onClose: () => vo
   const [booking, setBooking] = useState(false);
   const recRef = React.useRef<any>(null);
   const silenceTimer = React.useRef<any>(null);
+  const LANGS = [
+    { label: 'English', code: 'en-IN', srv: 'en-IN', ph: 'e.g. Take me from Connaught Place to IGI Airport tomorrow at 6am' },
+    { label: 'हिन्दी', code: 'hi-IN', srv: 'hi-IN', ph: 'उदा.: कल सुबह कनॉट प्लेस से एयरपोर्ट जाना है' },
+    { label: 'Hinglish', code: 'en-IN', srv: 'hi-hinglish', ph: 'e.g. Kal subah Connaught Place se airport jaana hai' },
+  ];
+  const [lang, setLang] = React.useState(LANGS[0]);
 
   // Auto-start listening when modal opens
   useEffect(() => { startListening(); return () => stopListening(); }, []);
@@ -2222,7 +2228,7 @@ function VoiceAgentModal({ onClose, onApply, onBook, city }: { onClose: () => vo
     if (!SR) { setErr('Voice not supported in this browser. Type your trip below.'); return; }
     setErr(''); setLive(''); setFinal(''); setStage('listening');
     const r = new SR();
-    r.lang = 'en-IN';
+    r.lang = lang.code;
     r.continuous = true;
     r.interimResults = true;
     r.maxAlternatives = 3;
@@ -2262,7 +2268,7 @@ function VoiceAgentModal({ onClose, onApply, onBook, city }: { onClose: () => vo
     try {
       const result = await api('/voice/intent', {
         method: 'POST',
-        body: JSON.stringify({ text: text.trim(), language: 'en-IN', city })
+        body: JSON.stringify({ text: text.trim(), language: lang.srv, city })
       });
       setIntent(result);
       onApply(result);
@@ -2271,7 +2277,7 @@ function VoiceAgentModal({ onClose, onApply, onBook, city }: { onClose: () => vo
       if ('speechSynthesis' in window) {
         window.speechSynthesis.cancel();
         const u = new SpeechSynthesisUtterance(result.summary || `Trip understood. ${result.tripType} from ${result.pickup || 'pickup'} to ${result.destination || 'destination'}. Tap Confirm to book.`);
-        u.lang = 'en-IN'; u.rate = 0.95;
+        u.lang = lang.code; u.rate = 0.95;
         window.speechSynthesis.speak(u);
       }
     } catch (e: any) {
@@ -2314,9 +2320,15 @@ function VoiceAgentModal({ onClose, onApply, onBook, city }: { onClose: () => vo
         </div>
 
         {/* Live transcript box */}
+        <div className="va-lang-row">
+          {LANGS.map(l => (
+            <button key={l.label} className={"va-lang-btn" + (lang.label === l.label ? " active" : "")}
+              onClick={() => { setLang(l); setErr(""); }}>{l.label}</button>
+          ))}
+        </div>
         <div className="va-transcript" aria-live="polite">
           {stage === 'listening' && !displayText && (
-            <span className="va-placeholder">e.g. "Take me from Connaught Place to IGI Airport tomorrow at 6am"</span>
+            <span className="va-placeholder">{lang.ph}</span>
           )}
           {displayText && <span>{displayText}</span>}
           {stage === 'listening' && displayText && <span className="va-cursor">|</span>}
