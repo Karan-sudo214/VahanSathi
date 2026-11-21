@@ -874,9 +874,9 @@ function App() {
       )}
 
       {/* Mobile bottom nav — floating pill, not a bar */}
-      {user && (
+      {(
         <nav className="bottom-nav">
-          {(user.role === 'customer'
+          {(!user || user.role === 'customer'
             ? [
                 { label: 'Home', icon: 'home', page: 'Home' },
                 { label: 'Book', icon: 'book', page: 'Book a driver' },
