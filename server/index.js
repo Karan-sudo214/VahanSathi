@@ -904,6 +904,12 @@ function finalizeCashSettlement(booking) {
   booking.payment_status = 'Paid · Cash';
   booking.paidAt = new Date().toISOString();
   booking.cashBalanceDue = 0;
+  if (booking.status === 'Awaiting cash confirmation') {
+    booking.status = 'Trip completed';
+    booking.cashSettlementCompletedAt = booking.paidAt;
+    const historyItem = { id: randomUUID(), booking_id: booking.id, status: 'Trip completed', at: booking.paidAt, note: 'Cash settlement approved by customer and driver' };
+    data.history.unshift(historyItem);
+  }
   return true;
 }
 
@@ -911,7 +917,7 @@ app.post('/api/payments/cash/customer-confirm', auth, roles('customer'), asyncRo
   const booking = data.bookings.find((item) => item.id === String(req.body?.bookingId || ''));
   if (!booking) return res.status(404).json({ error: 'Booking not found.' });
   if (booking.userId !== req.user.id) return res.status(403).json({ error: 'You can only confirm your own cash payment.' });
-  if (booking.payment_method !== 'cash' || !['Trip completed', 'Rated'].includes(booking.status)) return res.status(409).json({ error: 'Cash confirmation is available only after your cash trip is completed.' });
+  if (booking.payment_method !== 'cash' || !['Awaiting cash confirmation', 'Trip completed', 'Rated'].includes(booking.status)) return res.status(409).json({ error: 'Cash confirmation is available after the end-trip OTP, while settlement is pending.' });
   if (booking.payment_status === 'Paid · Cash') return res.json({ ok: true, payment_status: booking.payment_status });
   const amount = Number(req.body?.amountGiven);
   if (!Number.isSafeInteger(amount) || amount < 0 || amount > 1000000) return res.status(400).json({ error: 'Enter the exact cash amount you handed to the driver in whole rupees.' });
@@ -945,7 +951,7 @@ app.post('/api/payments/cash/driver-confirm', auth, roles('driver'), asyncRoute(
   const booking = data.bookings.find((item) => item.id === String(req.body?.bookingId || ''));
   if (!booking) return res.status(404).json({ error: 'Booking not found.' });
   if (booking.driverId !== req.user.id) return res.status(403).json({ error: 'Only the assigned driver can confirm this cash handover.' });
-  if (booking.payment_method !== 'cash' || !['Trip completed', 'Rated'].includes(booking.status)) return res.status(409).json({ error: 'Cash confirmation is available only after the assigned trip is completed.' });
+  if (booking.payment_method !== 'cash' || !['Awaiting cash confirmation', 'Trip completed', 'Rated'].includes(booking.status)) return res.status(409).json({ error: 'Cash confirmation is available after the end-trip OTP, while settlement is pending.' });
   if (booking.payment_status === 'Paid · Cash') return res.json({ ok: true, payment_status: booking.payment_status });
   const amount = Number(req.body?.amountReceived);
   const pin = String(req.body?.cashPin || '').trim();
@@ -1201,7 +1207,7 @@ app.get('/api/bookings', auth, (req, res) => {
     const driverUser = data.users.find((u) => u.id === b.driverId);
     const customerUser = data.users.find((u) => u.id === b.userId);
     const { cashPin, cashPinEncrypted, cashPinHash, cashPinAttempts, ...safeBooking } = b;
-    const canSeeCashPin = req.user.role === 'customer' && b.userId === req.user.id && b.payment_method === 'cash' && ['Trip completed', 'Rated'].includes(b.status) && !b.cashPinLockedAt;
+    const canSeeCashPin = req.user.role === 'customer' && b.userId === req.user.id && b.payment_method === 'cash' && ['Awaiting cash confirmation', 'Trip completed', 'Rated'].includes(b.status) && !b.cashPinLockedAt;
     return {
       ...safeBooking,
       start_otp: req.user.role === 'customer' || req.user.role === 'admin' ? b.start_otp : undefined,
@@ -1367,11 +1373,17 @@ app.patch(
       if (String(otp || '').trim() !== String(b.end_otp)) {
         return res.status(400).json({ error: 'End OTP is invalid. Ask the car owner for their 4-digit end OTP.' });
       }
-      b.payment_status = 'Payment due';
+      b.payment_status = b.payment_method === 'cash' ? 'Cash confirmation pending' : 'Payment due';
+    }
+    if (req.user.role === 'admin' && status === 'Trip completed' && b.payment_method === 'cash' && b.payment_status !== 'Paid · Cash') {
+      return res.status(409).json({ error: 'This cash booking cannot be marked completed until customer and driver confirmations, amount matching, and PIN verification are all approved.' });
     }
 
-    b.status = status;
-    const historyItem = { id: randomUUID(), booking_id: b.id, status, at: new Date().toISOString() };
+    const effectiveStatus = req.user.role === 'driver' && status === 'Trip completed' && b.payment_method === 'cash'
+      ? 'Awaiting cash confirmation'
+      : status;
+    b.status = effectiveStatus;
+    const historyItem = { id: randomUUID(), booking_id: b.id, status: effectiveStatus, at: new Date().toISOString() };
     data.history.unshift(historyItem);
 
     await persistItem('app_bookings', b.id, b);
