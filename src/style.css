@@ -1703,3 +1703,70 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 @media (prefers-reduced-motion: reduce) {
   .service-card, .panel, .hero-btn, .primary-btn, .primary-btn-wide, .estimate-fare-btn { transition: none; }
 }
+
+
+/* Premium trust experience — calm, specific and honest. */
+.trust-experience {
+  position: relative;
+  overflow: hidden;
+  border-color: #dce7f2;
+  background:
+    radial-gradient(circle at 100% 0%, rgba(219,235,250,.72), transparent 34%),
+    linear-gradient(115deg, #fff 0%, #f7faff 100%);
+}
+.trust-experience::after {
+  content: '';
+  position: absolute;
+  width: 190px;
+  height: 190px;
+  right: -105px;
+  bottom: -125px;
+  border: 1px solid rgba(47,104,164,.13);
+  border-radius: 50%;
+  box-shadow: 0 0 0 22px rgba(47,104,164,.025), 0 0 0 45px rgba(47,104,164,.02);
+  pointer-events: none;
+}
+.trust-experience .trust-strip-heading { position: relative; z-index: 1; }
+.trust-learn-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 13px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #1b5a91;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.trust-learn-link:hover { color: #0b3c6c; }
+.trust-experience .trust-point {
+  position: relative;
+  z-index: 1;
+  align-items: flex-start;
+  padding: 13px;
+  border: 1px solid rgba(222,232,243,.9);
+  border-radius: 15px;
+  background: rgba(255,255,255,.78);
+}
+.trust-experience .trust-point-icon {
+  width: 42px;
+  height: 42px;
+  flex-basis: 42px;
+  border: 1px solid #e0ebf7;
+  background: linear-gradient(145deg,#f2f7fd,#e9f2fb);
+}
+.trust-experience .trust-point b { font-size: 13px; letter-spacing: -.01em; }
+.trust-experience .trust-point small { font-size: 11px; line-height: 1.55; }
+.promise-panel {
+  border-color: #d9e8e8;
+  background: linear-gradient(135deg,#f5fbfb 0%,#edf7f6 100%);
+}
+.promise-panel p { max-width: 54ch; }
+@media (max-width: 768px) {
+  .trust-experience { padding: 19px; }
+  .trust-experience .trust-points { gap: 9px; }
+  .trust-experience .trust-point { padding: 11px; }
+  .trust-learn-link { min-height: 38px; }
+}
