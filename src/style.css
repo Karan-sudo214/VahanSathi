@@ -1791,3 +1791,11 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 /* Clear degraded-storage state: never present a disconnected database as syncing. */
 .db-pulse.offline{background:#d97706;box-shadow:0 0 0 3px rgba(217,119,6,.12)}
 .db-text small{max-width:190px;line-height:1.35}
+
+/* Google sign-in */
+.google-auth-section{margin:0 0 14px}
+.google-button-wrap{display:flex;justify-content:center;min-height:42px;width:100%}
+.google-button-wrap iframe{max-width:100%}
+.auth-divider{display:flex;align-items:center;gap:12px;margin:2px 0 13px;color:var(--t6);font-size:10px;font-weight:800;letter-spacing:.12em}
+.auth-divider:before,.auth-divider:after{content:'';height:1px;flex:1;background:var(--border)}
+.google-auth-note{margin:0;text-align:center;color:var(--t6);font-size:11px;line-height:1.5}
