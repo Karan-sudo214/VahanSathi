@@ -1018,6 +1018,36 @@ function SearchingTimer({ createdAt }) {
   );
 }
 
+// Curated searchable landmark suggestions for the two active service cities.
+const SERVICE_LOCATIONS: Record<string, string[]> = {
+  Delhi: [
+    "Connaught Place, Delhi", "India Gate, Delhi", "New Delhi Railway Station, Delhi", "Old Delhi Railway Station, Delhi",
+    "IGI Airport Terminal 1, Delhi", "IGI Airport Terminal 2, Delhi", "IGI Airport Terminal 3, Delhi",
+    "Kashmere Gate ISBT, Delhi", "Anand Vihar ISBT, Delhi", "Sarai Kale Khan ISBT, Delhi",
+    "Karol Bagh, Delhi", "Rajouri Garden, Delhi", "Dwarka Sector 10, Delhi", "Dwarka Sector 21, Delhi",
+    "Rohini Sector 10, Delhi", "Pitampura, Delhi", "Janakpuri, Delhi", "Vasant Kunj, Delhi",
+    "Saket, Delhi", "Hauz Khas, Delhi", "Greater Kailash, Delhi", "Lajpat Nagar, Delhi",
+    "South Extension, Delhi", "Defence Colony, Delhi", "Nehru Place, Delhi", "Okhla, Delhi",
+    "Chandni Chowk, Delhi", "Laxmi Nagar, Delhi", "Preet Vihar, Delhi", "Mayur Vihar, Delhi",
+    "Shahdara, Delhi", "Civil Lines, Delhi", "Model Town, Delhi", "Punjabi Bagh, Delhi",
+    "Aerocity, Delhi", "AIIMS, Delhi", "Pragati Maidan, Delhi", "Jasola, Delhi"
+  ],
+  Gurugram: [
+    "Cyber City, Gurugram", "HUDA City Centre (Millennium City Centre), Gurugram", "MG Road, Gurugram",
+    "Golf Course Road, Gurugram", "Golf Course Extension Road, Gurugram", "Sohna Road, Gurugram",
+    "Udyog Vihar Phase 1, Gurugram", "Udyog Vihar Phase 2, Gurugram", "Udyog Vihar Phase 3, Gurugram",
+    "Sector 14, Gurugram", "Sector 15, Gurugram", "Sector 29, Gurugram", "Sector 31, Gurugram",
+    "Sector 43, Gurugram", "Sector 45, Gurugram", "Sector 46, Gurugram", "Sector 47, Gurugram",
+    "Sector 48, Gurugram", "Sector 49, Gurugram", "Sector 50, Gurugram", "Sector 56, Gurugram",
+    "Sector 57, Gurugram", "Sector 62, Gurugram", "Sector 65, Gurugram", "Sector 67, Gurugram",
+    "Sector 69, Gurugram", "Sushant Lok Phase 1, Gurugram", "DLF Phase 1, Gurugram",
+    "DLF Phase 2, Gurugram", "DLF Phase 3, Gurugram", "DLF Phase 4, Gurugram",
+    "Palam Vihar, Gurugram", "South City 1, Gurugram", "South City 2, Gurugram",
+    "Nirvana Country, Gurugram", "Ambience Mall, Gurugram", "Artemis Hospital, Gurugram",
+    "Medanta Hospital, Gurugram", "Gurugram Railway Station, Gurugram", "Dwarka Expressway, Gurugram"
+  ]
+};
+
 // ----------------- Booking Page Component -----------------
 function BookingPage(p: any) {
   const clearFare = () => p.clearFare?.();
@@ -1065,10 +1095,17 @@ function BookingPage(p: any) {
           </div>
 
           <h3>2. Route & Schedule</h3>
+          <datalist id="service-locations-delhi">
+            {SERVICE_LOCATIONS.Delhi.map((place) => <option key={place} value={place} />)}
+          </datalist>
+          <datalist id="service-locations-gurugram">
+            {SERVICE_LOCATIONS.Gurugram.map((place) => <option key={place} value={place} />)}
+          </datalist>
           <div className="form-fields-grid">
             <label className="field-group full">
               <span><MapPin size={15} /> Pickup Location</span>
               <input
+                list={p.city === "Gurugram" ? "service-locations-gurugram" : "service-locations-delhi"}
                 value={p.pickup}
                 onChange={(e) => {
                   p.setPickup(e.target.value);
@@ -1094,6 +1131,7 @@ function BookingPage(p: any) {
             <label className="field-group full">
               <span><Navigation size={15} /> Destination</span>
               <input
+                list={p.city === "Gurugram" ? "service-locations-gurugram" : "service-locations-delhi"}
                 value={p.destination}
                 onChange={(e) => {
                   p.setDestination(e.target.value);
