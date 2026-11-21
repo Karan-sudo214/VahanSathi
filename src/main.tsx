@@ -683,6 +683,29 @@ function App() {
                 ))}
               </div>
 
+              {/* Brand trust points */}
+              <section className="trust-strip" aria-label="Why choose VaahanSathi">
+                <div className="trust-strip-heading">
+                  <span className="eyebrow">A BETTER WAY TO GET THERE</span>
+                  <h3>Convenience, with confidence.</h3>
+                  <p>Professional driver service designed around the car you already own.</p>
+                </div>
+                <div className="trust-points">
+                  <article className="trust-point">
+                    <span className="trust-point-icon"><ShieldCheck size={19} /></span>
+                    <div><b>Verification-led</b><small>Driver onboarding and review process</small></div>
+                  </article>
+                  <article className="trust-point">
+                    <span className="trust-point-icon"><IndianRupee size={19} /></span>
+                    <div><b>Clear fare breakdown</b><small>See the estimate before you book</small></div>
+                  </article>
+                  <article className="trust-point">
+                    <span className="trust-point-icon"><CarFront size={19} /></span>
+                    <div><b>Your car. Your journey.</b><small>A driver for the vehicle you own</small></div>
+                  </article>
+                </div>
+              </section>
+
               {/* Bottom Quick Panels */}
               <div className="home-panels-grid">
                 <section className="panel">
