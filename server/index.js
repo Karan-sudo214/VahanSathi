@@ -911,7 +911,7 @@ app.post('/api/payments/cash/driver-confirm', auth, roles('driver'), asyncRoute(
   const amount = Number(req.body?.amountReceived);
   const pin = String(req.body?.cashPin || '').trim();
   if (!Number.isSafeInteger(amount) || amount < 0 || amount > 1000000) return res.status(400).json({ error: 'Enter the exact amount of cash received in whole rupees.' });
-  if (!/^\d{6}$/.test(pin)) return res.status(400).json({ error: 'Enter the customer's 6-digit cash confirmation PIN.' });
+  if (!/^\d{6}$/.test(pin)) return res.status(400).json({ error: "Enter the customer's 6-digit cash confirmation PIN." });
   if (booking.cashDriverConfirmed) return res.status(409).json({ error: 'Your cash receipt has already been submitted.' });
   if (booking.cashPinLockedAt) return res.status(423).json({ error: 'Cash PIN is locked. Contact support.' });
   const expected = createHmac('sha256', secret).update(String(booking.cashPin || '')).digest();
