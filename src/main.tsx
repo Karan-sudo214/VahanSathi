@@ -2193,117 +2193,138 @@ function DriverProfile({ user, onUpdate, flash }: any) {
 function VoiceAgentModal({ onClose, onApply, onBook, city }: { onClose: () => void; onApply: (intent: any) => void; onBook: (intent: any) => void; city: string }) {
   type Stage = 'idle' | 'listening' | 'processing' | 'confirm';
   const [stage, setStage] = useState<Stage>('idle');
-  const [live, setLive] = useState('');
   const [final, setFinal] = useState('');
   const [intent, setIntent] = useState<any>(null);
   const [err, setErr] = useState('');
   const [booking, setBooking] = useState(false);
-  const recRef = useRef<any>(null);
-  const finalRef = useRef('');
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
   const LANGS = [
     { label: 'English', code: 'en-IN', srv: 'en-IN', ph: 'Example: Take me from Connaught Place to IGI Airport tomorrow at 6 AM' },
     { label: 'हिन्दी', code: 'hi-IN', srv: 'hi-IN', ph: 'उदाहरण: कल सुबह कनॉट प्लेस से एयरपोर्ट जाना है' },
-    { label: 'Hinglish', code: 'en-IN', srv: 'hi-hinglish', ph: 'Example: Kal subah Connaught Place se airport jaana hai' },
+    { label: 'Hinglish', code: 'hi-IN', srv: 'hi-hinglish', ph: 'Example: Kal subah Connaught Place se airport jaana hai' },
   ];
   const [lang, setLang] = useState(() => {
     const saved = localStorage.getItem('vs_language');
     return LANGS[saved === 'hi' ? 1 : saved === 'hinglish' ? 2 : 0];
   });
 
+  function releaseMic() {
+    streamRef.current?.getTracks().forEach(track => track.stop());
+    streamRef.current = null;
+  }
+
   useEffect(() => () => {
-    try { recRef.current?.abort?.(); } catch {}
-    recRef.current = null;
+    try { recorderRef.current?.stop(); } catch {}
+    recorderRef.current = null;
+    releaseMic();
     if ('speechSynthesis' in window) window.speechSynthesis.cancel();
   }, []);
 
   function stopListening() {
-    const current = recRef.current;
-    recRef.current = null;
-    try { current?.stop?.(); } catch {}
-    setStage('idle');
+    const recorder = recorderRef.current;
+    if (recorder && recorder.state !== 'inactive') {
+      setStage('processing');
+      try { recorder.stop(); } catch {
+        recorderRef.current = null;
+        releaseMic();
+        setStage('idle');
+        setErr('Could not finish the recording. Please try again or type your trip.');
+      }
+    } else {
+      releaseMic();
+      setStage('idle');
+    }
   }
 
-  function startListening() {
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+  async function startListening() {
     if (!window.isSecureContext && location.hostname !== 'localhost') {
-      setErr('Microphone access requires a secure HTTPS connection. Open the secure VaahanSathi website or type your trip below.');
+      setErr('Microphone access requires a secure HTTPS connection. Open the secure VaahanSathi website or type your trip.');
       return;
     }
-    if (!SpeechRecognition) {
-      setErr('Voice typing is not supported by this browser. You can still enter your trip below, or try the latest Chrome browser.');
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      setErr('Audio recording is not supported in this browser. Please use the latest Safari or Chrome, or type your trip below.');
       return;
     }
     try {
       setErr('');
-      setLive('');
       setFinal('');
-      finalRef.current = '';
       setIntent(null);
-      const recognition = new SpeechRecognition();
-      recognition.lang = lang.code;
-      recognition.continuous = false;
-      recognition.interimResults = true;
-      recognition.maxAlternatives = 1;
-      recRef.current = recognition;
-      setStage('listening');
-      recognition.onresult = (event: any) => {
-        let interim = '', committed = '';
-        for (let i = event.resultIndex || 0; i < event.results.length; i++) {
-          const result = event.results[i];
-          const transcript = result?.[0]?.transcript || '';
-          if (result.isFinal) committed += transcript;
-          else interim += transcript;
-        }
-        if (committed.trim()) {
-          finalRef.current = (finalRef.current + ' ' + committed).trim();
-          setFinal(finalRef.current);
-        }
-        setLive(interim);
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+      });
+      streamRef.current = stream;
+      const candidates = ['audio/webm;codecs=opus', 'audio/mp4', 'audio/webm', 'audio/ogg;codecs=opus'];
+      const mimeType = candidates.find(type => MediaRecorder.isTypeSupported?.(type));
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      recorderRef.current = recorder;
+      const chunks: BlobPart[] = [];
+      recorder.ondataavailable = event => {
+        if (event.data && event.data.size > 0) chunks.push(event.data);
       };
-      recognition.onerror = (event: any) => {
-        const messages: Record<string, string> = {
-          'not-allowed': 'Microphone permission is blocked. Allow microphone access in your browser settings, then tap the microphone again.',
-          'service-not-allowed': 'This browser or device has blocked its speech recognition service. Please type your trip instead.',
-          'audio-capture': 'No working microphone was found. Check your phone microphone permission or type your trip.',
-          'network': 'Speech recognition needs an internet connection on this browser. Check your connection or type your trip.',
-          'no-speech': 'No speech was detected. Tap the microphone and speak clearly after the listening indicator appears.',
-          'aborted': 'Voice input was stopped. Tap the microphone to try again.'
-        };
-        setErr(messages[event.error] || 'Voice input could not start. Check microphone permission or type your trip below.');
+      recorder.onerror = () => {
+        recorderRef.current = null;
+        releaseMic();
         setStage('idle');
-        recRef.current = null;
+        setErr('Recording failed. Check microphone permission and try again, or type your trip.');
       };
-      recognition.onend = () => {
-        if (recRef.current === recognition) recRef.current = null;
-        setStage(current => current === 'listening' ? 'idle' : current);
+      recorder.onstop = async () => {
+        recorderRef.current = null;
+        releaseMic();
+        const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' });
+        if (blob.size < 1000) {
+          setStage('idle');
+          setErr('The recording was too short. Please hold the microphone and speak for a moment.');
+          return;
+        }
+        try {
+          setStage('processing');
+          const mime = blob.type.split(';')[0] || 'audio/webm';
+          const result = await api('/voice/transcribe?language=' + encodeURIComponent(lang.srv), {
+            method: 'POST',
+            body: blob,
+            headers: { 'Content-Type': mime }
+          });
+          const transcript = typeof result?.text === 'string' ? result.text.trim() : '';
+          if (!transcript) throw new Error('No words were detected. Please try again or type your trip.');
+          setFinal(transcript);
+          setStage('idle');
+          setErr('');
+        } catch (error: any) {
+          setStage('idle');
+          setErr(error?.message || 'Voice transcription failed. Please try again or type your trip.');
+        }
       };
-      recognition.start();
+      recorder.start(250);
+      setStage('listening');
     } catch (error: any) {
-      recRef.current = null;
+      releaseMic();
       setStage('idle');
-      setErr(error?.name === 'NotAllowedError'
-        ? 'Microphone permission is blocked. Allow microphone access and try again.'
-        : 'Could not start the microphone. Please try again or type your trip below.');
+      const name = error?.name;
+      setErr(name === 'NotAllowedError' || name === 'SecurityError'
+        ? 'Microphone permission is blocked. Allow microphone access in your phone browser settings, then try again.'
+        : name === 'NotFoundError'
+          ? 'No microphone was found on this device. Please type your trip.'
+          : name === 'NotReadableError'
+            ? 'Your microphone is busy in another app. Close other apps using it and try again.'
+            : 'Could not access the microphone. Check your browser permission or type your trip below.');
     }
   }
 
   async function interpretTrip() {
-    const text = (finalRef.current + ' ' + live).trim();
-    if (!text) {
+    if (!final.trim()) {
       setErr('Please speak or type your pickup and destination first.');
       return;
     }
-    stopListening();
     setErr('');
     setStage('processing');
     try {
       const result = await api('/voice/intent', {
         method: 'POST',
-        body: JSON.stringify({ text, language: lang.srv, city })
+        body: JSON.stringify({ text: final.trim(), language: lang.srv, city })
       });
       if (!result || typeof result !== 'object') throw new Error('The trip could not be understood. Please try again.');
       if (!result.pickup || !result.destination) {
-        setIntent(result);
         setErr('I could not identify both locations. Please edit your trip text to include where you are starting and where you are going.');
         setStage('idle');
         return;
@@ -2311,18 +2332,26 @@ function VoiceAgentModal({ onClose, onApply, onBook, city }: { onClose: () => vo
       setIntent(result);
       onApply(result);
       setStage('confirm');
-      if ('speechSynthesis' in window) {
-        try {
-          window.speechSynthesis.cancel();
-          const utterance = new SpeechSynthesisUtterance(result.summary || ('Trip understood. From ' + result.pickup + ' to ' + result.destination + '.'));
-          utterance.lang = lang.code;
-          utterance.rate = 0.95;
-          window.speechSynthesis.speak(utterance);
-        } catch { /* Spoken confirmation is optional. */ }
-      }
     } catch (error: any) {
       setErr(error?.message || 'Could not understand your trip. Please try again.');
       setStage('idle');
+    }
+  }
+
+  function speakSummary() {
+    if (!intent || !('speechSynthesis' in window)) {
+      setErr('Spoken playback is not supported on this browser. The trip details are shown below.');
+      return;
+    }
+    try {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(intent.summary || ('Trip understood. From ' + intent.pickup + ' to ' + intent.destination + '.'));
+      utterance.lang = lang.code;
+      utterance.rate = 0.95;
+      utterance.onerror = () => setErr('Audio playback is unavailable on this device. Please review the trip details shown on screen.');
+      window.speechSynthesis.speak(utterance);
+    } catch {
+      setErr('Audio playback is unavailable on this device. Please review the trip details shown on screen.');
     }
   }
 
@@ -2333,8 +2362,6 @@ function VoiceAgentModal({ onClose, onApply, onBook, city }: { onClose: () => vo
     try { await onBook(intent); }
     finally { setBooking(false); }
   }
-
-  const displayText = final + (final && live ? ' ' : '') + live;
 
   return (
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
@@ -2350,37 +2377,34 @@ function VoiceAgentModal({ onClose, onApply, onBook, city }: { onClose: () => vo
               {stage === 'processing' && 'Understanding your trip…'}
               {stage === 'confirm' && 'Review your trip'}
             </h2>
-            <p style={{fontSize:'12px',color:'var(--t5)',lineHeight:1.4}}>Include your pickup, destination, date and time. Check the details before booking.</p>
+            <p style={{fontSize:'12px',color:'var(--t5)',lineHeight:1.4}}>Tap the microphone, speak naturally, then review the trip before booking.</p>
           </div>
         </div>
         <div className="va-lang-row">
           {LANGS.map(option => (
             <button key={option.label} type="button" className={'va-lang-btn' + (lang.label === option.label ? ' active' : '')}
               onClick={() => {
-                stopListening(); setLang(option); setErr(''); setFinal(''); setLive('');
-                finalRef.current = ''; setIntent(null);
+                if (recorderRef.current?.state === 'recording') stopListening();
+                setLang(option); setErr(''); setFinal(''); setIntent(null);
               }}>{option.label}</button>
           ))}
         </div>
         <div className="va-transcript" aria-live="polite">
-          {!displayText && <span className="va-placeholder">{lang.ph}</span>}
-          {displayText && <span>{displayText}</span>}
-          {stage === 'listening' && <span className="va-cursor"> |</span>}
+          {!final && <span className="va-placeholder">{lang.ph}</span>}
+          {final && <span>{final}</span>}
         </div>
         {err && <p className="va-err" role="alert">{err}</p>}
         {(stage === 'idle' || stage === 'listening') && (
           <div style={{display:'flex',flexDirection:'column',gap:10,marginTop:8}}>
             <button type="button" className={'va-mic-btn ' + (stage === 'listening' ? 'va-mic-active' : '')}
               onClick={stage === 'listening' ? stopListening : startListening}>
-              <Mic size={20} /> {stage === 'listening' ? 'Stop listening' : 'Tap to speak'}
+              <Mic size={20} /> {stage === 'listening' ? 'Stop recording' : 'Tap to speak'}
             </button>
-            <textarea className="va-text-input" value={displayText}
-              onChange={(e) => {
-                finalRef.current = e.target.value; setFinal(e.target.value); setLive(''); setErr('');
-              }}
+            <textarea className="va-text-input" value={final}
+              onChange={(e) => { setFinal(e.target.value); setErr(''); }}
               placeholder="Or type: From Connaught Place to IGI Airport tomorrow at 6 AM"
               rows={3} aria-label="Enter your pickup and destination" />
-            {displayText.trim() && stage !== 'listening' && (
+            {final.trim() && stage !== 'listening' && (
               <button type="button" className="primary-btn-wide" style={{marginTop:0}} onClick={interpretTrip}>
                 Understand my trip <ArrowRight size={16} />
               </button>
@@ -2388,7 +2412,7 @@ function VoiceAgentModal({ onClose, onApply, onBook, city }: { onClose: () => vo
           </div>
         )}
         {stage === 'processing' && (
-          <div className="va-processing" role="status"><div className="va-spinner" /><span>Checking your trip details…</span></div>
+          <div className="va-processing" role="status"><div className="va-spinner" /><span>Transcribing and checking your trip…</span></div>
         )}
         {stage === 'confirm' && intent && (
           <div style={{display:'flex',flexDirection:'column',gap:12,marginTop:4}}>
@@ -2400,14 +2424,14 @@ function VoiceAgentModal({ onClose, onApply, onBook, city }: { onClose: () => vo
               <div className="va-confirm-row"><span>Time</span><b>{intent.time || 'Please select time'}</b></div>
               <div className="va-confirm-row"><span>City</span><b>{intent.city || city}</b></div>
             </div>
+            <button type="button" className="secondary-btn" style={{width:'100%',justifyContent:'center'}} onClick={speakSummary}>
+              <Headphones size={17} /> Read trip aloud
+            </button>
             <button type="button" className="primary-btn-wide" style={{marginTop:0,background:'#15803d'}} onClick={confirmBook} disabled={booking}>
               {booking ? 'Booking…' : 'Confirm and Book Now'} <ArrowRight size={17} />
             </button>
             <button type="button" className="secondary-btn" style={{width:'100%',justifyContent:'center'}}
-              onClick={() => {
-                setStage('idle'); setFinal(''); setLive(''); finalRef.current = '';
-                setIntent(null); setErr('');
-              }}>Edit trip details</button>
+              onClick={() => { setStage('idle'); setIntent(null); setErr(''); }}>Edit trip details</button>
           </div>
         )}
       </div>
