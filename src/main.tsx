@@ -1784,6 +1784,7 @@ function DriverPage({ bookings, update, user, onDutyChange, flash, onCashConfirm
 
               <div className="driver-action-footer">
                 <span>Customer: <b>{b.customer || 'Car Owner'}</b></span>
+                {b.requestedDriverStyle && b.requestedDriverStyle !== 'any' && <span className="requested-style-pill">Customer prefers: <b>{b.requestedDriverStyle}</b></span>}
                 <div className="action-buttons-group">
                   {b.status === 'Searching' && (
                     <button className="primary-btn success" style={{width:'100%',justifyContent:'center'}} onClick={() => update(b, 'Driver assigned')}>
@@ -2438,6 +2439,7 @@ function DriverProfile({ user, onUpdate, flash }: any) {
               { value: 'quiet', title: 'Quiet ride', desc: 'Minimal conversation' }
             ].map((style) => <button type="button" key={style.value} className={`driver-style-option ${selectedStyles.includes(style.value) ? 'selected' : ''}`} onClick={() => setSelectedStyles((current) => current.includes(style.value) ? current.filter((tag) => tag !== style.value) : [...current, style.value])}><b>{style.title}</b><small>{style.desc}</small></button>)}
           </div>
+          {!editing && <button className="secondary-btn" type="button" onClick={save} disabled={busy}>{busy ? 'Saving…' : 'Save communication preferences'}</button>}
         </section>
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '24px' }}>
           <div className="profile-avatar-large">{user?.name ? user.name[0] : 'V'}</div>
