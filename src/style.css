@@ -1869,3 +1869,47 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 
 .requested-style-pill{display:inline-flex;align-items:center;gap:5px;padding:6px 9px;border:1px solid #d9e7f5;border-radius:99px;background:#f1f7ff;color:#45617e;font-size:10px}
 .requested-style-pill b{text-transform:capitalize;color:#174d8c}
+
+/* Premium two-sided cash handover verification */
+.cash-handover-overlay{align-items:center;padding:18px;z-index:130}
+.cash-handover-modal{width:min(100%,480px);max-width:480px;border-radius:24px;padding:30px;max-height:min(92dvh,820px)}
+.cash-handover-modal::before{display:none}
+.cash-modal-emblem{width:54px;height:54px;display:grid;place-items:center;border-radius:17px;background:linear-gradient(145deg,#e8f4ff,#e9faf5);color:#08776d;margin-bottom:17px;box-shadow:inset 0 0 0 1px rgba(10,122,110,.1)}
+.cash-handover-modal .eyebrow{color:#08776d;margin-bottom:7px}
+.cash-handover-modal h2{font-size:23px;line-height:1.2;letter-spacing:-.04em;margin-bottom:8px}
+.cash-modal-intro{font-size:13px;line-height:1.6;color:#65768b;margin-bottom:17px;max-width:390px}
+.cash-fare-summary{display:grid;grid-template-columns:1fr auto;align-items:center;gap:2px 12px;padding:15px 16px;border:1px solid #dce8f2;border-radius:15px;background:linear-gradient(120deg,#f7fbff,#f1f8f7);margin-bottom:19px}
+.cash-fare-summary span{font-size:11px;color:#718198;font-weight:700;text-transform:uppercase;letter-spacing:.07em}
+.cash-fare-summary b{grid-column:2;grid-row:1/3;font-size:25px;letter-spacing:-.04em;color:#102c45;font-variant-numeric:tabular-nums}
+.cash-fare-summary small{font-size:11px;color:#8b9bad}
+.cash-field-label{display:block;font-size:12px;font-weight:800;color:#243b52;margin:13px 0 7px}
+.cash-amount-input{height:54px;display:flex;align-items:center;gap:10px;padding:0 15px;border:1.5px solid #d7e2ed;border-radius:13px;background:#fff;color:#0b7a70;transition:border-color .18s,box-shadow .18s}
+.cash-amount-input:focus-within{border-color:#0b8b7b;box-shadow:0 0 0 4px rgba(11,139,123,.1)}
+.cash-amount-input input{width:100%;min-width:0;border:0;background:transparent;color:#102c45;font-size:20px;font-weight:800;font-variant-numeric:tabular-nums;outline:none}
+.cash-pin-input{display:block;width:100%;height:58px;border:1.5px solid #d7e2ed;border-radius:13px;background:#fbfdff;color:#102c45;text-align:center;font-size:25px;font-weight:800;letter-spacing:.48em;font-variant-numeric:tabular-nums;transition:border-color .18s,box-shadow .18s}
+.cash-pin-input:focus{border-color:#0b8b7b;box-shadow:0 0 0 4px rgba(11,139,123,.1)}
+.cash-pin-input::placeholder{color:#aebdca;letter-spacing:.28em}
+.cash-pin-hint{display:flex;align-items:center;gap:6px;color:#7a8b9e;font-size:10px;margin-top:7px}
+.cash-modal-assurance{display:flex;align-items:flex-start;gap:9px;margin:17px 0 13px;padding:12px 13px;border:1px solid #d9eee7;border-radius:12px;background:#f3fbf7;color:#476c60;font-size:11px;line-height:1.5}
+.cash-modal-assurance svg{flex:0 0 auto;color:#0a8973;margin-top:1px}
+.cash-submit-btn{margin-top:0;min-height:52px;border-radius:13px;background:linear-gradient(105deg,#102d48,#0a746b);box-shadow:0 8px 18px rgba(10,90,91,.18)}
+.cash-submit-btn:disabled{opacity:.5;cursor:not-allowed}
+.cash-cancel-btn{display:block;width:100%;padding:12px;margin-top:5px;color:#718198;font-size:12px;font-weight:700}
+.cash-form-error{display:flex;align-items:center;gap:7px;color:#a52a2a;font-size:11px;margin-top:9px}
+.cash-pin-card{margin-top:13px;padding:15px;border:1px solid #d7e9e7;border-radius:16px;background:linear-gradient(135deg,#f6fbff 0%,#f0faf7 100%);box-shadow:0 5px 16px rgba(15,57,75,.045)}
+.cash-pin-heading{display:flex;align-items:center;gap:9px}
+.cash-pin-icon{width:34px;height:34px;display:grid;place-items:center;border-radius:11px;background:#e0f2ed;color:#08796d;flex:0 0 auto}
+.cash-pin-heading>span:nth-child(2){display:flex;flex-direction:column;gap:2px;min-width:0}
+.cash-pin-heading b{font-size:12px;color:#173c51}
+.cash-pin-heading small{font-size:10px;color:#718198;line-height:1.4}
+.cash-pin-live{margin-left:auto;padding:4px 7px;border-radius:99px;background:#e2f5ec;color:#14734f;font-size:8px;font-weight:900;letter-spacing:.08em;white-space:nowrap}
+.cash-pin-digits{display:flex;justify-content:center;gap:9px;margin:14px 0 12px}
+.cash-pin-digits span{display:grid;place-items:center;width:38px;height:45px;border:1px solid #d5e5e8;border-radius:10px;background:#fff;color:#12374c;font-size:23px;font-weight:900;box-shadow:0 2px 5px rgba(16,44,69,.04);font-variant-numeric:tabular-nums}
+.cash-pin-foot{display:flex;align-items:flex-start;gap:6px;color:#718198;font-size:10px;line-height:1.45}
+.cash-pin-foot svg{flex:0 0 auto;color:#0a8172}
+.driver-cash-action{display:grid;gap:9px;padding:13px;border:1px solid #d7e9e7;border-radius:14px;background:#f7fbfa}
+.driver-cash-action>div{display:flex;flex-direction:column;gap:3px}
+.driver-cash-action b{font-size:12px;color:#183c51}
+.driver-cash-action small{font-size:10px;color:#718198;line-height:1.45}
+@media(min-width:600px){.overlay.cash-handover-overlay{align-items:center}.cash-handover-modal{padding:32px}}
+@media(max-width:480px){.cash-handover-overlay{padding:0;align-items:flex-end}.cash-handover-modal{width:100%;max-width:100%;border-radius:24px 24px 0 0;padding:24px 20px max(25px,env(safe-area-inset-bottom));max-height:94dvh}.cash-pin-digits{gap:7px}.cash-pin-digits span{width:clamp(34px,11vw,40px);height:43px}.cash-handover-modal h2{font-size:21px}}
