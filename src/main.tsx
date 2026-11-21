@@ -1045,16 +1045,16 @@ function App() {
           stars={rating}
           setStars={setRating}
           onClose={() => setModal('')}
-          onSubmit={async () => {
+          onSubmit={async (feedback: any) => {
             const id = modal.split(':')[1];
             try {
               await api(`/bookings/${id}/rating`, {
                 method: 'POST',
-                body: JSON.stringify({ stars: rating })
+                body: JSON.stringify(feedback)
               });
               await refresh();
               setModal('');
-              flash('Thank you for rating your driver!');
+              flash('Thank you. Your feedback will help us improve VaahanSathi.');
             } catch (e: any) {
               flash(e.message);
             }
@@ -2988,8 +2988,8 @@ function CashHandoverModal({ booking, mode, onClose, onSubmit }: { booking: Book
         <div className="cash-modal-emblem"><ShieldCheck size={25}/></div>
         <span className="eyebrow">{isCustomer ? 'CUSTOMER PAYMENT CONFIRMATION' : 'DRIVER RECEIPT VERIFICATION'}</span>
         <h2>{isCustomer ? 'Confirm cash handed over' : 'Verify cash received'}</h2>
-        <p className="cash-modal-intro">{isCustomer ? 'Enter the final amount the driver kept after returning any change. Your driver will independently confirm the amount received.' : 'Enter the final amount you kept after returning any change. Then enter the customer’s one-time PIN.'}</p>
-        <div className="cash-fare-summary"><span>Trip fare</span><b>{money(booking.total)}</b><small>Booking #{String(booking.id).slice(-8)}</small></div>
+        <p className="cash-modal-intro">{isCustomer ? 'If you paid the exact trip fare, the amount is already filled in. Just confirm. Change the amount only if your final payment was different.' : 'Enter the amount you kept after returning change, then verify the customer’s one-time PIN.'}</p>
+        <div className="cash-fare-summary"><span>Trip fare</span><b>{money(booking.total)}</b><small>Booking #{String(booking.id).slice(-8)} · {isCustomer ? 'Quick confirmation' : 'One-time secure verification'}</small></div>
         <label className="cash-field-label" htmlFor="cash-handover-amount">{isCustomer ? 'Final amount paid after change (₹)' : 'Amount retained / received (₹)'}</label>
         <div className="cash-amount-input"><IndianRupee size={20}/><input id="cash-handover-amount" type="text" inputMode="numeric" autoComplete="off" value={amount} onChange={(e) => { setAmount(e.target.value.replace(/[^0-9]/g, '').slice(0, 7)); setError(''); }} placeholder="Enter amount"/></div>
         {!isCustomer && <>
@@ -2999,7 +2999,7 @@ function CashHandoverModal({ booking, mode, onClose, onSubmit }: { booking: Book
         </>}
         {error && <p className="cash-form-error"><AlertCircle size={15}/>{error}</p>}
         <div className="cash-modal-assurance"><ShieldCheck size={16}/><span>Both parties must confirm the same amount. Any mismatch is flagged for admin review—never silently marked as paid.</span></div>
-        <button className="primary-btn-wide cash-submit-btn" onClick={submit} disabled={submitting || !validAmount || (!isCustomer && pin.length !== 6)}>{submitting ? 'Verifying securely…' : isCustomer ? 'Confirm amount handed over' : 'Verify PIN & submit receipt'} <ArrowRight size={17}/></button>
+        <button className="primary-btn-wide cash-submit-btn" onClick={submit} disabled={submitting || !validAmount || (!isCustomer && pin.length !== 6)}>{submitting ? 'Verifying securely…' : isCustomer ? `Confirm ${money(Number(amount || 0))} paid` : 'Verify PIN & confirm cash'} <ArrowRight size={17}/></button>
         <button className="cash-cancel-btn" onClick={onClose} disabled={submitting}>Cancel</button>
       </div>
     </div>
@@ -3078,25 +3078,45 @@ function TrackingModal({ booking, onClose }: any) {
   );
 }
 function RatingModal({ stars, setStars, onClose, onSubmit }: any) {
+  const [whatWorked, setWhatWorked] = useState<string[]>([]);
+  const [improvement, setImprovement] = useState('');
+  const [safety, setSafety] = useState('Good');
+  const [punctuality, setPunctuality] = useState('On time');
+  const [communication, setCommunication] = useState('Just right');
+  const [additional, setAdditional] = useState('');
+  const [busy, setBusy] = useState(false);
+  const toggleWorked = (value: string) => setWhatWorked((items) => items.includes(value) ? items.filter((item) => item !== value) : [...items, value]);
+  const submit = async () => {
+    setBusy(true);
+    try { await onSubmit({ stars, whatWorked, improvement, safety, punctuality, communication, review: additional.trim() }); }
+    finally { setBusy(false); }
+  };
   return (
-    <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal rating-modal-box">
-        <button className="modal-close-btn" onClick={onClose}><X size={18} /></button>
-        <span className="eyebrow">RIDE FEEDBACK</span>
-        <h2>Rate Your Driver Partner</h2>
-        <p>Your feedback ensures high quality and safety standards.</p>
-
+    <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && !busy && onClose()}>
+      <div className="modal rating-modal-box detailed-feedback-modal">
+        <button className="modal-close-btn" onClick={onClose} disabled={busy}><X size={18} /></button>
+        <span className="eyebrow">HELP US GET BETTER</span>
+        <h2>How was your ride?</h2>
+        <p>Your honest feedback helps us improve driver quality, safety and the overall experience.</p>
+        <div className="feedback-rating-label">Overall experience</div>
         <div className="stars-picker-row">
           {[1, 2, 3, 4, 5].map((n) => (
-            <button key={n} type="button" onClick={() => setStars(n)}>
+            <button key={n} type="button" onClick={() => setStars(n)} aria-label={`Rate ${n} out of 5 stars`}>
               <Star size={32} fill={n <= stars ? '#f59e0b' : 'none'} color={n <= stars ? '#f59e0b' : '#cbd5e1'} />
             </button>
           ))}
         </div>
-
-        <button className="primary-btn-wide" onClick={onSubmit}>
-          Submit Rating <Check size={16} />
-        </button>
+        <div className="feedback-question"><b>What did we do well?</b><small>Select all that apply</small>
+          <div className="feedback-chip-list">{['Driver was polite','Safe driving','On-time pickup','Clean vehicle','Good communication','Smooth trip'].map((item) => <button type="button" key={item} className={whatWorked.includes(item) ? 'selected' : ''} onClick={() => toggleWorked(item)}>{whatWorked.includes(item) && <Check size={13}/ >}{item}</button>)}</div>
+        </div>
+        <label className="feedback-field"><b>Where can we improve?</b><select value={improvement} onChange={(e) => setImprovement(e.target.value)}><option value="">Choose an area (optional)</option><option>Pickup punctuality</option><option>Driver behaviour</option><option>Driving comfort and safety</option><option>Communication</option><option>Vehicle cleanliness</option><option>Booking and app experience</option><option>Fare or payment experience</option><option>Nothing — everything was good</option></select></label>
+        <div className="feedback-select-grid">
+          <label className="feedback-field"><b>Was the driving safe?</b><select value={safety} onChange={(e) => setSafety(e.target.value)}><option>Good</option><option>Average</option><option>Needs improvement</option></select></label>
+          <label className="feedback-field"><b>Pickup experience</b><select value={punctuality} onChange={(e) => setPunctuality(e.target.value)}><option>On time</option><option>5–10 minutes late</option><option>More than 10 minutes late</option></select></label>
+          <label className="feedback-field"><b>Communication</b><select value={communication} onChange={(e) => setCommunication(e.target.value)}><option>Just right</option><option>Too much talking</option><option>Too little communication</option><option>Unprofessional</option></select></label>
+        </div>
+        <label className="feedback-field"><b>Anything else you’d like us to know?</b><textarea value={additional} onChange={(e) => setAdditional(e.target.value.slice(0, 500))} placeholder="Tell us what happened or what would make your next ride better…" rows={3}/><small>{additional.length}/500 characters</small></label>
+        <button className="primary-btn-wide" onClick={submit} disabled={busy}>{busy ? 'Submitting feedback…' : 'Submit feedback'} <Check size={16} /></button>
       </div>
     </div>
   );
