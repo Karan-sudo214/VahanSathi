@@ -2969,10 +2969,10 @@ function CashHandoverModal({ booking, mode, onClose, onSubmit }: { booking: Book
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const isCustomer = mode === 'customer';
-  const validAmount = /^\\d{1,7}$/.test(amount.trim()) && Number.isSafeInteger(Number(amount)) && Number(amount) >= 0;
+  const validAmount = /^\d{1,7}$/.test(amount.trim()) && Number.isSafeInteger(Number(amount)) && Number(amount) >= 0;
   const submit = async () => {
     if (!validAmount) { setError('Enter a valid amount in whole rupees.'); return; }
-    if (!isCustomer && !/^\\d{6}$/.test(pin)) { setError('Enter all 6 digits of the customer PIN.'); return; }
+    if (!isCustomer && !/^\d{6}$/.test(pin)) { setError('Enter all 6 digits of the customer PIN.'); return; }
     setSubmitting(true); setError('');
     try { const ok = await onSubmit(Number(amount), isCustomer ? undefined : pin); if (!ok) setError('Please review the details and try again.'); }
     finally { setSubmitting(false); }
@@ -2990,7 +2990,7 @@ function CashHandoverModal({ booking, mode, onClose, onSubmit }: { booking: Book
         <div className="cash-amount-input"><IndianRupee size={20}/><input id="cash-handover-amount" type="text" inputMode="numeric" autoComplete="off" value={amount} onChange={(e) => { setAmount(e.target.value.replace(/[^0-9]/g, '').slice(0, 7)); setError(''); }} placeholder="Enter amount"/></div>
         {!isCustomer && <>
           <label className="cash-field-label" htmlFor="cash-handover-pin">Customer’s 6-digit secure PIN</label>
-          <input id="cash-handover-pin" className="cash-pin-input" type="password" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={pin} onChange={(e) => { setPin(e.target.value.replace(/\\D/g, '').slice(0, 6)); setError(''); }} placeholder="• • • • • •" aria-label="Six digit cash handover PIN"/>
+          <input id="cash-handover-pin" className="cash-pin-input" type="password" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={pin} onChange={(e) => { setPin(e.target.value.replace(/\D/g, '').slice(0, 6)); setError(''); }} placeholder="• • • • • •" aria-label="Six digit cash handover PIN"/>
           <small className="cash-pin-hint"><LockKeyhole size={13}/> PIN is verified securely and can only be used once.</small>
         </>}
         {error && <p className="cash-form-error"><AlertCircle size={15}/>{error}</p>}
