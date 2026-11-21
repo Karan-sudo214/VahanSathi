@@ -684,66 +684,92 @@ app.post(
   })
 );
 
-// Google Identity Services sign-in for customer accounts.
-const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
-let googleJwksCache = { keys: [], expiresAt: 0 };
-async function verifyGoogleCredential(idToken) {
-  if (!GOOGLE_CLIENT_ID) throw Object.assign(new Error('Google sign-in is not configured yet.'), { status: 503 });
+// Firebase Authentication for customer accounts only. Driver/admin auth stays on the existing login routes.
+const FIREBASE_PROJECT_ID = process.env.FIREBASE_PROJECT_ID || 'vahansathi-4ffae';
+let firebaseJwksCache = { keys: [], expiresAt: 0 };
+
+async function verifyFirebaseIdToken(idToken) {
   const parts = String(idToken || '').split('.');
-  if (parts.length !== 3) throw Object.assign(new Error('Google returned an invalid sign-in token.'), { status: 401 });
+  if (parts.length !== 3) throw Object.assign(new Error('Firebase returned an invalid sign-in token.'), { status: 401 });
   let header, claims;
   try {
     header = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8'));
     claims = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
   } catch {
-    throw Object.assign(new Error('Google returned an invalid sign-in token.'), { status: 401 });
+    throw Object.assign(new Error('Firebase returned an invalid sign-in token.'), { status: 401 });
   }
-  if (header.alg !== 'RS256' || !header.kid) throw Object.assign(new Error('Google sign-in token is not valid.'), { status: 401 });
-  if (googleJwksCache.expiresAt < Date.now()) {
-    const response = await fetch('https://www.googleapis.com/oauth2/v3/certs');
-    if (!response.ok) throw Object.assign(new Error('Google sign-in verification is temporarily unavailable.'), { status: 503 });
+  if (header.alg !== 'RS256' || !header.kid) {
+    throw Object.assign(new Error('Firebase sign-in token is not valid.'), { status: 401 });
+  }
+  if (firebaseJwksCache.expiresAt < Date.now()) {
+    const response = await fetch('https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com');
+    if (!response.ok) throw Object.assign(new Error('Firebase sign-in verification is temporarily unavailable.'), { status: 503 });
     const cacheControl = response.headers.get('cache-control') || '';
-    const maxAge = Number((cacheControl.match(/max-age=(\\d+)/i) || [])[1] || 300);
-    googleJwksCache = { keys: (await response.json()).keys || [], expiresAt: Date.now() + maxAge * 1000 };
+    const maxAge = Number((cacheControl.match(/max-age=(\d+)/i) || [])[1] || 300);
+    firebaseJwksCache = { keys: (await response.json()).keys || [], expiresAt: Date.now() + maxAge * 1000 };
   }
-  const jwk = googleJwksCache.keys.find((key) => key.kid === header.kid && key.use === 'sig');
-  if (!jwk) throw Object.assign(new Error('Google sign-in key could not be verified. Please try again.'), { status: 401 });
-  const validSignature = verifySignature('RSA-SHA256', Buffer.from(parts[0] + '.' + parts[1]), createPublicKey({ key: jwk, format: 'jwk' }), Buffer.from(parts[2], 'base64url'));
+  const jwk = firebaseJwksCache.keys.find((key) => key.kid === header.kid && key.use === 'sig');
+  if (!jwk) throw Object.assign(new Error('Firebase signing key could not be verified. Please try again.'), { status: 401 });
+  const validSignature = verifySignature(
+    'RSA-SHA256',
+    Buffer.from(parts[0] + '.' + parts[1]),
+    createPublicKey({ key: jwk, format: 'jwk' }),
+    Buffer.from(parts[2], 'base64url')
+  );
   const now = Math.floor(Date.now() / 1000);
-  const issuerValid = ['accounts.google.com', 'https://accounts.google.com'].includes(claims.iss);
-  const audienceValid = claims.aud === GOOGLE_CLIENT_ID || (Array.isArray(claims.aud) && claims.aud.includes(GOOGLE_CLIENT_ID));
-  if (!validSignature || !issuerValid || !audienceValid || !claims.sub || !claims.email || claims.email_verified !== true || Number(claims.exp) <= now) {
-    throw Object.assign(new Error('Google could not verify this account. Please choose a verified Google account.'), { status: 401 });
+  const issuerValid = claims.iss === `https://securetoken.google.com/${FIREBASE_PROJECT_ID}`;
+  const audienceValid = claims.aud === FIREBASE_PROJECT_ID;
+  const timeValid = Number(claims.exp) > now && Number(claims.iat) <= now + 60 && Number(claims.auth_time) <= now + 60;
+  if (!validSignature || !issuerValid || !audienceValid || !claims.sub || claims.sub.length > 128 || !claims.email || !timeValid) {
+    throw Object.assign(new Error('Firebase could not verify this account. Please sign in again.'), { status: 401 });
   }
   return claims;
 }
 
-app.post('/api/auth/google', asyncRoute(async (req, res) => {
+app.post('/api/auth/firebase', asyncRoute(async (req, res) => {
   await databaseReadyPromise;
-  const claims = await verifyGoogleCredential(req.body?.credential);
+  const claims = await verifyFirebaseIdToken(req.body?.idToken);
   const email = String(claims.email).toLowerCase().trim();
-  let u = data.users.find((user) => user.googleId === claims.sub);
+  const firebaseUid = String(claims.sub);
+  let u = data.users.find((user) => user.firebaseUid === firebaseUid);
   if (!u) {
     u = data.users.find((user) => user.email === email);
-    if (u && u.role !== 'customer') return res.status(403).json({ error: 'Google sign-in is currently available for customer accounts. Please use your existing sign-in method for partner or admin access.' });
-    if (u?.googleId && u.googleId !== claims.sub) return res.status(409).json({ error: 'This email is linked to a different Google account. Please contact support.' });
+    if (u && u.role !== 'customer') {
+      return res.status(403).json({ error: 'Firebase sign-in is only available for customer accounts. Please use the existing partner/admin sign-in.' });
+    }
+    if (u?.firebaseUid && u.firebaseUid !== firebaseUid) {
+      return res.status(409).json({ error: 'This customer account is linked to a different Firebase identity. Please contact support.' });
+    }
+    if (u && claims.email_verified !== true) {
+      return res.status(403).json({ error: 'Please verify your email address with Firebase before linking this existing VaahanSathi account.' });
+    }
     if (u) {
-      u.googleId = claims.sub;
+      u.firebaseUid = firebaseUid;
+      if (!u.name && claims.name) u.name = String(claims.name).trim();
+      if (!u.phone && req.body?.phone) u.phone = String(req.body.phone).trim();
       await persistItem('app_users', u.id, u);
       await save();
     } else {
       const city = ['Delhi', 'Gurugram'].includes(req.body?.city) ? req.body.city : 'Delhi';
       u = {
-        id: randomUUID(), name: String(claims.name || email.split('@')[0]).trim(), email,
-        password: await bcrypt.hash(randomUUID(), 10), googleId: claims.sub,
-        phone: '', role: 'customer', city, createdAt: new Date().toISOString()
+        id: randomUUID(),
+        name: String(req.body?.name || claims.name || email.split('@')[0]).trim(),
+        email,
+        password: await bcrypt.hash(randomUUID(), 10),
+        firebaseUid,
+        phone: String(req.body?.phone || '').trim(),
+        role: 'customer',
+        city,
+        createdAt: new Date().toISOString()
       };
       data.users.push(u);
       await persistItem('app_users', u.id, u);
       await save();
     }
   }
-  if (u.role !== 'customer') return res.status(403).json({ error: 'Google sign-in is currently available for customer accounts only.' });
+  if (u.role !== 'customer') {
+    return res.status(403).json({ error: 'Firebase sign-in is available for customer accounts only.' });
+  }
   const token = jwt.sign({ id: u.id, role: u.role, adminRole: u.adminRole, name: u.name }, secret, { expiresIn: '14d' });
   res.json({ token, user: safe(u) });
 }));
