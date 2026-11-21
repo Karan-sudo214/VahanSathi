@@ -1419,3 +1419,42 @@ img{max-width:100%}
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+
+/* Voice assistant: phone-safe controls and readable transcript */
+.voice-agent-modal {
+  width: min(100% - 24px, 520px);
+  max-height: min(88dvh, 780px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+.va-mic-btn, .va-lang-btn {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.va-transcript {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.va-err {
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 768px) {
+  .voice-agent-modal {
+    width: 100%;
+    max-height: min(92dvh, 900px);
+    padding-bottom: calc(22px + env(safe-area-inset-bottom));
+  }
+  .va-header { gap: 11px; }
+  .va-header > div:last-child { min-width: 0; }
+  .va-lang-row { gap: 6px; }
+  .va-lang-btn { min-height: 44px; padding: 9px 6px; font-size: 12px; }
+  .va-transcript { min-height: 88px; font-size: 14px; }
+  .va-mic-btn { min-height: 56px; font-size: 15px; }
+  .va-text-input { min-height: 94px; font-size: 16px; }
+  .va-confirm-row { align-items: flex-start; }
+  .va-confirm-row b { max-width: 65%; overflow-wrap: anywhere; }
+}
