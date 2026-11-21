@@ -1213,9 +1213,8 @@ app.get('/api/bookings', auth, (req, res) => {
   } else if (req.user.role === 'driver') {
     rows = rows.filter(
       (b) => b.driverId === req.user.id || (
-        b.status === 'Searching' && normalizeServiceCity(b.city) === normalizeServiceCity(currentUser?.city) &&
-        (!b.requestedDriverStyle || b.requestedDriverStyle === 'any' ||
-          (Array.isArray(currentUser?.driverStyleTags) ? currentUser.driverStyleTags : ['friendly']).includes(b.requestedDriverStyle))
+        b.status === 'Searching' &&
+        normalizeServiceCity(b.city) === normalizeServiceCity(currentUser?.city)
       )
     );
   }
@@ -1265,23 +1264,15 @@ app.post(
     const f = calculateFare({ tripType, hours, time, vehicle, ...route });
     const customerUser = data.users.find((u) => u.id === req.user.id);
 
-    // Match only verified, online drivers who have declared the customer's requested communication style.
-    const eligibleDrivers = data.users.filter((u) =>
-      u.role === 'driver' && normalizeServiceCity(u.city) === normalizeServiceCity(city) && u.available === true && u.verificationStatus === 'verified' &&
-      (driverStyle === 'any' || (Array.isArray(u.driverStyleTags) ? u.driverStyleTags : ['friendly']).includes(driverStyle))
-    );
-    const availableDriver = eligibleDrivers.sort((a, b) =>
-      Number(b.rating || 0) - Number(a.rating || 0) || Number(b.trips || 0) - Number(a.trips || 0)
-    )[0] || null;
-
+    // Create every customer request as an open dispatch offer. Drivers must explicitly accept it.
     const bookingId = `VS-${new Date().getFullYear()}-${randomInt(100000, 999999)}`;
     const cashPin = paymentMethod === 'cash' ? String(randomInt(100000, 999999)) : null;
     const b = {
       id: bookingId,
       userId: req.user.id,
       customer: customerUser?.name || 'Customer',
-      driverId: availableDriver ? availableDriver.id : null,
-      driver: availableDriver ? availableDriver.name : null,
+      driverId: null,
+      driver: null,
       trip_type: tripType,
       pickup: pickup.trim(),
       destination: destination.trim(),
@@ -1301,7 +1292,7 @@ app.post(
       cashPinEncrypted: cashPin ? encryptCashPin(cashPin) : null,
       cashPinHash: cashPin ? hashCashPin(cashPin) : null,
       cashPinAttempts: 0,
-      status: availableDriver ? 'Driver assigned' : 'Searching',
+      status: 'Searching',
       start_otp: String(randomInt(1000, 9999)),
       end_otp: String(randomInt(1000, 9999)),
       createdAt: new Date().toISOString()
@@ -1318,9 +1309,7 @@ app.post(
     const customerBooking = { ...b, cashPin: undefined, cashPinEncrypted: undefined, cashPinHash: undefined };
     res.status(201).json({
       booking: customerBooking,
-      message: availableDriver
-        ? `${availableDriver.name} has been assigned to your ride.`
-        : 'Your request is dispatched to verified drivers in your city.'
+      message: 'Your request is now available to verified, online drivers in your city. A driver must accept it before assignment.'
     });
   })
 );
@@ -1352,10 +1341,8 @@ app.patch(
         if (currentUser?.verificationStatus !== 'verified' || currentUser?.available !== true || normalizeServiceCity(currentUser?.city) !== normalizeServiceCity(b.city)) {
           return res.status(403).json({ error: 'Your driver account must be verified and on duty to accept rides.' });
         }
-        if (b.requestedDriverStyle && b.requestedDriverStyle !== 'any' &&
-            !(Array.isArray(currentUser?.driverStyleTags) ? currentUser.driverStyleTags : ['friendly']).includes(b.requestedDriverStyle)) {
-          return res.status(403).json({ error: 'This customer requested a different communication style. Update your driver style tags to receive matching requests.' });
-        }
+        // Communication style is a customer preference shown on the offer, not a hard
+        // dispatch gate. Do not strand a customer if no exact-style driver is online.
         b.driverId = req.user.id;
         b.driver = currentUser.name || 'Driver';
       } else {
