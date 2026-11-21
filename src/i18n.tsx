@@ -65,10 +65,17 @@ const translations: Record<AppLanguage, Record<string, string>> = {
 };
 
 const normalize = (value: string) => value.replace(/\\s+/g, ' ').trim();
-const translate = (value: string, language: AppLanguage) => {
-  const map = translations[language];
+const sourceText = (value: string) => {
   const key = normalize(value);
-  return map[key] ?? value;
+  for (const language of ['hi', 'hinglish'] as AppLanguage[]) {
+    const entry = Object.entries(translations[language]).find(([, translated]) => normalize(translated) === key);
+    if (entry) return entry[0];
+  }
+  return key;
+};
+const translate = (value: string, language: AppLanguage) => {
+  const key = sourceText(value);
+  return translations[language][key] ?? key;
 };
 
 function applyTranslations(root: HTMLElement, language: AppLanguage) {
@@ -81,7 +88,8 @@ function applyTranslations(root: HTMLElement, language: AppLanguage) {
     const trailing = original.match(/\\s*$/)?.[0] ?? '';
     const clean = normalize(original);
     if (!clean) return;
-    const translated = translate(clean, language);
+    const source = sourceText(clean);
+    const translated = translations[language][source] ?? source;
     if (translated !== clean) node.textContent = leading + translated + trailing;
   });
 
@@ -90,7 +98,8 @@ function applyTranslations(root: HTMLElement, language: AppLanguage) {
     attributes.forEach(attribute => {
       const value = element.getAttribute(attribute);
       if (value) {
-        const translated = translate(value, language);
+        const source = sourceText(value);
+        const translated = translations[language][source] ?? source;
         if (translated !== value) element.setAttribute(attribute, translated);
       }
     });
