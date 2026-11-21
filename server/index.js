@@ -927,6 +927,7 @@ app.post('/api/payments/cash/driver-confirm', auth, roles('driver'), asyncRoute(
   booking.cashDriverAmount = amount;
   booking.cashDriverConfirmed = true;
   booking.cashPinVerifiedAt = new Date().toISOString();
+  booking.cashPin = null; // consume the trip PIN after successful driver verification
   await recordCashEvent(booking, req.user, 'driver_declared_cash_received', amount, { cashPinVerified: true });
   const paid = finalizeCashSettlement(booking);
   if (booking.payment_status === 'Cash amount mismatch · under review') {
