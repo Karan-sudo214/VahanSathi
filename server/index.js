@@ -427,12 +427,32 @@ const safe = (u) => {
     trips: completedTrips,
     driverStyleTags: Array.isArray(u.driverStyleTags) ? u.driverStyleTags : ['friendly'],
     cashRewardsPoints: Number(u.cashRewardsPoints || 0),
-    driverBatch: u.role === 'driver' ? {
-      name: completedTrips >= 150 && averageRating >= 4.8 ? 'Platinum' : completedTrips >= 50 && averageRating >= 4.6 ? 'Gold' : completedTrips >= 15 && averageRating >= 4.3 ? 'Silver' : 'Starter',
-      completedTrips,
-      averageRating,
-      nextMilestone: completedTrips < 15 ? 15 : completedTrips < 50 ? 50 : completedTrips < 150 ? 150 : null
-    } : undefined,
+    driverBatch: u.role === 'driver' ? (() => {
+      const levels = [
+        { name: 'Starter', trips: 0, rating: 0, benefits: ['Profile listed as a new partner'] },
+        { name: 'Silver', trips: 15, rating: 4.3, benefits: ['Silver performance recognition', 'Eligible for quality-partner highlights'] },
+        { name: 'Gold', trips: 50, rating: 4.6, benefits: ['Gold performance recognition', 'Priority consideration in suitable driver matches'] },
+        { name: 'Platinum', trips: 150, rating: 4.8, benefits: ['Platinum performance recognition', 'Higher visibility in suitable driver matches'] },
+        { name: 'Elite', trips: 500, rating: 4.9, benefits: ['Elite partner recognition', 'Top-tier quality profile highlight'] }
+      ];
+      const eligibleIndex = levels.reduce((best, level, index) =>
+        completedTrips >= level.trips && averageRating >= level.rating ? index : best, 0);
+      const current = levels[eligibleIndex];
+      const next = levels[eligibleIndex + 1] || null;
+      const progressPercent = next
+        ? Math.max(0, Math.min(100, Math.round((completedTrips / next.trips) * 100)))
+        : 100;
+      return {
+        name: current.name,
+        completedTrips,
+        averageRating,
+        nextMilestone: next?.trips ?? null,
+        ratingRequired: next?.rating ?? current.rating,
+        progressPercent,
+        tripsRemaining: next ? Math.max(0, next.trips - completedTrips) : 0,
+        benefits: current.benefits
+      };
+    })() : undefined,
     driverBadges: u.role === 'driver' ? [
       ...(completedTrips >= 500 ? ['Elite Partner'] : completedTrips >= 100 ? ['Trusted Partner'] : []),
       ...(averageRating >= 4.8 ? ['5-Star Service'] : []),
