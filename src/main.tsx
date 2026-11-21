@@ -1712,9 +1712,14 @@ function DriverPage({ bookings, update, user, onDutyChange, flash, onCashConfirm
       </div>
 
       <section className="panel driver-badges-panel">
-        <div className="panel-header"><div><h3>Your Driver Badges</h3><p>Recognition for reliable service and customer feedback.</p></div></div>
+        <div className="panel-header"><div><h3>Your Driver Performance Batch</h3><p>Batch is calculated from completed trips and customer ratings.</p></div><span className="driver-achievement-badge"><BadgeCheck size={14}/>{user?.driverBatch?.name || 'Starter'} Batch</span></div>
+        <div className="stats-cards-grid">
+          <div className="stat-card"><small>QUALITY TRIPS</small><b>{user?.driverBatch?.completedTrips ?? completed.length}</b><span>Completed rides</span></div>
+          <div className="stat-card"><small>AVERAGE RATING</small><b>★ {user?.driverBatch?.averageRating ?? user?.rating ?? '—'}</b><span>Customer feedback</span></div>
+        </div>
         <div className="driver-badge-list">{(user?.driverBadges || []).length ? user.driverBadges.map((badge: string) => <span className="driver-achievement-badge" key={badge}><BadgeCheck size={14}/>{badge}</span>) : <span className="muted-note">Complete quality trips to unlock your first badge.</span>}</div>
         <small>Communication styles: {(user?.driverStyleTags || ['friendly']).join(' · ')}</small>
+        {user?.driverBatch?.nextMilestone && <small>Next batch milestone: {user.driverBatch.nextMilestone} completed quality trips. Keep your rating high to qualify.</small>}
       </section>
       <div className="stats-cards-grid">
         <div className="stat-card panel">
