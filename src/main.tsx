@@ -2707,7 +2707,7 @@ function AuthModal({ onClose, onLogin, onRegister, onCustomerLogin, onCustomerRe
           </div>
         )}
 
-        {registerRole === 'customer' && (
+        {((mode === 'register' && registerRole === 'customer') || (mode === 'login' && loginRole === 'customer')) && (
           <div className="google-auth-section">
             <div className="auth-divider"><span>OR CONTINUE WITH</span></div>
             <button
