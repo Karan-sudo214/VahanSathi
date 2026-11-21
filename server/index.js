@@ -398,6 +398,13 @@ const safe = (u) => ({
   vehicle: u.vehicle,
   rating: u.rating,
   trips: u.trips,
+  driverStyleTags: Array.isArray(u.driverStyleTags) ? u.driverStyleTags : ['friendly'],
+  cashRewardsPoints: Number(u.cashRewardsPoints || 0),
+  driverBadges: u.role === 'driver' ? [
+    ...(Number(u.trips || 0) >= 500 ? ['Elite Partner'] : Number(u.trips || 0) >= 100 ? ['Trusted Partner'] : []),
+    ...(Number(u.rating || 0) >= 4.8 ? ['5-Star Service'] : []),
+    ...(Number(u.trips || 0) >= 25 ? ['Road Ready'] : [])
+  ] : [],
   verificationStatus: u.verificationStatus || 'verified',
   adminRole: u.adminRole || (u.role === 'admin' ? 'operations_admin' : undefined)
 });
@@ -800,6 +807,48 @@ app.post('/api/fare/estimate', asyncRoute(async (req, res) => {
 
 // Bookings
 // Razorpay Checkout: create orders on the server and verify every payment before marking a booking paid.
+app.post('/api/payments/cash/confirm', auth, asyncRoute(async (req, res) => {
+  const booking = data.bookings.find((item) => item.id === String(req.body?.bookingId || ''));
+  if (!booking) return res.status(404).json({ error: 'Booking not found.' });
+  if (!['Trip completed', 'Rated'].includes(booking.status)) return res.status(409).json({ error: 'Cash can only be confirmed after the trip is completed.' });
+  if (booking.payment_method !== 'cash') return res.status(409).json({ error: 'This booking was not selected for cash payment.' });
+  if (booking.payment_status === 'Paid · Cash') return res.json({ ok: true, payment_status: booking.payment_status, cashRewardsPoints: Number(data.users.find((u) => u.id === booking.userId)?.cashRewardsPoints || 0) });
+
+  if (req.user.role === 'customer') {
+    if (booking.userId !== req.user.id) return res.status(403).json({ error: 'You can only confirm cash for your own booking.' });
+    booking.cashCustomerConfirmed = true;
+  } else if (req.user.role === 'driver') {
+    if (booking.driverId !== req.user.id) return res.status(403).json({ error: 'Only the assigned driver can confirm cash received.' });
+    booking.cashDriverConfirmed = true;
+  } else if (req.user.role === 'admin') {
+    booking.cashCustomerConfirmed = true;
+    booking.cashDriverConfirmed = true;
+  } else {
+    return res.status(403).json({ error: 'You cannot confirm this cash payment.' });
+  }
+
+  if (booking.cashCustomerConfirmed && booking.cashDriverConfirmed) {
+    booking.payment_status = 'Paid · Cash';
+    booking.paidAt = new Date().toISOString();
+    booking.payment_method = 'cash';
+    const customer = data.users.find((u) => u.id === booking.userId);
+    if (customer && !booking.cashRewardAwarded) {
+      const points = Math.max(1, Math.floor(Number(booking.total || 0) / 100));
+      customer.cashRewardsPoints = Number(customer.cashRewardsPoints || 0) + points;
+      booking.cashRewardAwarded = true;
+      booking.cashRewardPoints = points;
+      await persistItem('app_users', customer.id, customer);
+    }
+  } else {
+    booking.payment_status = booking.cashCustomerConfirmed ? 'Waiting for driver confirmation' : 'Waiting for customer confirmation';
+  }
+
+  await persistItem('app_bookings', booking.id, booking);
+  await save();
+  const customer = data.users.find((u) => u.id === booking.userId);
+  res.json({ ok: true, payment_status: booking.payment_status, cashRewardsPoints: Number(customer?.cashRewardsPoints || 0), pointsEarned: booking.cashRewardPoints || 0 });
+}));
+
 app.post('/api/payments/razorpay/order', auth, roles('customer', 'admin'), asyncRoute(async (req, res) => {
   const keyId = process.env.RAZORPAY_KEY_ID;
   const keySecret = process.env.RAZORPAY_KEY_SECRET;
@@ -938,6 +987,44 @@ app.post('/api/payments/razorpay/verify', auth, roles('customer', 'admin'), asyn
   res.json({ ok: true, payment_status: 'Paid', bookingId: booking.id });
 }));
 
+// Live GPS is shared only by the assigned driver during an active booking.
+app.post('/api/bookings/:id/location', auth, roles('driver'), asyncRoute(async (req, res) => {
+  const booking = data.bookings.find((item) => item.id === req.params.id);
+  if (!booking) return res.status(404).json({ error: 'Booking not found.' });
+  if (booking.driverId !== req.user.id) return res.status(403).json({ error: 'Only the assigned driver can share this trip location.' });
+  if (!['Driver assigned', 'Driver arriving', 'Trip started'].includes(booking.status)) return res.status(409).json({ error: 'Location sharing is only active during an assigned trip.' });
+  const lat = Number(req.body?.lat);
+  const lng = Number(req.body?.lng);
+  const accuracy = Number(req.body?.accuracy || 0);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180 || accuracy > 250) {
+    return res.status(400).json({ error: 'A valid GPS position with acceptable accuracy is required.' });
+  }
+  booking.driverLocation = {
+    lat, lng, accuracy: Math.max(0, accuracy),
+    heading: Number.isFinite(Number(req.body?.heading)) ? Number(req.body.heading) : null,
+    speed: Number.isFinite(Number(req.body?.speed)) ? Number(req.body.speed) : null,
+    updatedAt: new Date().toISOString()
+  };
+  await persistItem('app_bookings', booking.id, booking);
+  await save();
+  res.json({ ok: true, updatedAt: booking.driverLocation.updatedAt });
+}));
+
+app.get('/api/bookings/:id/location', auth, asyncRoute(async (req, res) => {
+  const booking = data.bookings.find((item) => item.id === req.params.id);
+  if (!booking) return res.status(404).json({ error: 'Booking not found.' });
+  if (req.user.role === 'customer' && booking.userId !== req.user.id) return res.status(403).json({ error: 'You can only view your own trip location.' });
+  if (req.user.role === 'driver' && booking.driverId !== req.user.id) return res.status(403).json({ error: 'Only the assigned driver can view this trip.' });
+  if (!['customer', 'driver', 'admin'].includes(req.user.role)) return res.status(403).json({ error: 'You cannot view this trip location.' });
+  res.json({
+    driverLocation: ['Driver assigned', 'Driver arriving', 'Trip started'].includes(booking.status) ? booking.driverLocation || null : null,
+    pickupCoordinates: booking.pickupCoordinates || null,
+    destinationCoordinates: booking.destinationCoordinates || null,
+    status: booking.status,
+    updatedAt: booking.driverLocation?.updatedAt || null
+  });
+}));
+
 app.get('/api/bookings', auth, (req, res) => {
   let rows = [...data.bookings];
   const currentUser = data.users.find((u) => u.id === req.user.id);
@@ -946,7 +1033,11 @@ app.get('/api/bookings', auth, (req, res) => {
     rows = rows.filter((b) => b.userId === req.user.id);
   } else if (req.user.role === 'driver') {
     rows = rows.filter(
-      (b) => b.driverId === req.user.id || (b.status === 'Searching' && b.city === currentUser?.city)
+      (b) => b.driverId === req.user.id || (
+        b.status === 'Searching' && b.city === currentUser?.city &&
+        (!b.requestedDriverStyle || b.requestedDriverStyle === 'any' ||
+          (Array.isArray(currentUser?.driverStyleTags) && currentUser.driverStyleTags.includes(b.requestedDriverStyle)))
+      )
     );
   }
 
@@ -970,7 +1061,10 @@ app.post(
   auth,
   roles('customer', 'admin'),
   asyncRoute(async (req, res) => {
-    const { tripType = 'Hourly', pickup, destination, city = 'Delhi', vehicle = 'Sedan', date, time = '10:00', hours = 4 } = req.body || {};
+    const { tripType = 'Hourly', pickup, destination, city = 'Delhi', vehicle = 'Sedan', date, time = '10:00', hours = 4, paymentMethod = 'online', driverStyle = 'any' } = req.body || {};
+    const allowedStyles = ['any', 'friendly', 'talkative', 'humorous', 'professional', 'quiet'];
+    if (!['online', 'cash'].includes(paymentMethod)) return res.status(400).json({ error: 'Choose online or cash payment.' });
+    if (!allowedStyles.includes(driverStyle)) return res.status(400).json({ error: 'Choose a valid driver communication preference.' });
     if (!String(pickup || '').trim() || !String(destination || '').trim() || !date) {
       return res.status(400).json({ error: 'Pickup location, destination, and date are required.' });
     }
@@ -979,13 +1073,21 @@ app.post(
     }
 
     const route = await routeDistance(String(pickup).trim(), String(destination).trim(), city);
+    const [pickupCoordinates, destinationCoordinates] = await Promise.all([
+      resolveLocation(city, String(pickup).trim()),
+      resolveLocation(city, String(destination).trim())
+    ]);
     const f = calculateFare({ tripType, hours, time, vehicle, ...route });
     const customerUser = data.users.find((u) => u.id === req.user.id);
 
-    // Auto-match an available driver in the city if any
-    const availableDriver = data.users.find(
-      (u) => u.role === 'driver' && u.city === city && u.available === true && u.verificationStatus === 'verified'
+    // Match only verified, online drivers who have declared the customer's requested communication style.
+    const eligibleDrivers = data.users.filter((u) =>
+      u.role === 'driver' && u.city === city && u.available === true && u.verificationStatus === 'verified' &&
+      (driverStyle === 'any' || (Array.isArray(u.driverStyleTags) && u.driverStyleTags.includes(driverStyle)))
     );
+    const availableDriver = eligibleDrivers.sort((a, b) =>
+      Number(b.rating || 0) - Number(a.rating || 0) || Number(b.trips || 0) - Number(a.trips || 0)
+    )[0] || null;
 
     const bookingId = `VS-${new Date().getFullYear()}-${randomInt(100000, 999999)}`;
     const b = {
@@ -1003,10 +1105,16 @@ app.post(
       time,
       hours: Number(hours),
       ...f,
+      pickupCoordinates,
+      destinationCoordinates,
+      requestedDriverStyle: driverStyle,
+      payment_method: paymentMethod,
+      payment_status: paymentMethod === 'cash' ? 'Cash due after trip' : 'Payment due after trip',
+      cashCustomerConfirmed: false,
+      cashDriverConfirmed: false,
       status: availableDriver ? 'Driver assigned' : 'Searching',
       start_otp: String(randomInt(1000, 9999)),
       end_otp: String(randomInt(1000, 9999)),
-      payment_status: 'Payment due after trip',
       createdAt: new Date().toISOString()
     };
 
@@ -1053,6 +1161,10 @@ app.patch(
       if (status === 'Driver assigned' && b.status === 'Searching' && !b.driverId) {
         if (currentUser?.verificationStatus !== 'verified' || currentUser?.available !== true) {
           return res.status(403).json({ error: 'Your driver account must be verified and on duty to accept rides.' });
+        }
+        if (b.requestedDriverStyle && b.requestedDriverStyle !== 'any' &&
+            !(Array.isArray(currentUser?.driverStyleTags) && currentUser.driverStyleTags.includes(b.requestedDriverStyle))) {
+          return res.status(403).json({ error: 'This customer requested a different communication style. Update your driver style tags to receive matching requests.' });
         }
         b.driverId = req.user.id;
         b.driver = currentUser.name || 'Driver';
@@ -1227,6 +1339,10 @@ app.patch('/api/me', auth, asyncRoute(async (req, res) => {
   const allowed = ['name', 'phone', 'city', 'vehicle'];
   for (const k of allowed) {
     if (req.body[k] !== undefined) u[k] = String(req.body[k]).trim();
+  }
+  if (u.role === 'driver' && Array.isArray(req.body.driverStyleTags)) {
+    const allowedStyles = ['friendly', 'talkative', 'humorous', 'professional', 'quiet'];
+    u.driverStyleTags = [...new Set(req.body.driverStyleTags.filter((tag) => allowedStyles.includes(tag)))].slice(0, 5);
   }
   await persistItem('app_users', u.id, u);
   await save();
