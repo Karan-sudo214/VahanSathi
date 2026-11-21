@@ -3,7 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { randomUUID, randomInt, createHmac, timingSafeEqual, createPublicKey, verify as verifySignature } from 'node:crypto';
+import { randomUUID, randomInt, randomBytes, createCipheriv, createDecipheriv, createHmac, timingSafeEqual, createPublicKey, verify as verifySignature } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import pg from 'pg';
@@ -12,6 +12,25 @@ const { Pool } = pg;
 const app = express();
 const port = process.env.PORT || 4000;
 const secret = process.env.JWT_SECRET || (process.env.NODE_ENV === 'production' ? null : 'local-development-secret-change-before-deploy');
+
+const cashPinKey = createHmac('sha256', secret || 'local-development-secret-change-before-deploy').update('vaahansathi-cash-pin-encryption-v1').digest();
+function encryptCashPin(pin) {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv('aes-256-gcm', cashPinKey, iv);
+  const ciphertext = Buffer.concat([cipher.update(String(pin), 'utf8'), cipher.final()]);
+  return [iv.toString('hex'), cipher.getAuthTag().toString('hex'), ciphertext.toString('hex')].join('.');
+}
+function decryptCashPin(payload) {
+  if (!payload) return null;
+  const [ivHex, tagHex, ciphertextHex] = String(payload).split('.');
+  if (!ivHex || !tagHex || !ciphertextHex) return null;
+  const decipher = createDecipheriv('aes-256-gcm', cashPinKey, Buffer.from(ivHex, 'hex'));
+  decipher.setAuthTag(Buffer.from(tagHex, 'hex'));
+  return Buffer.concat([decipher.update(Buffer.from(ciphertextHex, 'hex')), decipher.final()]).toString('utf8');
+}
+function hashCashPin(pin) {
+  return createHmac('sha256', secret).update(String(pin)).digest('hex');
+}
 if (!secret) throw new Error('JWT_SECRET must be configured before production startup.');
 
 app.use(cors({ origin: process.env.CLIENT_ORIGIN || '*' }));
@@ -914,9 +933,10 @@ app.post('/api/payments/cash/driver-confirm', auth, roles('driver'), asyncRoute(
   if (!/^\d{6}$/.test(pin)) return res.status(400).json({ error: "Enter the customer's 6-digit cash confirmation PIN." });
   if (booking.cashDriverConfirmed) return res.status(409).json({ error: 'Your cash receipt has already been submitted.' });
   if (booking.cashPinLockedAt) return res.status(423).json({ error: 'Cash PIN is locked. Contact support.' });
-  const expected = createHmac('sha256', secret).update(String(booking.cashPin || '')).digest();
-  const supplied = createHmac('sha256', secret).update(pin).digest();
-  if (!booking.cashPin || !timingSafeEqual(expected, supplied)) {
+  const storedHash = booking.cashPinHash || (booking.cashPin ? hashCashPin(booking.cashPin) : null);
+  const expected = storedHash ? Buffer.from(storedHash, 'hex') : Buffer.alloc(0);
+  const supplied = Buffer.from(hashCashPin(pin), 'hex');
+  if (!storedHash || expected.length !== supplied.length || !timingSafeEqual(expected, supplied)) {
     booking.cashPinAttempts = Number(booking.cashPinAttempts || 0) + 1;
     await recordCashEvent(booking, req.user, 'cash_pin_verification_failed', 0, { attempt: booking.cashPinAttempts });
     if (booking.cashPinAttempts >= 5) booking.cashPinLockedAt = new Date().toISOString();
@@ -927,7 +947,9 @@ app.post('/api/payments/cash/driver-confirm', auth, roles('driver'), asyncRoute(
   booking.cashDriverAmount = amount;
   booking.cashDriverConfirmed = true;
   booking.cashPinVerifiedAt = new Date().toISOString();
-  booking.cashPin = null; // consume the trip PIN after successful driver verification
+  booking.cashPin = null; // clear legacy plaintext PIN, if this is an older booking
+  booking.cashPinEncrypted = null;
+  booking.cashPinHash = null;
   await recordCashEvent(booking, req.user, 'driver_declared_cash_received', amount, { cashPinVerified: true });
   const paid = finalizeCashSettlement(booking);
   if (booking.payment_status === 'Cash amount mismatch · under review') {
@@ -1158,11 +1180,13 @@ app.get('/api/bookings', auth, (req, res) => {
   const enriched = rows.map((b) => {
     const driverUser = data.users.find((u) => u.id === b.driverId);
     const customerUser = data.users.find((u) => u.id === b.userId);
+    const { cashPin, cashPinEncrypted, cashPinHash, cashPinAttempts, ...safeBooking } = b;
+    const canSeeCashPin = req.user.role === 'customer' && b.userId === req.user.id && b.payment_method === 'cash' && ['Trip completed', 'Rated'].includes(b.status) && !b.cashPinLockedAt;
     return {
-      ...b,
+      ...safeBooking,
       start_otp: req.user.role === 'customer' || req.user.role === 'admin' ? b.start_otp : undefined,
       end_otp: (req.user.role === 'customer' && b.status === 'Trip started') || req.user.role === 'admin' ? b.end_otp : undefined,
-      cashPin: req.user.role === 'customer' && b.payment_method === 'cash' && ['Trip completed', 'Rated'].includes(b.status) && !b.cashPinLockedAt ? b.cashPin : undefined,
+      cashPin: canSeeCashPin ? (cashPinEncrypted ? decryptCashPin(cashPinEncrypted) : cashPin) : undefined,
       cashEvents: req.user.role === 'admin' ? (b.cashEvents || []) : undefined,
       cashCustomerAmount: req.user.role === 'customer' ? b.cashCustomerAmount : undefined,
       cashDriverAmount: req.user.role === 'driver' ? b.cashDriverAmount : undefined,
@@ -1208,6 +1232,7 @@ app.post(
     )[0] || null;
 
     const bookingId = `VS-${new Date().getFullYear()}-${randomInt(100000, 999999)}`;
+    const cashPin = paymentMethod === 'cash' ? String(randomInt(100000, 999999)) : null;
     const b = {
       id: bookingId,
       userId: req.user.id,
@@ -1230,7 +1255,8 @@ app.post(
       payment_status: paymentMethod === 'cash' ? 'Cash due after trip' : 'Payment due after trip',
       cashCustomerConfirmed: false,
       cashDriverConfirmed: false,
-      cashPin: paymentMethod === 'cash' ? String(randomInt(100000, 999999)) : null,
+      cashPinEncrypted: cashPin ? encryptCashPin(cashPin) : null,
+      cashPinHash: cashPin ? hashCashPin(cashPin) : null,
       cashPinAttempts: 0,
       status: availableDriver ? 'Driver assigned' : 'Searching',
       start_otp: String(randomInt(1000, 9999)),
@@ -1246,7 +1272,7 @@ app.post(
     await persistItem('app_history', historyItem.id, historyItem);
     await save();
 
-    const customerBooking = { ...b, cashPin: undefined };
+    const customerBooking = { ...b, cashPin: undefined, cashPinEncrypted: undefined, cashPinHash: undefined };
     res.status(201).json({
       booking: customerBooking,
       message: availableDriver
