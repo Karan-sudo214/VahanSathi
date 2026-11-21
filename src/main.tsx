@@ -57,6 +57,10 @@ type User = {
   rating?: number;
   trips?: number;
   verificationStatus?: string;
+  driverStyleTags?: string[];
+  driverBadges?: string[];
+  cashRewardsPoints?: number;
+  available?: boolean;
 };
 
 type Booking = {
