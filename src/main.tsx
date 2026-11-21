@@ -3107,7 +3107,7 @@ function RatingModal({ stars, setStars, onClose, onSubmit }: any) {
           ))}
         </div>
         <div className="feedback-question"><b>What did we do well?</b><small>Select all that apply</small>
-          <div className="feedback-chip-list">{['Driver was polite','Safe driving','On-time pickup','Clean vehicle','Good communication','Smooth trip'].map((item) => <button type="button" key={item} className={whatWorked.includes(item) ? 'selected' : ''} onClick={() => toggleWorked(item)}>{whatWorked.includes(item) && <Check size={13}/ >}{item}</button>)}</div>
+          <div className="feedback-chip-list">{['Driver was polite','Safe driving','On-time pickup','Clean vehicle','Good communication','Smooth trip'].map((item) => <button type="button" key={item} className={whatWorked.includes(item) ? 'selected' : ''} onClick={() => toggleWorked(item)}>{whatWorked.includes(item) && <Check size={13} />}{item}</button>)}</div>
         </div>
         <label className="feedback-field"><b>Where can we improve?</b><select value={improvement} onChange={(e) => setImprovement(e.target.value)}><option value="">Choose an area (optional)</option><option>Pickup punctuality</option><option>Driver behaviour</option><option>Driving comfort and safety</option><option>Communication</option><option>Vehicle cleanliness</option><option>Booking and app experience</option><option>Fare or payment experience</option><option>Nothing — everything was good</option></select></label>
         <div className="feedback-select-grid">
