@@ -1787,3 +1787,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .trip-progress-note{display:flex;align-items:center;gap:7px;margin:15px 0 0;padding-top:12px;border-top:1px solid #dce7f3;color:#49647c;font-size:11px;line-height:1.45}
 .trip-progress-note svg{flex-shrink:0;color:#0f766e}
 @media(max-width:520px){.trip-progress{padding:15px 12px}.trip-progress-steps{gap:2px}.trip-progress-steps li{font-size:9px}.trip-progress-dot{width:22px;height:22px}}
+
+/* Clear degraded-storage state: never present a disconnected database as syncing. */
+.db-pulse.offline{background:#d97706;box-shadow:0 0 0 3px rgba(217,119,6,.12)}
+.db-text small{max-width:190px;line-height:1.35}
