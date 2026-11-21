@@ -1047,6 +1047,48 @@ app.patch('/api/admin/bookings/:id/cancel', auth, adminOnly, asyncRoute(async (r
 // â”€â”€ Admin: update pricing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // (already exists above; keeping alias here for clarity)
 
+// Cross-browser voice transcription. The client uploads a short recording; the API key stays on the server.
+app.post('/api/voice/transcribe', express.raw({
+  type: ['audio/webm', 'audio/mp4', 'audio/ogg', 'audio/wav', 'audio/mpeg', 'audio/x-m4a'],
+  limit: '12mb'
+}), asyncRoute(async (req, res) => {
+  const audio = req.body;
+  if (!Buffer.isBuffer(audio) || audio.length < 1000) {
+    return res.status(400).json({ error: 'No usable audio was received. Please record your trip again.' });
+  }
+  if (!process.env.ELEVENLABS_API_KEY) {
+    return res.status(503).json({ error: 'Voice transcription is not configured on the server yet. Please type your trip or ask the administrator to configure the voice service.' });
+  }
+  const mime = String(req.headers['content-type'] || 'audio/webm').split(';')[0].toLowerCase();
+  const extension = mime.includes('mp4') || mime.includes('m4a') ? 'm4a'
+    : mime.includes('ogg') ? 'ogg' : mime.includes('wav') ? 'wav'
+    : mime.includes('mpeg') ? 'mp3' : 'webm';
+  const form = new FormData();
+  form.append('file', new Blob([audio], { type: mime }), 'vaahansathi-recording.' + extension);
+  form.append('model_id', 'scribe_v1');
+  const language = String(req.query.language || '');
+  if (language === 'en-IN') form.append('language_code', 'eng');
+  else if (language === 'hi-IN') form.append('language_code', 'hin');
+  // Hinglish is left to automatic language detection to avoid forcing Hindi or English.
+  const response = await fetch('https://api.elevenlabs.io/v1/speech-to-text', {
+    method: 'POST',
+    headers: { 'xi-api-key': process.env.ELEVENLABS_API_KEY },
+    body: form
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    console.error('Voice transcription provider error:', response.status, result?.detail?.message || result?.detail || result?.message || 'unknown error');
+    return res.status(response.status === 429 ? 503 : 502).json({
+      error: response.status === 429
+        ? 'The voice service is busy or its quota is exhausted. Please try again shortly or type your trip.'
+        : 'We could not transcribe this recording. Please try again or type your trip.'
+    });
+  }
+  const transcript = typeof result.text === 'string' ? result.text.trim() : '';
+  if (!transcript) return res.status(422).json({ error: 'We could not hear clear words. Please speak a little closer to the microphone and try again.' });
+  res.json({ text: transcript });
+}));
+
 // Voice booking intent parser. The browser handles listening; this endpoint normalises
 // the transcript into the same fields used by the real booking form.
 app.post('/api/voice/intent', (req, res) => {
