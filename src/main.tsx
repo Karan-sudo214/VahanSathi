@@ -37,6 +37,7 @@ import {
   Car
 } from 'lucide-react';
 import './style.css';
+import { LanguageSwitcher } from './i18n';
 
 type User = {
   id: string;
@@ -88,11 +89,11 @@ const DEMO_DRIVERS = [
 ];
 
 const DEMO_REVIEWS = [
-  { id: 'r1', type: 'Driver review', name: 'Ananya Sharma', subject: 'Ramesh Kumar', city: 'Gurugram', stars: 5, note: 'Ramesh arrived 10 mins early, handled the traffic with ease, and was extremely courteous.', date: 'Today Â· 10:32 AM' },
-  { id: 'r2', type: 'Customer review', name: 'Ramesh Kumar', subject: 'Ananya Sharma', city: 'Gurugram', stars: 5, note: 'Car was clean, pickup location was precise, and pleasant trip throughout.', date: 'Today Â· 11:14 AM' }
+  { id: 'r1', type: 'Driver review', name: 'Ananya Sharma', subject: 'Ramesh Kumar', city: 'Gurugram', stars: 5, note: 'Ramesh arrived 10 mins early, handled the traffic with ease, and was extremely courteous.', date: 'Today · 10:32 AM' },
+  { id: 'r2', type: 'Customer review', name: 'Ramesh Kumar', subject: 'Ananya Sharma', city: 'Gurugram', stars: 5, note: 'Car was clean, pickup location was precise, and pleasant trip throughout.', date: 'Today · 11:14 AM' }
 ];
 
-const money = (n: number) => 'â‚¹' + Number(n || 0).toLocaleString('en-IN');
+const money = (n: number) => '₹' + Number(n || 0).toLocaleString('en-IN');
 
 const api = async (path: string, options: RequestInit = {}) => {
   const token = localStorage.getItem('vs_token');
@@ -125,7 +126,7 @@ const readReceipts = (): Receipt[] => {
 function downloadReceipt(b: Booking, r: Receipt) {
   const body = [
     '====================================================',
-    '             VAAHANSATHI Â· PAYMENT RECEIPT          ',
+    '             VAAHANSATHI · PAYMENT RECEIPT          ',
     '====================================================',
     '',
     `Receipt ID  : VS-RCP-${r.bookingId}`,
@@ -134,7 +135,7 @@ function downloadReceipt(b: Booking, r: Receipt) {
     `Date & Time : ${new Date(r.paidAt).toLocaleString('en-IN')}`,
     `Payment Mode: ${r.method}`,
     `Trip Type   : ${b.trip_type}`,
-    `Route       : ${b.pickup} â†’ ${b.destination}`,
+    `Route       : ${b.pickup} → ${b.destination}`,
     `City        : ${b.city || 'Delhi'}`,
     `Vehicle     : ${b.vehicle || 'Sedan'} (Customer Owned)`,
     `Driver      : ${b.driver || 'Verified Partner'}`,
@@ -158,7 +159,7 @@ function downloadReceipt(b: Booking, r: Receipt) {
 function downloadInvoice(b: Booking) {
   const lines = [
     '====================================================',
-    '            VAAHANSATHI Â· TAX INVOICE               ',
+    '            VAAHANSATHI · TAX INVOICE               ',
     '====================================================',
     '',
     `Invoice No   : INV-${b.id}`,
@@ -362,7 +363,7 @@ function App() {
       setPage(d.user.role === 'driver' ? 'Requests' : 'Home');
       setModal('');
       const msg = d.user.role === 'driver'
-        ? `Driver account created! Your profile is under review â€” you'll be verified within 24 hours.`
+        ? `Driver account created! Your profile is under review — you'll be verified within 24 hours.`
         : `Account created! Welcome to VaahanSathi, ${d.user.name.split(' ')[0]}.`;
       flash(msg);
     } catch (e: any) {
@@ -464,19 +465,10 @@ function App() {
     }
   };
 
-  const completePayment = (b: Booking, method: string) => {
-    const receipt: Receipt = {
-      bookingId: b.id,
-      amount: b.total,
-      method,
-      paidAt: new Date().toISOString(),
-      customer: user?.name || 'Customer'
-    };
-    const next = [receipt, ...readReceipts().filter((x) => x.bookingId !== b.id)];
-    localStorage.setItem('vs_receipts', JSON.stringify(next));
-    setReceipts(next);
-    setModal('');
-    flash('Payment received! Receipt generated.');
+  const completePayment = (_b: Booking, _method: string) => {
+    // No payment-creation or payment-verification endpoint is currently configured.
+    // Never generate a receipt or claim that money was collected without a verified provider response.
+    flash('Online payment is not connected yet. No payment was charged. Please contact support.');
   };
 
   const logout = () => {
@@ -497,6 +489,7 @@ function App() {
 
   return (
     <div className="app">
+      <LanguageSwitcher />
       {/* Mobile Drawer Overlay */}
       {mobileOpen && <div className="drawer-backdrop" onClick={() => setMobileOpen(false)} />}
 
@@ -507,7 +500,7 @@ function App() {
           </div>
           <div className="brand-text">
             <span>VaahanSathi</span>
-            <small>YOUR CAR Â· OUR DRIVER</small>
+            <small>YOUR CAR · OUR DRIVER</small>
           </div>
           <button className="close-menu" onClick={() => setMobileOpen(false)} aria-label="Close menu">
             <X size={20} />
@@ -603,7 +596,7 @@ function App() {
               <Mic size={15} /> <span>Voice</span>
             </button>
 
-            {/* City pill â€” hidden on mobile to save space */}
+            {/* City pill — hidden on mobile to save space */}
             <label className="city-pill" title="Select city">
               <MapPin size={13} className="city-pin" />
               <select value={city} onChange={(e) => chooseCity(e.target.value)}>
@@ -613,7 +606,7 @@ function App() {
             </label>
 
             {user ? (
-              <button className="user-avatar-btn" onClick={() => flash(`${user.name} Â· ${user.role}`)}>
+              <button className="user-avatar-btn" onClick={() => flash(`${user.name} · ${user.role}`)}>
                 {user.name[0].toUpperCase()}
               </button>
             ) : (
@@ -640,7 +633,7 @@ function App() {
               {/* Hero Showcase */}
               <section className="hero-card">
                 <div className="hero-content">
-                  <span className="hero-badge">ðŸš— YOUR CAR Â· OUR VERIFIED DRIVER</span>
+                  <span className="hero-badge">ðŸš— YOUR CAR · OUR VERIFIED DRIVER</span>
                   <h2>Professional Drivers For Your Own Vehicle</h2>
                   <p>Pay only for the driver's time. Verified, uniformed chauffeurs across Delhi & Gurugram.</p>
                   <div className="hero-cta-row">
@@ -656,7 +649,7 @@ function App() {
                   <div className="hero-highlights">
                     <span><ShieldCheck size={14} /> Police Verified</span>
                     <span><MapPin size={14} /> {city}</span>
-                    <span><IndianRupee size={14} /> From â‚¹599</span>
+                    <span><IndianRupee size={14} /> From ₹599</span>
                   </div>
                 </div>
               </section>
@@ -671,10 +664,10 @@ function App() {
 
               <div className="services-grid">
                 {[
-                  { id: 'Hourly',      title: 'Hourly',      desc: 'From â‚¹599 Â· 4 hrs', icon: 'ðŸ•' },
+                  { id: 'Hourly',      title: 'Hourly',      desc: 'From ₹599 · 4 hrs', icon: 'ðŸ•' },
                   { id: 'Airport',     title: 'Airport',     desc: 'Fixed fare drop',    icon: 'âœˆï¸' },
                   { id: 'Night driver',title: 'Night',        desc: 'Safe late trips',    icon: 'ðŸŒ™' },
-                  { id: 'Full day',    title: 'Full Day',    desc: '8â€“12 hrs city',      icon: 'â˜€ï¸' },
+                  { id: 'Full day',    title: 'Full Day',    desc: '8–12 hrs city',      icon: 'â˜€ï¸' },
                   { id: 'Outstation',  title: 'Outstation',  desc: 'Highway trips',      icon: 'ðŸ›£ï¸' },
                   { id: 'Custom',      title: 'Custom',      desc: 'Your schedule',      icon: 'âš™ï¸' }
                 ].map((s) => (
@@ -880,7 +873,7 @@ function App() {
         />
       )}
 
-      {/* Mobile bottom nav â€” floating pill, not a bar */}
+      {/* Mobile bottom nav — floating pill, not a bar */}
       {user && (
         <nav className="bottom-nav">
           {(user.role === 'customer'
@@ -959,7 +952,7 @@ function BookingPage(p: any) {
 
       <div className="booking-head">
         <div>
-          <span className="eyebrow">YOUR CAR Â· PROFESSIONAL CHAUFFEUR</span>
+          <span className="eyebrow">YOUR CAR · PROFESSIONAL CHAUFFEUR</span>
           <h1>Book a Verified Driver</h1>
           <p>Tell us where you are headed. We will match you with a trusted partner.</p>
         </div>
@@ -1089,7 +1082,7 @@ function BookingPage(p: any) {
             </div>
           </div>
           <p className="location-lookup-note">
-            When you estimate the fare, the pickup and destination are looked up with OpenStreetMap. Â© OpenStreetMap contributors.
+            When you estimate the fare, the pickup and destination are looked up with OpenStreetMap. © OpenStreetMap contributors.
           </p>
           <button
             type="button"
@@ -1097,7 +1090,7 @@ function BookingPage(p: any) {
             onClick={p.onEstimate}
             disabled={p.fareBusy || !p.pickup.trim() || !p.destination.trim()}
           >
-            {p.fareBusy ? 'Looking up locationsâ€¦' : p.fare ? 'Refresh fare estimate' : 'Estimate fare'}
+            {p.fareBusy ? 'Looking up locations…' : p.fare ? 'Refresh fare estimate' : 'Estimate fare'}
             <ArrowRight size={16} />
           </button>
           {p.fareError && <p className="fare-error" role="alert">{p.fareError}</p>}
@@ -1106,8 +1099,8 @@ function BookingPage(p: any) {
         {/* Fare Summary Card */}
         <aside className="fare-card panel">
           <span className="eyebrow">TRANSPARENT FARE</span>
-          <h2>{p.fareBusy ? 'Calculating...' : p.fare ? money(p.fare.total) : 'â€”'}</h2>
-          <p className="fare-sub">For professional driver time Â· {p.vehicle}</p>
+          <h2>{p.fareBusy ? 'Calculating...' : p.fare ? money(p.fare.total) : '—'}</h2>
+          <p className="fare-sub">For professional driver time · {p.vehicle}</p>
 
           <div className="fare-divider" />
 
@@ -1124,7 +1117,7 @@ function BookingPage(p: any) {
 
           <div className="fare-total-row">
             <span>Total Payable</span>
-            <b>{p.fare ? money(p.fare.total) : 'â€”'}</b>
+            <b>{p.fare ? money(p.fare.total) : '—'}</b>
           </div>
 
           <div className="driver-share-box">
@@ -1171,10 +1164,10 @@ function BookingRow({ booking: b, onClick }: any) {
       </div>
       <div className="route-info">
         <b>
-          {b.trip_type} Â· {b.pickup.split(',')[0]} <ArrowRight size={13} /> {b.destination.split(',')[0]}
+          {b.trip_type} · {b.pickup.split(',')[0]} <ArrowRight size={13} /> {b.destination.split(',')[0]}
         </b>
         <small>
-          {b.time} Â· {b.hours} hrs Â· {b.vehicle || 'Sedan'}
+          {b.time} · {b.hours} hrs · {b.vehicle || 'Sedan'}
         </small>
       </div>
       <span className={`status-pill ${b.status === 'Trip completed' ? 'done' : b.status === 'Trip started' ? 'active' : ''}`}>
@@ -1360,7 +1353,7 @@ function DriverPage({ bookings, update, user, onDutyChange, flash }: any) {
       });
       setAvailable(d.available);
       onDutyChange?.(d.available);
-      flash?.(d.available ? 'You are now Online â€” accepting ride requests.' : 'You are now Offline â€” no new requests.');
+      flash?.(d.available ? 'You are now Online — accepting ride requests.' : 'You are now Offline — no new requests.');
     } catch (e: any) {
       flash?.(e.message);
     } finally {
@@ -1404,10 +1397,10 @@ function DriverPage({ bookings, update, user, onDutyChange, flash }: any) {
         )}
       </div>
 
-      {/* Real duty toggle â€” wired to backend */}
+      {/* Real duty toggle — wired to backend */}
       <div className={`duty-toggle-row ${available ? 'online' : 'offline'}`}>
         <div>
-          <b>{available ? 'ðŸŸ¢ Online â€” Accepting Requests' : 'âš« Offline â€” Not Accepting'}</b>
+          <b>{available ? 'ðŸŸ¢ Online — Accepting Requests' : 'âš« Offline — Not Accepting'}</b>
           <small>{available ? 'Customers in your city can assign trips to you.' : 'Go online to receive new ride requests.'}</small>
         </div>
         <label className="toggle-switch">
@@ -1434,7 +1427,7 @@ function DriverPage({ bookings, update, user, onDutyChange, flash }: any) {
         </div>
         <div className="stat-card panel">
           <small>PARTNER RATING</small>
-          <b>â˜… {user?.rating || '5.0'}</b>
+          <b>★ {user?.rating || '5.0'}</b>
           <span>Customer average</span>
         </div>
         <div className="stat-card panel">
@@ -1470,7 +1463,7 @@ function DriverPage({ bookings, update, user, onDutyChange, flash }: any) {
               <div className="trip-card-header">
                 <div>
                   <span className="trip-id-tag">{b.id}</span>
-                  <span className="trip-date">{b.trip_type} Â· {b.vehicle || 'Sedan'}</span>
+                  <span className="trip-date">{b.trip_type} · {b.vehicle || 'Sedan'}</span>
                 </div>
                 <b className="payout-highlight">Earn: {money(b.payout)}</b>
               </div>
@@ -1514,7 +1507,7 @@ function DriverPage({ bookings, update, user, onDutyChange, flash }: any) {
                         if (code) update(b, 'Trip started', code);
                       }}
                     >
-                      <ArrowRight size={18} /> Start Trip â€” Enter OTP
+                      <ArrowRight size={18} /> Start Trip — Enter OTP
                     </button>
                   )}
                   {b.status === 'Trip started' && (
@@ -1526,7 +1519,7 @@ function DriverPage({ bookings, update, user, onDutyChange, flash }: any) {
                         if (code) update(b, 'Trip completed', code);
                       }}
                     >
-                      <Check size={18} /> Complete Trip â€” Enter OTP
+                      <Check size={18} /> Complete Trip — Enter OTP
                     </button>
                   )}
                 </div>
@@ -1625,7 +1618,7 @@ function LiveAdminPage({ bookings, focus = 'Overview', flash }: any) {
           <p>Update base rates and commission stored in Neon DB.</p>
           <div className="pricing-grid">
             <label className="field-group">
-              <span>Hourly Base Fare (4 Hours) Â· INR</span>
+              <span>Hourly Base Fare (4 Hours) · INR</span>
               <input
                 type="number"
                 value={hourlyRate}
@@ -1633,8 +1626,8 @@ function LiveAdminPage({ bookings, focus = 'Overview', flash }: any) {
               />
             </label>
             <div className="pricing-breakdown">
-              <div><span>Airport Drop Base</span><b>â‚¹599</b></div>
-              <div><span>Night Surcharge (10PM - 6AM)</span><b>â‚¹120</b></div>
+              <div><span>Airport Drop Base</span><b>₹599</b></div>
+              <div><span>Night Surcharge (10PM - 6AM)</span><b>₹120</b></div>
               <div><span>Platform Commission</span><b>20%</b></div>
               <div><span>GST Rate</span><b>5%</b></div>
             </div>
@@ -1652,8 +1645,8 @@ function LiveAdminPage({ bookings, focus = 'Overview', flash }: any) {
                 <span className="driver-avatar">{d.name[0]}</span>
                 <div className="driver-admin-info">
                   <b>{d.name}</b>
-                  <small>{d.city} Â· {d.vehicle} Â· {d.phone}</small>
-                  <span>â˜… {d.rating} Â· {d.trips} completed trips</span>
+                  <small>{d.city} · {d.vehicle} · {d.phone}</small>
+                  <span>★ {d.rating} · {d.trips} completed trips</span>
                 </div>
                 <span className="status-pill done">Verified</span>
               </div>
@@ -1692,8 +1685,8 @@ function LiveAdminPage({ bookings, focus = 'Overview', flash }: any) {
                   .filter((b: Booking) => filter === 'All' || b.status === filter)
                   .map((b: Booking) => (
                     <tr key={b.id}>
-                      <td><b>{b.id}</b><small>{b.date} Â· {b.time}</small></td>
-                      <td>{b.pickup.split(',')[0]} â†’ {b.destination.split(',')[0]}<small>{b.city}</small></td>
+                      <td><b>{b.id}</b><small>{b.date} · {b.time}</small></td>
+                      <td>{b.pickup.split(',')[0]} → {b.destination.split(',')[0]}<small>{b.city}</small></td>
                       <td>{b.customer || 'Customer'}<small>Driver: {b.driver || 'Searching...'}</small></td>
                       <td>{b.trip_type}</td>
                       <td><b>{money(b.total)}</b></td>
@@ -1805,7 +1798,7 @@ function AdminModulePage({ module, bookings, flash }: { module: string; bookings
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder={module === 'audit' ? 'Search admin, action, targetâ€¦' : 'Search by name, ID, routeâ€¦'}
+          placeholder={module === 'audit' ? 'Search admin, action, target…' : 'Search by name, ID, route…'}
         />
         <button className="secondary-btn" onClick={() => setQuery('')}>Clear</button>
         <button className="secondary-btn" onClick={load}>Refresh</button>
@@ -1819,7 +1812,7 @@ function AdminModulePage({ module, bookings, flash }: { module: string; bookings
           <div className="stat-card panel"><small>GMV</small><b>{money(bookings.reduce((n, b) => n + Number(b.total || 0), 0))}</b><span>Customer booking value</span></div>
           <div className="stat-card panel"><small>DRIVER PAYOUTS</small><b>{money(bookings.reduce((n, b) => n + Number(b.payout || 0), 0))}</b><span>Separate from platform revenue</span></div>
           <div className="stat-card panel"><small>TAKE RATE</small><b>{bookings.length ? Math.round(bookings.reduce((n, b) => n + Number(b.commission || 0), 0) / Math.max(1, bookings.reduce((n, b) => n + Number(b.total || 0), 0)) * 100) : 0}%</b><span>Platform commission</span></div>
-          <div className="stat-card panel"><small>AVG BOOKING VALUE</small><b>{bookings.length ? money(Math.round(bookings.reduce((n, b) => n + Number(b.total || 0), 0) / bookings.length)) : 'â‚¹0'}</b><span>Per trip</span></div>
+          <div className="stat-card panel"><small>AVG BOOKING VALUE</small><b>{bookings.length ? money(Math.round(bookings.reduce((n, b) => n + Number(b.total || 0), 0) / bookings.length)) : '₹0'}</b><span>Per trip</span></div>
           <div className="stat-card panel"><small>TRIPS IN PROGRESS</small><b>{bookings.filter((b) => ['Driver assigned', 'Driver arriving', 'Trip started'].includes(b.status)).length}</b><span>Active right now</span></div>
         </div>
       ) : module === 'settings' ? (
@@ -1831,9 +1824,9 @@ function AdminModulePage({ module, bookings, flash }: { module: string; bookings
       ) : module === 'drivers' ? (
         <section className="panel">
           <div className="panel-header">
-            <div><h3>Driver Partner Network</h3><p>{loading ? 'Loadingâ€¦' : `${filteredDriverRows.length} drivers`}</p></div>
+            <div><h3>Driver Partner Network</h3><p>{loading ? 'Loading…' : `${filteredDriverRows.length} drivers`}</p></div>
           </div>
-          {loading ? <div className="data-loading">Loading driver accountsâ€¦</div> : (
+          {loading ? <div className="data-loading">Loading driver accounts…</div> : (
             <div className="table-responsive">
               <table className="admin-table">
                 <thead><tr><th>DRIVER</th><th>CONTACT</th><th>CITY / VEHICLE</th><th>STATUS</th><th>TRIPS / RATING</th><th>ACTIONS</th></tr></thead>
@@ -1841,14 +1834,14 @@ function AdminModulePage({ module, bookings, flash }: { module: string; bookings
                   {filteredDriverRows.map((r: any) => (
                     <tr key={r.id}>
                       <td><b>{r.name}</b><small>{r.id}</small></td>
-                      <td>{r.phone || 'â€”'}<small>{r.email}</small></td>
-                      <td>{r.city || 'â€”'}<small>{r.vehicle || 'Sedan'}</small></td>
+                      <td>{r.phone || '—'}<small>{r.email}</small></td>
+                      <td>{r.city || '—'}<small>{r.vehicle || 'Sedan'}</small></td>
                       <td>
                         <span className={`status-pill ${r.verificationStatus === 'verified' ? 'done' : ''}`}>
                           {r.verificationStatus || 'pending'}
                         </span>
                       </td>
-                      <td>{r.trips || 0} trips<small>â˜… {r.rating || '5.0'}</small></td>
+                      <td>{r.trips || 0} trips<small>★ {r.rating || '5.0'}</small></td>
                       <td style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                         {r.verificationStatus !== 'verified' && (
                           <button className="inline-action-btn success" onClick={() => updateDriverVerification(r.id, 'verified')}>
@@ -1879,11 +1872,11 @@ function AdminModulePage({ module, bookings, flash }: { module: string; bookings
           <div className="panel-header">
             <div>
               <h3>{module === 'bookings' ? 'Bookings' : module === 'customers' ? 'Customers' : module === 'payments' ? 'Payments and payouts' : module === 'disputes' ? 'Open cases' : 'Activity history'}</h3>
-              <p>{loading ? 'Loading live recordsâ€¦' : `${(module === 'bookings' ? filteredBookings : filteredRows).length} records`}</p>
+              <p>{loading ? 'Loading live records…' : `${(module === 'bookings' ? filteredBookings : filteredRows).length} records`}</p>
             </div>
             <span className="status-pill done">Live data</span>
           </div>
-          {loading ? <div className="data-loading">Loading recordsâ€¦</div> : (
+          {loading ? <div className="data-loading">Loading records…</div> : (
             <div className="table-responsive">
               <table className="admin-table">
                 <thead>
@@ -1899,8 +1892,8 @@ function AdminModulePage({ module, bookings, flash }: { module: string; bookings
                   {(module === 'bookings' ? filteredBookings : filteredRows).map((r: any, i: number) =>
                     module === 'bookings' ? (
                       <tr key={r.id}>
-                        <td><b>{r.id}</b><small>{r.date} Â· {r.time}</small></td>
-                        <td>{r.pickup} â†’ {r.destination}<small>{r.city}</small></td>
+                        <td><b>{r.id}</b><small>{r.date} · {r.time}</small></td>
+                        <td>{r.pickup} → {r.destination}<small>{r.city}</small></td>
                         <td>{r.customer || 'Customer'}<small>Driver: {r.driver || 'Unassigned'}</small></td>
                         <td><b>{money(r.total)}</b><small>Platform {money(r.commission)}</small></td>
                         <td><span className="status-pill">{r.status}</span></td>
@@ -1908,22 +1901,22 @@ function AdminModulePage({ module, bookings, flash }: { module: string; bookings
                     ) : module === 'customers' ? (
                       <tr key={r.id || i}>
                         <td><b>{r.name}</b><small>{r.id}</small></td>
-                        <td>{r.phone || 'â€”'}<small>{r.email}</small></td>
-                        <td>{r.city || 'â€”'}</td>
+                        <td>{r.phone || '—'}<small>{r.email}</small></td>
+                        <td>{r.city || '—'}</td>
                         <td><span className="status-pill done">Active</span></td>
                       </tr>
                     ) : module === 'payments' ? (
                       <tr key={r.id || i}>
                         <td><b>{r.id || 'Payment'}</b></td>
-                        <td>{r.bookingId || r.booking_id || 'â€”'}</td>
+                        <td>{r.bookingId || r.booking_id || '—'}</td>
                         <td>{money(r.amount || r.total || 0)}</td>
                         <td><span className="status-pill">{r.status || r.payment_status || 'Pending'}</span></td>
                       </tr>
                     ) : module === 'disputes' ? (
                       <tr key={r.id || i}>
-                        <td><b>{String(r.id || 'Case').slice(0, 8)}â€¦</b><small>{r.createdAt ? new Date(r.createdAt).toLocaleDateString('en-IN') : 'â€”'}</small></td>
-                        <td>{r.userName || 'â€”'}</td>
-                        <td>{r.subject || 'General complaint'}<small>{r.bookingId || 'â€”'}</small></td>
+                        <td><b>{String(r.id || 'Case').slice(0, 8)}…</b><small>{r.createdAt ? new Date(r.createdAt).toLocaleDateString('en-IN') : '—'}</small></td>
+                        <td>{r.userName || '—'}</td>
+                        <td>{r.subject || 'General complaint'}<small>{r.bookingId || '—'}</small></td>
                         <td><span className={`status-pill ${r.status === 'resolved' ? 'done' : ''}`}>{r.status || 'open'}</span></td>
                         <td style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                           {r.status === 'open' && (
@@ -1936,10 +1929,10 @@ function AdminModulePage({ module, bookings, flash }: { module: string; bookings
                       </tr>
                     ) : (
                       <tr key={r.id || i}>
-                        <td>{r.timestamp ? new Date(r.timestamp).toLocaleString('en-IN') : 'â€”'}</td>
+                        <td>{r.timestamp ? new Date(r.timestamp).toLocaleString('en-IN') : '—'}</td>
                         <td>{r.adminName || 'Admin'}<small>{r.adminRole || 'operations_admin'}</small></td>
-                        <td><b>{r.action || 'â€”'}</b><small>{r.description}</small></td>
-                        <td>{r.targetId || 'â€”'}</td>
+                        <td><b>{r.action || '—'}</b><small>{r.description}</small></td>
+                        <td>{r.targetId || '—'}</td>
                       </tr>
                     )
                   )}
@@ -1985,8 +1978,8 @@ function EarningsPage({ bookings }: any) {
           completed.map((b: Booking) => (
             <div className="earning-item-row" key={b.id}>
               <div>
-                <b>{b.trip_type} Â· {b.pickup.split(',')[0]}</b>
-                <small>{b.date} Â· {b.id}</small>
+                <b>{b.trip_type} · {b.pickup.split(',')[0]}</b>
+                <small>{b.date} · {b.id}</small>
               </div>
               <strong className="green-text">+{money(b.payout)}</strong>
             </div>
@@ -2021,8 +2014,8 @@ function WalletPage({ receipts, bookings, onReceipt }: any) {
             return (
               <div className="receipt-item-row" key={r.bookingId}>
                 <div>
-                  <b>{b?.trip_type || 'Driver Service'} Â· {r.bookingId}</b>
-                  <small>{new Date(r.paidAt).toLocaleString('en-IN')} Â· Mode: {r.method}</small>
+                  <b>{b?.trip_type || 'Driver Service'} · {r.bookingId}</b>
+                  <small>{new Date(r.paidAt).toLocaleString('en-IN')} · Mode: {r.method}</small>
                 </div>
                 <b>{money(r.amount)}</b>
                 {b && (
@@ -2138,7 +2131,7 @@ function DriverProfile({ user, onUpdate, flash }: any) {
             <h2 style={{ fontSize: '22px', fontWeight: 800, color: 'var(--navy)' }}>{user?.name || 'Driver Partner'}</h2>
             <p style={{ color: 'var(--slate-500)', fontSize: '14px' }}>{user?.email}</p>
             <span className={`status-pill ${user?.verificationStatus === 'verified' ? 'done' : ''}`} style={{ marginTop: '6px', display: 'inline-block' }}>
-              {user?.verificationStatus === 'verified' ? 'âœ“ Verified Partner' : user?.verificationStatus === 'pending' ? 'â³ Verification Pending' : 'Unverified'} Â· {user?.city || 'Delhi'}
+              {user?.verificationStatus === 'verified' ? 'âœ“ Verified Partner' : user?.verificationStatus === 'pending' ? '⏳ Verification Pending' : 'Unverified'} · {user?.city || 'Delhi'}
             </span>
           </div>
         </div>
@@ -2163,7 +2156,7 @@ function DriverProfile({ user, onUpdate, flash }: any) {
               </select>
             </div>
             <div style={{ display: 'flex', gap: '10px' }}>
-              <button className="primary-btn" onClick={save} disabled={busy}>{busy ? 'Savingâ€¦' : 'Save Changes'}</button>
+              <button className="primary-btn" onClick={save} disabled={busy}>{busy ? 'Saving…' : 'Save Changes'}</button>
               <button className="action-btn" onClick={() => setEditing(false)}>Cancel</button>
             </div>
           </div>
@@ -2171,7 +2164,7 @@ function DriverProfile({ user, onUpdate, flash }: any) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
               <span style={{ color: 'var(--slate-500)' }}>Phone</span>
-              <b>{user?.phone || 'â€”'}</b>
+              <b>{user?.phone || '—'}</b>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
               <span style={{ color: 'var(--slate-500)' }}>Vehicle class</span>
@@ -2187,7 +2180,7 @@ function DriverProfile({ user, onUpdate, flash }: any) {
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
               <span style={{ color: 'var(--slate-500)' }}>Rating</span>
-              <b>â˜… {user?.rating || '5.0'}</b>
+              <b>★ {user?.rating || '5.0'}</b>
             </div>
           </div>
         )}
@@ -2212,10 +2205,10 @@ function VoiceAgentModal({ onClose, onApply, onBook, city }: { onClose: () => vo
     { label: 'हिन्दी', code: 'hi-IN', srv: 'hi-IN', ph: 'उदा.: कल सुबह कनॉट प्लेस से एयरपोर्ट जाना है' },
     { label: 'Hinglish', code: 'en-IN', srv: 'hi-hinglish', ph: 'e.g. Kal subah Connaught Place se airport jaana hai' },
   ];
-  const [lang, setLang] = React.useState(LANGS[0]);
+  const [lang, setLang] = React.useState(() => { const saved = localStorage.getItem('vs_language'); return LANGS[saved === 'hi' ? 1 : saved === 'hinglish' ? 2 : 0]; });
 
   // Auto-start listening when modal opens
-  useEffect(() => { startListening(); return () => stopListening(); }, []);
+  useEffect(() => { startListening(); return () => stopListening(); }, [lang]);
 
   function stopListening() {
     clearTimeout(silenceTimer.current);
@@ -2323,7 +2316,7 @@ function VoiceAgentModal({ onClose, onApply, onBook, city }: { onClose: () => vo
         <div className="va-lang-row">
           {LANGS.map(l => (
             <button key={l.label} className={"va-lang-btn" + (lang.label === l.label ? " active" : "")}
-              onClick={() => { setLang(l); setErr(""); }}>{l.label}</button>
+              onClick={() => { stopListening(); setLang(l); setErr(""); }}>{l.label}</button>
           ))}
         </div>
         <div className="va-transcript" aria-live="polite">
@@ -2432,7 +2425,7 @@ function AuthModal({ onClose, onLogin, onRegister, busy, storageReady }: any) {
 
         {mode === 'login' && (
           <div className="quick-demo-box">
-            <span className="quick-label">Quick demo sign-in Â· password: password123</span>
+            <span className="quick-label">Quick demo sign-in · password: password123</span>
             <div className="quick-buttons">
               <button type="button" onClick={() => onLogin('ananya@vaahansathi.demo', 'password123')}>Customer</button>
               <button type="button" onClick={() => onLogin('ramesh@vaahansathi.demo', 'password123')}>Driver (Gurugram)</button>
@@ -2501,7 +2494,7 @@ function AuthModal({ onClose, onLogin, onRegister, busy, storageReady }: any) {
                     <input value={licenseNumber} onChange={(e) => setLicenseNumber(e.target.value)} placeholder="DL-1420110012345" />
                   </label>
                   <div style={{ fontSize: '12px', color: 'var(--slate-500)', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '8px', padding: '10px 12px' }}>
-                    <b style={{ color: '#92400e' }}>â³ Manual verification required</b>
+                    <b style={{ color: '#92400e' }}>⏳ Manual verification required</b>
                     <br />Your account will be reviewed within 24 hours. You can log in and go online once approved.
                   </div>
                 </>
@@ -2516,11 +2509,11 @@ function AuthModal({ onClose, onLogin, onRegister, busy, storageReady }: any) {
 
           <label className="field-group">
             <span>Password</span>
-            <input type="password" required minLength={mode === 'register' ? 8 : 1} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢" />
+            <input type="password" required minLength={mode === 'register' ? 8 : 1} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" />
           </label>
 
           <button className="primary-btn-wide" type="submit" disabled={busy}>
-            {busy ? 'Processingâ€¦' : mode === 'login' ? 'Sign In' : registerRole === 'driver' ? 'Apply as Driver Partner' : 'Create Account'}
+            {busy ? 'Processing…' : mode === 'login' ? 'Sign In' : registerRole === 'driver' ? 'Apply as Driver Partner' : 'Create Account'}
           </button>
         </form>
 
@@ -2556,7 +2549,7 @@ function CheckoutModal({ booking, onClose, onPay }: any) {
         <button className="modal-close-btn" onClick={onClose}><X size={18} /></button>
         <span className="eyebrow">SECURE CHECKOUT</span>
         <h2>Complete Trip Payment</h2>
-        <p className="checkout-route">{booking.pickup} â†’ {booking.destination}</p>
+        <p className="checkout-route">{booking.pickup} → {booking.destination}</p>
 
         <div className="total-due-banner">
           <span>Total Fare Amount</span>
@@ -2685,14 +2678,14 @@ function DisputeModal({ bookings, onClose, onSubmit }: any) {
             <select value={bookingId} onChange={(e) => setBookingId(e.target.value)}>
               <option value="">No specific booking</option>
               {bookings.map((b: Booking) => (
-                <option key={b.id} value={b.id}>{b.id} â€” {b.pickup.split(',')[0]} â†’ {b.destination.split(',')[0]}</option>
+                <option key={b.id} value={b.id}>{b.id} — {b.pickup.split(',')[0]} → {b.destination.split(',')[0]}</option>
               ))}
             </select>
           </label>
           <label className="field-group">
             <span>Subject</span>
             <select value={subject} onChange={(e) => setSubject(e.target.value)} required>
-              <option value="">Select a subjectâ€¦</option>
+              <option value="">Select a subject…</option>
               <option value="Fare dispute">Fare dispute</option>
               <option value="Driver behaviour">Driver behaviour</option>
               <option value="Trip not completed">Trip not completed</option>
@@ -2707,13 +2700,13 @@ function DisputeModal({ bookings, onClose, onSubmit }: any) {
               required
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Describe what happened in detailâ€¦"
+              placeholder="Describe what happened in detail…"
               rows={4}
               style={{ width: '100%', padding: '12px', border: '1px solid var(--slate-200)', borderRadius: '8px', fontSize: '14px', resize: 'vertical', outline: 'none', fontFamily: 'inherit' }}
             />
           </label>
           <button className="primary-btn-wide" type="submit" disabled={busy || !subject || !description}>
-            {busy ? 'Submittingâ€¦' : 'Submit Dispute'}
+            {busy ? 'Submitting…' : 'Submit Dispute'}
           </button>
         </form>
       </div>
@@ -2725,7 +2718,7 @@ function ReceiptIcon(props: any) {
   return <CreditCard {...props} />;
 }
 
-// Hand-coded SVG icons â€” no library
+// Hand-coded SVG icons — no library
 function NavIcon({ name }: { name: string }) {
   const s = { width: 22, height: 22, fill: 'none', stroke: 'currentColor', strokeWidth: 1.75, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
   switch (name) {

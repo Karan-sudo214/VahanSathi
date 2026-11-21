@@ -746,7 +746,7 @@ app.post(
 
     // Auto-match an available driver in the city if any
     const availableDriver = data.users.find(
-      (u) => u.role === 'driver' && u.city === city && u.available !== false
+      (u) => u.role === 'driver' && u.city === city && u.available === true && u.verificationStatus === 'verified'
     );
 
     const bookingId = `VS-${new Date().getFullYear()}-${randomInt(100000, 999999)}`;
@@ -798,28 +798,56 @@ app.patch(
     if (!b) return res.status(404).json({ error: 'Booking not found.' });
 
     const currentUser = data.users.find((u) => u.id === req.user.id);
-
-    // Permission checks
-    if (req.user.role === 'customer' && b.userId !== req.user.id && status !== 'Cancelled') {
-      return res.status(403).json({ error: 'Permission denied.' });
+    const allowedStatuses = ['Driver assigned', 'Driver arriving', 'Trip started', 'Trip completed', 'Cancelled'];
+    if (!allowedStatuses.includes(status)) {
+      return res.status(400).json({ error: 'Invalid booking status.' });
     }
-    if (req.user.role === 'driver') {
-      if (b.status === 'Searching' && status === 'Driver assigned') {
-        b.driverId = req.user.id;
-        b.driver = currentUser?.name || 'Driver';
-      } else if (b.driverId !== req.user.id) {
-        return res.status(403).json({ error: 'This booking is not assigned to you.' });
+
+    // Customers may only cancel their own booking before the trip begins.
+    if (req.user.role === 'customer') {
+      if (b.userId !== req.user.id) {
+        return res.status(403).json({ error: 'You can only update your own bookings.' });
       }
+      if (status !== 'Cancelled' || !['Searching', 'Driver assigned', 'Driver arriving'].includes(b.status)) {
+        return res.status(409).json({ error: 'This booking can no longer be cancelled.' });
+      }
+    } else if (req.user.role === 'driver') {
+      if (status === 'Driver assigned' && b.status === 'Searching' && !b.driverId) {
+        if (currentUser?.verificationStatus !== 'verified' || currentUser?.available !== true) {
+          return res.status(403).json({ error: 'Your driver account must be verified and on duty to accept rides.' });
+        }
+        b.driverId = req.user.id;
+        b.driver = currentUser.name || 'Driver';
+      } else {
+        if (b.driverId !== req.user.id) {
+          return res.status(403).json({ error: 'This booking is not assigned to you.' });
+        }
+        const nextByCurrent = {
+          'Driver assigned': 'Driver arriving',
+          'Driver arriving': 'Trip started',
+          'Trip started': 'Trip completed'
+        };
+        if (nextByCurrent[b.status] !== status) {
+          return res.status(409).json({ error: 'This status change is not allowed for the current trip stage.' });
+        }
+      }
+    } else if (req.user.role === 'admin') {
+      // Admins can manage operational statuses, but cannot resurrect a cancelled booking.
+      if (b.status === 'Cancelled' || b.status === 'Rated') {
+        return res.status(409).json({ error: 'This booking is closed and cannot be changed.' });
+      }
+    } else {
+      return res.status(403).json({ error: 'You do not have permission to update bookings.' });
     }
 
-    // OTP validation
-    if (status === 'Trip started') {
-      if (String(otp).trim() !== String(b.start_otp)) {
+    // OTPs are required for driver trip start/completion. Admin corrections are audited separately.
+    if (req.user.role === 'driver' && status === 'Trip started') {
+      if (String(otp || '').trim() !== String(b.start_otp)) {
         return res.status(400).json({ error: 'Start OTP is invalid. Ask the car owner for their 4-digit start OTP.' });
       }
     }
-    if (status === 'Trip completed') {
-      if (String(otp).trim() !== String(b.end_otp)) {
+    if (req.user.role === 'driver' && status === 'Trip completed') {
+      if (String(otp || '').trim() !== String(b.end_otp)) {
         return res.status(400).json({ error: 'End OTP is invalid. Ask the car owner for their 4-digit end OTP.' });
       }
       b.payment_status = 'Payment due';
