@@ -90,6 +90,9 @@ type Booking = {
   destinationCoordinates?: [number, number];
   cashCustomerConfirmed?: boolean;
   cashDriverConfirmed?: boolean;
+  cashCustomerAmount?: number;
+  cashDriverAmount?: number;
+  cashPin?: string;
   cashRewardPoints?: number;
   driver?: string;
   vehicle?: string;
@@ -604,17 +607,30 @@ function App() {
     }
   };
 
-  const confirmCashPayment = async (booking: Booking) => {
+  const confirmCashAsCustomer = async (booking: Booking) => {
+    const entered = prompt(`Enter the exact cash amount you handed to the driver. Fare: ${money(booking.total)}`);
+    if (entered === null) return;
+    const amountGiven = Number(entered.replace(/[₹,\\s]/g, ''));
+    if (!Number.isSafeInteger(amountGiven) || amountGiven < 0) { flash('Enter a valid whole-rupee amount.'); return; }
     try {
-      const result = await api('/payments/cash/confirm', { method: 'POST', body: JSON.stringify({ bookingId: booking.id }) });
+      const result = await api('/payments/cash/customer-confirm', { method: 'POST', body: JSON.stringify({ bookingId: booking.id, amountGiven }) });
       await refresh();
-      if (user) {
-        const updatedUser = { ...user, cashRewardsPoints: Number(result.cashRewardsPoints || 0) };
-        setUser(updatedUser);
-        localStorage.setItem('vs_user', JSON.stringify(updatedUser));
-      }
-      flash(result.payment_status === 'Paid · Cash' ? `Cash payment confirmed. You earned ${result.pointsEarned || 0} CashCircle points!` : result.payment_status);
+      flash(result.payment_status === 'Paid · Cash' ? 'Both sides confirmed the exact cash amount. Payment is recorded.' : result.payment_status);
     } catch (error: any) { flash(error.message || 'Cash confirmation could not be saved.'); }
+  };
+
+  const confirmCashAsDriver = async (booking: Booking) => {
+    const entered = prompt(`Enter the exact cash amount you received from the customer. Fare: ${money(booking.total)}`);
+    if (entered === null) return;
+    const amountReceived = Number(entered.replace(/[₹,\\s]/g, ''));
+    if (!Number.isSafeInteger(amountReceived) || amountReceived < 0) { flash('Enter a valid whole-rupee amount.'); return; }
+    const cashPin = prompt('Ask the customer for their 6-digit Cash Handover PIN:');
+    if (cashPin === null) return;
+    try {
+      const result = await api('/payments/cash/driver-confirm', { method: 'POST', body: JSON.stringify({ bookingId: booking.id, amountReceived, cashPin }) });
+      await refresh();
+      flash(result.payment_status === 'Paid · Cash' ? 'Cash handover verified and recorded.' : result.payment_status);
+    } catch (error: any) { flash(error.message || 'Cash receipt could not be verified.'); }
   };
 
   const logout = () => {
@@ -956,13 +972,13 @@ function App() {
               onTrack={(b: Booking) => setModal('track:' + b.id)}
               onBook={() => setPage('Book a driver')}
               receipts={receipts}
-              onCashConfirm={confirmCashPayment}
+              onCashConfirm={confirmCashAsCustomer}
               cashRewardsPoints={Number(user?.cashRewardsPoints || 0)}
             />
           )}
 
-          {page === 'Requests' && <DriverPage bookings={bookings} update={updateStatus} user={user} onDutyChange={(v: boolean) => setUser((u: any) => u ? {...u, available: v} : u)} flash={flash} onCashConfirm={confirmCashPayment} />}
-          {page === 'My trips' && <TripsPage bookings={bookings} filter={filter} setFilter={setFilter} update={updateStatus} onRate={(b: Booking) => setModal('rate:' + b.id)} onPay={(b: Booking) => setModal('payment:' + b.id)} onTrack={(b: Booking) => setModal('track:' + b.id)} onBook={() => setPage('Book a driver')} receipts={receipts} onCashConfirm={confirmCashPayment} cashRewardsPoints={Number(user?.cashRewardsPoints || 0)} />}
+          {page === 'Requests' && <DriverPage bookings={bookings} update={updateStatus} user={user} onDutyChange={(v: boolean) => setUser((u: any) => u ? {...u, available: v} : u)} flash={flash} onCashConfirm={confirmCashAsDriver} />}
+          {page === 'My trips' && <TripsPage bookings={bookings} filter={filter} setFilter={setFilter} update={updateStatus} onRate={(b: Booking) => setModal('rate:' + b.id)} onPay={(b: Booking) => setModal('payment:' + b.id)} onTrack={(b: Booking) => setModal('track:' + b.id)} onBook={() => setPage('Book a driver')} receipts={receipts} onCashConfirm={confirmCashAsCustomer} cashRewardsPoints={Number(user?.cashRewardsPoints || 0)} />}
           {page === 'Earnings' && <EarningsPage bookings={bookings} />}
           {page === 'Wallet' && <WalletPage receipts={receipts} bookings={bookings} onReceipt={downloadReceipt} />}
           {page === 'Help' && <HelpPage flash={flash} onDispute={() => setModal('dispute')} />}
@@ -1592,8 +1608,10 @@ function TripsPage({ bookings, filter, setFilter, update, onRate, onPay, onTrack
                     <div className="trip-actions-row">
                       <button className="action-btn rate" onClick={() => onRate(b)}><Star size={16} /> Rate Driver</button>
                       {b.payment_status === 'Paid' || b.payment_status === 'Paid · Cash' ? <span className="status-pill done">Paid · {b.payment_method === 'cash' ? 'Cash' : 'Online'}</span> :
-                        b.payment_method === 'cash' ? <button className="action-btn pay" onClick={() => onCashConfirm(b)} disabled={b.cashCustomerConfirmed}><IndianRupee size={16}/>{b.cashCustomerConfirmed ? 'Cash confirmation sent' : 'Confirm cash paid'}</button> :
+                        b.payment_method === 'cash' ? <button className="action-btn pay" onClick={() => onCashConfirm(b)} disabled={b.cashCustomerConfirmed}><IndianRupee size={16}/>{b.cashCustomerConfirmed ? 'Amount confirmation sent' : 'Confirm amount handed over'}</button> :
                         <button className="action-btn pay" onClick={() => onPay(b)}><CreditCard size={16} /> Pay {money(b.total)}</button>}
+                      {b.payment_method === 'cash' && b.cashPin && <div className="cash-reward-note"><b>Cash Handover PIN: {b.cashPin}</b><span>Share this one-time PIN with your assigned driver only after handing over the cash. Payment is recorded only when both amounts match the fare.</span></div>}
+                      {b.payment_method === 'cash' && b.cashCustomerConfirmed && <small className="muted">You confirmed {money(Number(b.cashCustomerAmount || 0))}. Waiting for driver verification.</small>}
                     </div>
                     <div className="trip-actions-row">
                       <button className="action-btn" onClick={() => downloadInvoice(b)}>
@@ -1820,7 +1838,10 @@ function DriverPage({ bookings, update, user, onDutyChange, flash, onCashConfirm
                     </button>
                   )}
                   {b.status === 'Trip completed' && b.payment_method === 'cash' && b.payment_status !== 'Paid · Cash' && (
-                    <button className="primary-btn" style={{width:'100%',justifyContent:'center',background:'#0a7a6e'}} onClick={() => onCashConfirm(b)} disabled={b.cashDriverConfirmed}><IndianRupee size={17}/>{b.cashDriverConfirmed ? 'Cash confirmation sent' : 'Confirm cash received'}</button>
+                    <div style={{display:'grid',gap:8}}>
+                      <button className="primary-btn" style={{width:'100%',justifyContent:'center',background:'#0a7a6e'}} onClick={() => onCashConfirm(b)} disabled={b.cashDriverConfirmed}><IndianRupee size={17}/>{b.cashDriverConfirmed ? 'Receipt submitted' : 'Verify cash received + PIN'}</button>
+                      {b.cashDriverConfirmed && <small className="muted">You reported {money(Number(b.cashDriverAmount || 0))}. Waiting for customer confirmation.</small>}
+                    </div>
                   )}
                   {b.status === 'Trip started' && (
                     <button
