@@ -541,6 +541,8 @@ function App() {
       flash(
         status === 'Trip started'
           ? 'Trip started! Have a pleasant journey.'
+          : status === 'Trip completed' && b.payment_method === 'cash'
+          ? 'Trip ended. Waiting for customer and driver cash confirmations before marking it completed.'
           : status === 'Trip completed'
           ? 'Trip completed! Invoice & receipt ready.'
           : `Booking updated: ${status}`
@@ -1471,7 +1473,7 @@ function TripsPage({ bookings, filter, setFilter, update, onRate, onPay, onTrack
   const filters = ['Upcoming', 'Completed', 'Cancelled'];
   const list = bookings.filter((b: Booking) =>
     filter === 'Upcoming'
-      ? ['Searching', 'Driver assigned', 'Driver arriving', 'Trip started'].includes(b.status)
+      ? ['Searching', 'Driver assigned', 'Driver arriving', 'Trip started', 'Awaiting cash confirmation'].includes(b.status)
       : filter === 'Completed'
       ? ['Trip completed', 'Rated'].includes(b.status)
       : b.status === 'Cancelled'
@@ -1503,7 +1505,7 @@ function TripsPage({ bookings, filter, setFilter, update, onRate, onPay, onTrack
               {
                 bookings.filter((b: Booking) =>
                   f === 'Upcoming'
-                    ? ['Searching', 'Driver assigned', 'Driver arriving', 'Trip started'].includes(b.status)
+                    ? ['Searching', 'Driver assigned', 'Driver arriving', 'Trip started', 'Awaiting cash confirmation'].includes(b.status)
                     : f === 'Completed'
                     ? ['Trip completed', 'Rated'].includes(b.status)
                     : b.status === 'Cancelled'
@@ -1556,7 +1558,7 @@ function TripsPage({ bookings, filter, setFilter, update, onRate, onPay, onTrack
 
               {/* Live, transparent trip progress */}
               {b.status !== 'Cancelled' && (() => {
-                const stages = ['Searching', 'Driver assigned', 'Driver arriving', 'Trip started', 'Trip completed'];
+                const stages = ['Searching', 'Driver assigned', 'Driver arriving', 'Trip started', 'Awaiting cash confirmation', 'Trip completed'];
                 const current = Math.max(0, stages.indexOf(b.status));
                 return (
                   <section className="trip-progress" aria-label="Trip progress">
@@ -1568,7 +1570,7 @@ function TripsPage({ bookings, filter, setFilter, update, onRate, onPay, onTrack
                       {stages.map((stage, index) => (
                         <li key={stage} className={index < current ? 'complete' : index === current ? 'current' : ''}>
                           <span className="trip-progress-dot">{index < current ? <Check size={12} /> : index + 1}</span>
-                          <span>{stage === 'Searching' ? 'Finding a driver' : stage}</span>
+                          <span>{stage === 'Searching' ? 'Finding a driver' : stage === 'Awaiting cash confirmation' ? 'Cash settlement pending' : stage}</span>
                         </li>
                       ))}
                     </ol>
@@ -1614,10 +1616,10 @@ function TripsPage({ bookings, filter, setFilter, update, onRate, onPay, onTrack
                     </button>
                   )}
                 </div>
-                {b.status === 'Trip completed' && (
+                {['Trip completed', 'Awaiting cash confirmation'].includes(b.status) && (
                   <>
                     <div className="trip-actions-row">
-                      <button className="action-btn rate" onClick={() => onRate(b)}><Star size={16} /> Rate Driver</button>
+                      {b.status === 'Trip completed' && <button className="action-btn rate" onClick={() => onRate(b)}><Star size={16} /> Rate Driver</button>}
                       {b.payment_status === 'Paid' || b.payment_status === 'Paid · Cash' ? <span className="status-pill done">Paid · {b.payment_method === 'cash' ? 'Cash' : 'Online'}</span> :
                         b.payment_method === 'cash' ? <button className="action-btn pay" onClick={() => onCashConfirm(b)} disabled={b.cashCustomerConfirmed}><IndianRupee size={16}/>{b.cashCustomerConfirmed ? 'Amount confirmation sent' : 'Confirm amount handed over'}</button> :
                         <button className="action-btn pay" onClick={() => onPay(b)}><CreditCard size={16} /> Pay {money(b.total)}</button>}
@@ -1856,7 +1858,7 @@ function DriverPage({ bookings, update, user, onDutyChange, flash, onCashConfirm
                       <ArrowRight size={18} /> Start Trip — Enter OTP
                     </button>
                   )}
-                  {b.status === 'Trip completed' && b.payment_method === 'cash' && b.payment_status !== 'Paid · Cash' && (
+                  {b.status === 'Awaiting cash confirmation' && b.payment_method === 'cash' && b.payment_status !== 'Paid · Cash' && (
                     <div className="driver-cash-action">
                       <div><b>Cash collection verification</b><small>Enter the amount you retained after returning any change, then verify the customer's one-time PIN.</small></div>
                       <button className="primary-btn" style={{width:'100%',justifyContent:'center',background:'#0a7a6e'}} onClick={() => onCashConfirm(b)} disabled={b.cashDriverConfirmed}><ShieldCheck size={17}/>{b.cashDriverConfirmed ? 'Receipt submitted' : 'Verify cash handover'}</button>
