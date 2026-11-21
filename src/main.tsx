@@ -1622,7 +1622,7 @@ function TripsPage({ bookings, filter, setFilter, update, onRate, onPay, onTrack
                         b.payment_method === 'cash' ? <button className="action-btn pay" onClick={() => onCashConfirm(b)} disabled={b.cashCustomerConfirmed}><IndianRupee size={16}/>{b.cashCustomerConfirmed ? 'Amount confirmation sent' : 'Confirm amount handed over'}</button> :
                         <button className="action-btn pay" onClick={() => onPay(b)}><CreditCard size={16} /> Pay {money(b.total)}</button>}
                       {b.payment_method === 'cash' && b.cashPin && b.payment_status !== 'Paid · Cash' && <div className="cash-pin-card">
-                        <div className="cash-pin-heading"><span className="cash-pin-icon"><ShieldCheck size={17}/></span><span><b>Secure cash handover</b><small>Share this code only after giving the cash to your driver.</small></span><span className="cash-pin-live">ONE-TIME</span></div>
+                        <div className="cash-pin-heading"><span className="cash-pin-icon"><ShieldCheck size={17}/></span><span><b>Secure cash handover</b><small>Share this code only after the driver has returned any change and you have confirmed the final fare.</small></span><span className="cash-pin-live">ONE-TIME</span></div>
                         <div className="cash-pin-digits" aria-label={`Cash handover PIN ${b.cashPin}`}>{String(b.cashPin).split('').map((digit, index) => <span key={index}>{digit}</span>)}</div>
                         <small className="cash-pin-foot"><LockKeyhole size={13}/> Your driver needs this PIN to verify the receipt. Never share it over a call or chat.</small>
                       </div>}
@@ -2984,9 +2984,9 @@ function CashHandoverModal({ booking, mode, onClose, onSubmit }: { booking: Book
         <div className="cash-modal-emblem"><ShieldCheck size={25}/></div>
         <span className="eyebrow">{isCustomer ? 'CUSTOMER PAYMENT CONFIRMATION' : 'DRIVER RECEIPT VERIFICATION'}</span>
         <h2>{isCustomer ? 'Confirm cash handed over' : 'Verify cash received'}</h2>
-        <p className="cash-modal-intro">{isCustomer ? 'Enter the amount you paid to the driver. Your driver will independently confirm the amount received.' : 'Enter the final amount you kept after returning any change. Then enter the customer’s one-time PIN.'}</p>
+        <p className="cash-modal-intro">{isCustomer ? 'Enter the final amount the driver kept after returning any change. Your driver will independently confirm the amount received.' : 'Enter the final amount you kept after returning any change. Then enter the customer’s one-time PIN.'}</p>
         <div className="cash-fare-summary"><span>Trip fare</span><b>{money(booking.total)}</b><small>Booking #{String(booking.id).slice(-8)}</small></div>
-        <label className="cash-field-label" htmlFor="cash-handover-amount">{isCustomer ? 'Amount you handed over (₹)' : 'Amount retained / received (₹)'}</label>
+        <label className="cash-field-label" htmlFor="cash-handover-amount">{isCustomer ? 'Final amount paid after change (₹)' : 'Amount retained / received (₹)'}</label>
         <div className="cash-amount-input"><IndianRupee size={20}/><input id="cash-handover-amount" type="text" inputMode="numeric" autoComplete="off" value={amount} onChange={(e) => { setAmount(e.target.value.replace(/[^0-9]/g, '').slice(0, 7)); setError(''); }} placeholder="Enter amount"/></div>
         {!isCustomer && <>
           <label className="cash-field-label" htmlFor="cash-handover-pin">Customer’s 6-digit secure PIN</label>
