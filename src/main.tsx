@@ -607,6 +607,11 @@ function App() {
     try {
       const result = await api('/payments/cash/confirm', { method: 'POST', body: JSON.stringify({ bookingId: booking.id }) });
       await refresh();
+      if (user) {
+        const updatedUser = { ...user, cashRewardsPoints: Number(result.cashRewardsPoints || 0) };
+        setUser(updatedUser);
+        localStorage.setItem('vs_user', JSON.stringify(updatedUser));
+      }
       flash(result.payment_status === 'Paid · Cash' ? `Cash payment confirmed. You earned ${result.pointsEarned || 0} CashCircle points!` : result.payment_status);
     } catch (error: any) { flash(error.message || 'Cash confirmation could not be saved.'); }
   };
@@ -2958,9 +2963,10 @@ function TrackingModal({ booking, onClose }: any) {
     return () => { active = false; window.clearInterval(timer); };
   }, [booking?.id]);
   if (!booking) return null;
-  const coords = location ? [location.lat, location.lng] : booking.pickupCoordinates;
-  const mapUrl = coords ? (() => {
-    const lat = Number(coords[0] ?? coords.lat), lng = Number(coords[1] ?? coords.lng), delta = 0.025;
+  const lat = location ? Number(location.lat) : Number(booking.pickupCoordinates?.[0]);
+  const lng = location ? Number(location.lng) : Number(booking.pickupCoordinates?.[1]);
+  const mapUrl = Number.isFinite(lat) && Number.isFinite(lng) ? (() => {
+    const delta = 0.025;
     return `https://www.openstreetmap.org/export/embed.html?bbox=${lng-delta}%2C${lat-delta}%2C${lng+delta}%2C${lat+delta}&layer=mapnik&marker=${lat}%2C${lng}`;
   })() : '';
   const age = lastUpdated ? Math.max(0, Math.round((Date.now() - new Date(lastUpdated).getTime()) / 1000)) : null;
