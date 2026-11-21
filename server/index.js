@@ -881,6 +881,12 @@ app.post('/api/payments/cash/customer-confirm', auth, roles('customer'), asyncRo
   booking.cashCustomerConfirmed = true;
   await recordCashEvent(booking, req.user, 'customer_declared_cash_handed_over', amount);
   const paid = finalizeCashSettlement(booking);
+  if (booking.payment_status === 'Cash amount mismatch · under review') {
+    await recordCashEvent(booking, req.user, 'cash_amount_mismatch_flagged', amount, {
+      customerAmount: booking.cashCustomerAmount, driverAmount: booking.cashDriverAmount,
+      expectedFare: Number(booking.total || 0)
+    });
+  }
   if (paid) {
     const customer = data.users.find((u) => u.id === booking.userId);
     if (customer && !booking.cashRewardAwarded) {
@@ -912,6 +918,7 @@ app.post('/api/payments/cash/driver-confirm', auth, roles('driver'), asyncRoute(
   const supplied = createHmac('sha256', secret).update(pin).digest();
   if (!booking.cashPin || !timingSafeEqual(expected, supplied)) {
     booking.cashPinAttempts = Number(booking.cashPinAttempts || 0) + 1;
+    await recordCashEvent(booking, req.user, 'cash_pin_verification_failed', 0, { attempt: booking.cashPinAttempts });
     if (booking.cashPinAttempts >= 5) booking.cashPinLockedAt = new Date().toISOString();
     await persistItem('app_bookings', booking.id, booking);
     await save();
@@ -922,6 +929,12 @@ app.post('/api/payments/cash/driver-confirm', auth, roles('driver'), asyncRoute(
   booking.cashPinVerifiedAt = new Date().toISOString();
   await recordCashEvent(booking, req.user, 'driver_declared_cash_received', amount, { cashPinVerified: true });
   const paid = finalizeCashSettlement(booking);
+  if (booking.payment_status === 'Cash amount mismatch · under review') {
+    await recordCashEvent(booking, req.user, 'cash_amount_mismatch_flagged', amount, {
+      customerAmount: booking.cashCustomerAmount, driverAmount: booking.cashDriverAmount,
+      expectedFare: Number(booking.total || 0)
+    });
+  }
   if (paid) {
     const customer = data.users.find((u) => u.id === booking.userId);
     if (customer && !booking.cashRewardAwarded) {
