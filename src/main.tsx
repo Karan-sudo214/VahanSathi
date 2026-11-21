@@ -566,10 +566,10 @@ function App() {
 
         <div className="sidebar-bottom">
           <div className="db-indicator">
-            <span className={`db-pulse ${storageReady ? 'online' : 'connecting'}`} />
+            <span className={`db-pulse ${storageReady === null ? 'connecting' : storageReady ? 'online' : 'offline'}`} />
             <div className="db-text">
-              <b>{storageReady ? 'Cloud data connected' : 'Syncing workspace...'}</b>
-              <small>{storageReady ? 'All systems operational' : 'Checking connection'}</small>
+              <b>{storageReady === null ? 'Checking cloud storage…' : storageReady ? 'Cloud data connected' : 'Cloud storage unavailable'}</b>
+              <small>{storageReady === null ? 'Checking connection' : storageReady ? 'Changes sync to the database' : 'Demo data may reset after a restart'}</small>
             </div>
           </div>
 
@@ -627,14 +627,14 @@ function App() {
                     {new Date().toLocaleDateString('en-IN', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }).toUpperCase()}
                   </span>
                   <h1>Good day{user ? `, ${user.name.split(' ')[0]}` : ''}!</h1>
-                  <p className="subhead">Professional, verified drivers for your own car on-demand.</p>
+                  <p className="subhead">Professional drivers for your own car, with clear booking details at every step.</p>
                 </div>
               </div>
 
               {/* Hero Showcase */}
               <section className="hero-card">
                 <div className="hero-content">
-                  <span className="hero-badge">YOUR CAR · OUR VERIFIED DRIVER</span>
+                  <span className="hero-badge">YOUR CAR · OUR DRIVER</span>
                   <h2>Professional Drivers For Your Own Vehicle</h2>
                   <p>Pay only for the driver's time. Verified, uniformed chauffeurs across Delhi & Gurugram.</p>
                   <div className="hero-cta-row">
@@ -648,7 +648,7 @@ function App() {
                     )}
                   </div>
                   <div className="hero-highlights">
-                    <span><ShieldCheck size={14} /> Police Verified</span>
+                    <span><ShieldCheck size={14} /> Driver review process</span>
                     <span><MapPin size={14} /> {city}</span>
                     <span><IndianRupee size={14} /> From ₹599</span>
                   </div>
@@ -978,8 +978,8 @@ function BookingPage(p: any) {
       <div className="booking-head">
         <div>
           <span className="eyebrow">YOUR CAR · PROFESSIONAL CHAUFFEUR</span>
-          <h1>Book a Verified Driver</h1>
-          <p>Tell us where you are headed. We will match you with a trusted partner.</p>
+          <h1>Book a Professional Driver</h1>
+          <p>Share your route and schedule. You can review the driver assignment and trip details before your journey.</p>
         </div>
         <div className="service-market-pill">
           <MapPin size={15} /> {p.city} Area
@@ -1008,7 +1008,7 @@ function BookingPage(p: any) {
             <CarFront size={20} />
             <div>
               <b>Your Car, Our Driver</b>
-              <p>You provide the vehicle. Our verified driver takes the wheel so you can relax.</p>
+              <p>You provide the vehicle. Your assigned driver takes the wheel so you can focus on the journey.</p>
             </div>
           </div>
 
@@ -2515,7 +2515,7 @@ function AuthModal({ onClose, onLogin, onRegister, busy, storageReady }: any) {
 
         <h2>{mode === 'login' ? 'Sign In to Your Account' : registerRole === 'driver' ? 'Join as Driver Partner' : 'Create Customer Account'}</h2>
         <p className="modal-sub">
-          {mode === 'login' ? 'Access your rides and bookings' : registerRole === 'driver' ? 'Drive customers in your city and earn 80% of every fare' : 'Book verified drivers for your personal vehicle'}
+          {mode === 'login' ? 'Access your rides and bookings' : registerRole === 'driver' ? 'Drive customers in your city and earn 80% of every fare' : 'Book professional drivers for your personal vehicle'}
         </p>
 
         {mode === 'login' && (
