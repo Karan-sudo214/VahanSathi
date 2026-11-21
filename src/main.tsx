@@ -350,6 +350,27 @@ function App() {
     }
   };
 
+  const googleLogin = async (credential: string, accountCity = 'Delhi') => {
+    setBusy(true);
+    try {
+      const d = await api('/auth/google', {
+        method: 'POST',
+        body: JSON.stringify({ credential, city: accountCity })
+      });
+      localStorage.setItem('vs_token', d.token);
+      localStorage.setItem('vs_user', JSON.stringify(d.user));
+      setUser(d.user);
+      if (d.user.city === 'Delhi' || d.user.city === 'Gurugram') chooseCity(d.user.city);
+      setPage('Home');
+      setModal('');
+      flash(`Welcome to VaahanSathi, ${d.user.name.split(' ')[0]}!`);
+    } catch (e: any) {
+      flash(e.message || 'Google sign-in could not be completed.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const register = async (name: string, email: string, password: string, accountCity: string, phone = '', role = 'customer', vehicle = 'Sedan', licenseNumber = '') => {
     setBusy(true);
     try {
@@ -888,6 +909,7 @@ function App() {
           onClose={() => setModal('')}
           onLogin={login}
           onRegister={register}
+          onGoogleCredential={googleLogin}
           busy={busy}
           storageReady={storageReady}
         />
@@ -2576,7 +2598,7 @@ function VoiceAgentModal({ onClose, onApply, onBook, city }: { onClose: () => vo
     </div>
   );
 }
-function AuthModal({ onClose, onLogin, onRegister, busy, storageReady }: any) {
+function AuthModal({ onClose, onLogin, onRegister, onGoogleCredential, busy, storageReady }: any) {
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [registerRole, setRegisterRole] = useState<'customer' | 'driver'>('customer');
   const [name, setName] = useState('');
@@ -2586,6 +2608,43 @@ function AuthModal({ onClose, onLogin, onRegister, busy, storageReady }: any) {
   const [licenseNumber, setLicenseNumber] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const googleButtonRef = useRef<HTMLDivElement>(null);
+  const googleCallback = useRef(onGoogleCredential);
+  googleCallback.current = onGoogleCredential;
+  const googleClientId = (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID || '';
+
+  useEffect(() => {
+    if (!googleClientId || registerRole !== 'customer') return;
+    let cancelled = false;
+    const renderGoogleButton = () => {
+      const google = (window as any).google;
+      if (cancelled || !google?.accounts?.id || !googleButtonRef.current) return;
+      google.accounts.id.initialize({
+        client_id: googleClientId,
+        callback: (response: any) => {
+          if (response?.credential) googleCallback.current(response.credential, city);
+        }
+      });
+      google.accounts.id.renderButton(googleButtonRef.current, {
+        type: 'standard', theme: 'outline', size: 'large', shape: 'rectangular',
+        text: mode === 'register' ? 'signup_with' : 'signin_with',
+        logo_alignment: 'left', width: Math.min(340, googleButtonRef.current.clientWidth || 340)
+      });
+    };
+    const existing = document.querySelector('script[data-google-identity]');
+    if ((window as any).google?.accounts?.id) renderGoogleButton();
+    else if (existing) existing.addEventListener('load', renderGoogleButton, { once: true });
+    else {
+      const script = document.createElement('script');
+      script.src = 'https://accounts.google.com/gsi/client';
+      script.async = true;
+      script.defer = true;
+      script.dataset.googleIdentity = 'true';
+      script.onload = renderGoogleButton;
+      document.head.appendChild(script);
+    }
+    return () => { cancelled = true; };
+  }, [googleClientId, registerRole, mode, city]);
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -2617,6 +2676,19 @@ function AuthModal({ onClose, onLogin, onRegister, busy, storageReady }: any) {
               <button type="button" onClick={() => onLogin('priya@vaahansathi.demo', 'password123')}>Driver (Delhi)</button>
               <button type="button" onClick={() => onLogin('admin@vaahansathi.demo', 'password123')}>Admin</button>
             </div>
+          </div>
+        )}
+
+        {registerRole === 'customer' && (
+          <div className="google-auth-section">
+            {googleClientId ? (
+              <>
+                <div className="auth-divider"><span>OR CONTINUE WITH</span></div>
+                <div className="google-button-wrap" ref={googleButtonRef} />
+              </>
+            ) : (
+              <p className="google-auth-note">Google sign-in is being configured. You can use email and password meanwhile.</p>
+            )}
           </div>
         )}
 
