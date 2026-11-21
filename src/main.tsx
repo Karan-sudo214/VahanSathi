@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+﻿import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
   Activity,
@@ -88,11 +88,11 @@ const DEMO_DRIVERS = [
 ];
 
 const DEMO_REVIEWS = [
-  { id: 'r1', type: 'Driver review', name: 'Ananya Sharma', subject: 'Ramesh Kumar', city: 'Gurugram', stars: 5, note: 'Ramesh arrived 10 mins early, handled the traffic with ease, and was extremely courteous.', date: 'Today · 10:32 AM' },
-  { id: 'r2', type: 'Customer review', name: 'Ramesh Kumar', subject: 'Ananya Sharma', city: 'Gurugram', stars: 5, note: 'Car was clean, pickup location was precise, and pleasant trip throughout.', date: 'Today · 11:14 AM' }
+  { id: 'r1', type: 'Driver review', name: 'Ananya Sharma', subject: 'Ramesh Kumar', city: 'Gurugram', stars: 5, note: 'Ramesh arrived 10 mins early, handled the traffic with ease, and was extremely courteous.', date: 'Today Â· 10:32 AM' },
+  { id: 'r2', type: 'Customer review', name: 'Ramesh Kumar', subject: 'Ananya Sharma', city: 'Gurugram', stars: 5, note: 'Car was clean, pickup location was precise, and pleasant trip throughout.', date: 'Today Â· 11:14 AM' }
 ];
 
-const money = (n: number) => '₹' + Number(n || 0).toLocaleString('en-IN');
+const money = (n: number) => 'â‚¹' + Number(n || 0).toLocaleString('en-IN');
 
 const api = async (path: string, options: RequestInit = {}) => {
   const token = localStorage.getItem('vs_token');
@@ -125,7 +125,7 @@ const readReceipts = (): Receipt[] => {
 function downloadReceipt(b: Booking, r: Receipt) {
   const body = [
     '====================================================',
-    '             VAAHANSATHI · PAYMENT RECEIPT          ',
+    '             VAAHANSATHI Â· PAYMENT RECEIPT          ',
     '====================================================',
     '',
     `Receipt ID  : VS-RCP-${r.bookingId}`,
@@ -134,7 +134,7 @@ function downloadReceipt(b: Booking, r: Receipt) {
     `Date & Time : ${new Date(r.paidAt).toLocaleString('en-IN')}`,
     `Payment Mode: ${r.method}`,
     `Trip Type   : ${b.trip_type}`,
-    `Route       : ${b.pickup} → ${b.destination}`,
+    `Route       : ${b.pickup} â†’ ${b.destination}`,
     `City        : ${b.city || 'Delhi'}`,
     `Vehicle     : ${b.vehicle || 'Sedan'} (Customer Owned)`,
     `Driver      : ${b.driver || 'Verified Partner'}`,
@@ -158,7 +158,7 @@ function downloadReceipt(b: Booking, r: Receipt) {
 function downloadInvoice(b: Booking) {
   const lines = [
     '====================================================',
-    '            VAAHANSATHI · TAX INVOICE               ',
+    '            VAAHANSATHI Â· TAX INVOICE               ',
     '====================================================',
     '',
     `Invoice No   : INV-${b.id}`,
@@ -362,7 +362,7 @@ function App() {
       setPage(d.user.role === 'driver' ? 'Requests' : 'Home');
       setModal('');
       const msg = d.user.role === 'driver'
-        ? `Driver account created! Your profile is under review — you'll be verified within 24 hours.`
+        ? `Driver account created! Your profile is under review â€” you'll be verified within 24 hours.`
         : `Account created! Welcome to VaahanSathi, ${d.user.name.split(' ')[0]}.`;
       flash(msg);
     } catch (e: any) {
@@ -507,7 +507,7 @@ function App() {
           </div>
           <div className="brand-text">
             <span>VaahanSathi</span>
-            <small>YOUR CAR · OUR DRIVER</small>
+            <small>YOUR CAR Â· OUR DRIVER</small>
           </div>
           <button className="close-menu" onClick={() => setMobileOpen(false)} aria-label="Close menu">
             <X size={20} />
@@ -603,7 +603,7 @@ function App() {
               <Mic size={15} /> <span>Voice</span>
             </button>
 
-            {/* City pill — hidden on mobile to save space */}
+            {/* City pill â€” hidden on mobile to save space */}
             <label className="city-pill" title="Select city">
               <MapPin size={13} className="city-pin" />
               <select value={city} onChange={(e) => chooseCity(e.target.value)}>
@@ -613,7 +613,7 @@ function App() {
             </label>
 
             {user ? (
-              <button className="user-avatar-btn" onClick={() => flash(`${user.name} · ${user.role}`)}>
+              <button className="user-avatar-btn" onClick={() => flash(`${user.name} Â· ${user.role}`)}>
                 {user.name[0].toUpperCase()}
               </button>
             ) : (
@@ -640,7 +640,7 @@ function App() {
               {/* Hero Showcase */}
               <section className="hero-card">
                 <div className="hero-content">
-                  <span className="hero-badge">🚗 YOUR CAR · OUR VERIFIED DRIVER</span>
+                  <span className="hero-badge">ðŸš— YOUR CAR Â· OUR VERIFIED DRIVER</span>
                   <h2>Professional Drivers For Your Own Vehicle</h2>
                   <p>Pay only for the driver's time. Verified, uniformed chauffeurs across Delhi & Gurugram.</p>
                   <div className="hero-cta-row">
@@ -656,7 +656,7 @@ function App() {
                   <div className="hero-highlights">
                     <span><ShieldCheck size={14} /> Police Verified</span>
                     <span><MapPin size={14} /> {city}</span>
-                    <span><IndianRupee size={14} /> From ₹599</span>
+                    <span><IndianRupee size={14} /> From â‚¹599</span>
                   </div>
                 </div>
               </section>
@@ -671,12 +671,12 @@ function App() {
 
               <div className="services-grid">
                 {[
-                  { id: 'Hourly',      title: 'Hourly',      desc: 'From ₹599 · 4 hrs', icon: '🕐' },
-                  { id: 'Airport',     title: 'Airport',     desc: 'Fixed fare drop',    icon: '✈️' },
-                  { id: 'Night driver',title: 'Night',        desc: 'Safe late trips',    icon: '🌙' },
-                  { id: 'Full day',    title: 'Full Day',    desc: '8–12 hrs city',      icon: '☀️' },
-                  { id: 'Outstation',  title: 'Outstation',  desc: 'Highway trips',      icon: '🛣️' },
-                  { id: 'Custom',      title: 'Custom',      desc: 'Your schedule',      icon: '⚙️' }
+                  { id: 'Hourly',      title: 'Hourly',      desc: 'From â‚¹599 Â· 4 hrs', icon: 'ðŸ•' },
+                  { id: 'Airport',     title: 'Airport',     desc: 'Fixed fare drop',    icon: 'âœˆï¸' },
+                  { id: 'Night driver',title: 'Night',        desc: 'Safe late trips',    icon: 'ðŸŒ™' },
+                  { id: 'Full day',    title: 'Full Day',    desc: '8â€“12 hrs city',      icon: 'â˜€ï¸' },
+                  { id: 'Outstation',  title: 'Outstation',  desc: 'Highway trips',      icon: 'ðŸ›£ï¸' },
+                  { id: 'Custom',      title: 'Custom',      desc: 'Your schedule',      icon: 'âš™ï¸' }
                 ].map((s) => (
                   <button
                     key={s.id}
@@ -880,7 +880,7 @@ function App() {
         />
       )}
 
-      {/* Mobile bottom nav — floating pill, not a bar */}
+      {/* Mobile bottom nav â€” floating pill, not a bar */}
       {user && (
         <nav className="bottom-nav">
           {(user.role === 'customer'
@@ -959,7 +959,7 @@ function BookingPage(p: any) {
 
       <div className="booking-head">
         <div>
-          <span className="eyebrow">YOUR CAR · PROFESSIONAL CHAUFFEUR</span>
+          <span className="eyebrow">YOUR CAR Â· PROFESSIONAL CHAUFFEUR</span>
           <h1>Book a Verified Driver</h1>
           <p>Tell us where you are headed. We will match you with a trusted partner.</p>
         </div>
@@ -1089,7 +1089,7 @@ function BookingPage(p: any) {
             </div>
           </div>
           <p className="location-lookup-note">
-            When you estimate the fare, the pickup and destination are looked up with OpenStreetMap. © OpenStreetMap contributors.
+            When you estimate the fare, the pickup and destination are looked up with OpenStreetMap. Â© OpenStreetMap contributors.
           </p>
           <button
             type="button"
@@ -1097,7 +1097,7 @@ function BookingPage(p: any) {
             onClick={p.onEstimate}
             disabled={p.fareBusy || !p.pickup.trim() || !p.destination.trim()}
           >
-            {p.fareBusy ? 'Looking up locations…' : p.fare ? 'Refresh fare estimate' : 'Estimate fare'}
+            {p.fareBusy ? 'Looking up locationsâ€¦' : p.fare ? 'Refresh fare estimate' : 'Estimate fare'}
             <ArrowRight size={16} />
           </button>
           {p.fareError && <p className="fare-error" role="alert">{p.fareError}</p>}
@@ -1106,8 +1106,8 @@ function BookingPage(p: any) {
         {/* Fare Summary Card */}
         <aside className="fare-card panel">
           <span className="eyebrow">TRANSPARENT FARE</span>
-          <h2>{p.fareBusy ? 'Calculating...' : p.fare ? money(p.fare.total) : '—'}</h2>
-          <p className="fare-sub">For professional driver time · {p.vehicle}</p>
+          <h2>{p.fareBusy ? 'Calculating...' : p.fare ? money(p.fare.total) : 'â€”'}</h2>
+          <p className="fare-sub">For professional driver time Â· {p.vehicle}</p>
 
           <div className="fare-divider" />
 
@@ -1124,7 +1124,7 @@ function BookingPage(p: any) {
 
           <div className="fare-total-row">
             <span>Total Payable</span>
-            <b>{p.fare ? money(p.fare.total) : '—'}</b>
+            <b>{p.fare ? money(p.fare.total) : 'â€”'}</b>
           </div>
 
           <div className="driver-share-box">
@@ -1171,10 +1171,10 @@ function BookingRow({ booking: b, onClick }: any) {
       </div>
       <div className="route-info">
         <b>
-          {b.trip_type} · {b.pickup.split(',')[0]} <ArrowRight size={13} /> {b.destination.split(',')[0]}
+          {b.trip_type} Â· {b.pickup.split(',')[0]} <ArrowRight size={13} /> {b.destination.split(',')[0]}
         </b>
         <small>
-          {b.time} · {b.hours} hrs · {b.vehicle || 'Sedan'}
+          {b.time} Â· {b.hours} hrs Â· {b.vehicle || 'Sedan'}
         </small>
       </div>
       <span className={`status-pill ${b.status === 'Trip completed' ? 'done' : b.status === 'Trip started' ? 'active' : ''}`}>
@@ -1360,7 +1360,7 @@ function DriverPage({ bookings, update, user, onDutyChange, flash }: any) {
       });
       setAvailable(d.available);
       onDutyChange?.(d.available);
-      flash?.(d.available ? 'You are now Online — accepting ride requests.' : 'You are now Offline — no new requests.');
+      flash?.(d.available ? 'You are now Online â€” accepting ride requests.' : 'You are now Offline â€” no new requests.');
     } catch (e: any) {
       flash?.(e.message);
     } finally {
@@ -1377,7 +1377,7 @@ function DriverPage({ bookings, update, user, onDutyChange, flash }: any) {
   useEffect(() => {
     const count = newRequests.length;
     if (count > prevSearching.current && prevSearching.current >= 0) {
-      flash?.('🔔 New ride request! Tap Accept to take it.');
+      flash?.('ðŸ”” New ride request! Tap Accept to take it.');
       setTimeout(() => newRequestRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 150);
     }
     prevSearching.current = count;
@@ -1404,10 +1404,10 @@ function DriverPage({ bookings, update, user, onDutyChange, flash }: any) {
         )}
       </div>
 
-      {/* Real duty toggle — wired to backend */}
+      {/* Real duty toggle â€” wired to backend */}
       <div className={`duty-toggle-row ${available ? 'online' : 'offline'}`}>
         <div>
-          <b>{available ? '🟢 Online — Accepting Requests' : '⚫ Offline — Not Accepting'}</b>
+          <b>{available ? 'ðŸŸ¢ Online â€” Accepting Requests' : 'âš« Offline â€” Not Accepting'}</b>
           <small>{available ? 'Customers in your city can assign trips to you.' : 'Go online to receive new ride requests.'}</small>
         </div>
         <label className="toggle-switch">
@@ -1434,12 +1434,12 @@ function DriverPage({ bookings, update, user, onDutyChange, flash }: any) {
         </div>
         <div className="stat-card panel">
           <small>PARTNER RATING</small>
-          <b>★ {user?.rating || '5.0'}</b>
+          <b>â˜… {user?.rating || '5.0'}</b>
           <span>Customer average</span>
         </div>
         <div className="stat-card panel">
           <small>DUTY STATUS</small>
-          <b className={available ? 'status-online' : ''}>{available ? '● Online' : '○ Offline'}</b>
+          <b className={available ? 'status-online' : ''}>{available ? 'â— Online' : 'â—‹ Offline'}</b>
           <span>{available ? 'Accepting requests' : 'Duty off'}</span>
         </div>
       </div>
@@ -1470,7 +1470,7 @@ function DriverPage({ bookings, update, user, onDutyChange, flash }: any) {
               <div className="trip-card-header">
                 <div>
                   <span className="trip-id-tag">{b.id}</span>
-                  <span className="trip-date">{b.trip_type} · {b.vehicle || 'Sedan'}</span>
+                  <span className="trip-date">{b.trip_type} Â· {b.vehicle || 'Sedan'}</span>
                 </div>
                 <b className="payout-highlight">Earn: {money(b.payout)}</b>
               </div>
@@ -1514,7 +1514,7 @@ function DriverPage({ bookings, update, user, onDutyChange, flash }: any) {
                         if (code) update(b, 'Trip started', code);
                       }}
                     >
-                      <ArrowRight size={18} /> Start Trip — Enter OTP
+                      <ArrowRight size={18} /> Start Trip â€” Enter OTP
                     </button>
                   )}
                   {b.status === 'Trip started' && (
@@ -1526,7 +1526,7 @@ function DriverPage({ bookings, update, user, onDutyChange, flash }: any) {
                         if (code) update(b, 'Trip completed', code);
                       }}
                     >
-                      <Check size={18} /> Complete Trip — Enter OTP
+                      <Check size={18} /> Complete Trip â€” Enter OTP
                     </button>
                   )}
                 </div>
@@ -1625,7 +1625,7 @@ function LiveAdminPage({ bookings, focus = 'Overview', flash }: any) {
           <p>Update base rates and commission stored in Neon DB.</p>
           <div className="pricing-grid">
             <label className="field-group">
-              <span>Hourly Base Fare (4 Hours) · INR</span>
+              <span>Hourly Base Fare (4 Hours) Â· INR</span>
               <input
                 type="number"
                 value={hourlyRate}
@@ -1633,8 +1633,8 @@ function LiveAdminPage({ bookings, focus = 'Overview', flash }: any) {
               />
             </label>
             <div className="pricing-breakdown">
-              <div><span>Airport Drop Base</span><b>₹599</b></div>
-              <div><span>Night Surcharge (10PM - 6AM)</span><b>₹120</b></div>
+              <div><span>Airport Drop Base</span><b>â‚¹599</b></div>
+              <div><span>Night Surcharge (10PM - 6AM)</span><b>â‚¹120</b></div>
               <div><span>Platform Commission</span><b>20%</b></div>
               <div><span>GST Rate</span><b>5%</b></div>
             </div>
@@ -1652,8 +1652,8 @@ function LiveAdminPage({ bookings, focus = 'Overview', flash }: any) {
                 <span className="driver-avatar">{d.name[0]}</span>
                 <div className="driver-admin-info">
                   <b>{d.name}</b>
-                  <small>{d.city} · {d.vehicle} · {d.phone}</small>
-                  <span>★ {d.rating} · {d.trips} completed trips</span>
+                  <small>{d.city} Â· {d.vehicle} Â· {d.phone}</small>
+                  <span>â˜… {d.rating} Â· {d.trips} completed trips</span>
                 </div>
                 <span className="status-pill done">Verified</span>
               </div>
@@ -1692,8 +1692,8 @@ function LiveAdminPage({ bookings, focus = 'Overview', flash }: any) {
                   .filter((b: Booking) => filter === 'All' || b.status === filter)
                   .map((b: Booking) => (
                     <tr key={b.id}>
-                      <td><b>{b.id}</b><small>{b.date} · {b.time}</small></td>
-                      <td>{b.pickup.split(',')[0]} → {b.destination.split(',')[0]}<small>{b.city}</small></td>
+                      <td><b>{b.id}</b><small>{b.date} Â· {b.time}</small></td>
+                      <td>{b.pickup.split(',')[0]} â†’ {b.destination.split(',')[0]}<small>{b.city}</small></td>
                       <td>{b.customer || 'Customer'}<small>Driver: {b.driver || 'Searching...'}</small></td>
                       <td>{b.trip_type}</td>
                       <td><b>{money(b.total)}</b></td>
@@ -1805,7 +1805,7 @@ function AdminModulePage({ module, bookings, flash }: { module: string; bookings
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder={module === 'audit' ? 'Search admin, action, target…' : 'Search by name, ID, route…'}
+          placeholder={module === 'audit' ? 'Search admin, action, targetâ€¦' : 'Search by name, ID, routeâ€¦'}
         />
         <button className="secondary-btn" onClick={() => setQuery('')}>Clear</button>
         <button className="secondary-btn" onClick={load}>Refresh</button>
@@ -1819,7 +1819,7 @@ function AdminModulePage({ module, bookings, flash }: { module: string; bookings
           <div className="stat-card panel"><small>GMV</small><b>{money(bookings.reduce((n, b) => n + Number(b.total || 0), 0))}</b><span>Customer booking value</span></div>
           <div className="stat-card panel"><small>DRIVER PAYOUTS</small><b>{money(bookings.reduce((n, b) => n + Number(b.payout || 0), 0))}</b><span>Separate from platform revenue</span></div>
           <div className="stat-card panel"><small>TAKE RATE</small><b>{bookings.length ? Math.round(bookings.reduce((n, b) => n + Number(b.commission || 0), 0) / Math.max(1, bookings.reduce((n, b) => n + Number(b.total || 0), 0)) * 100) : 0}%</b><span>Platform commission</span></div>
-          <div className="stat-card panel"><small>AVG BOOKING VALUE</small><b>{bookings.length ? money(Math.round(bookings.reduce((n, b) => n + Number(b.total || 0), 0) / bookings.length)) : '₹0'}</b><span>Per trip</span></div>
+          <div className="stat-card panel"><small>AVG BOOKING VALUE</small><b>{bookings.length ? money(Math.round(bookings.reduce((n, b) => n + Number(b.total || 0), 0) / bookings.length)) : 'â‚¹0'}</b><span>Per trip</span></div>
           <div className="stat-card panel"><small>TRIPS IN PROGRESS</small><b>{bookings.filter((b) => ['Driver assigned', 'Driver arriving', 'Trip started'].includes(b.status)).length}</b><span>Active right now</span></div>
         </div>
       ) : module === 'settings' ? (
@@ -1831,9 +1831,9 @@ function AdminModulePage({ module, bookings, flash }: { module: string; bookings
       ) : module === 'drivers' ? (
         <section className="panel">
           <div className="panel-header">
-            <div><h3>Driver Partner Network</h3><p>{loading ? 'Loading…' : `${filteredDriverRows.length} drivers`}</p></div>
+            <div><h3>Driver Partner Network</h3><p>{loading ? 'Loadingâ€¦' : `${filteredDriverRows.length} drivers`}</p></div>
           </div>
-          {loading ? <div className="data-loading">Loading driver accounts…</div> : (
+          {loading ? <div className="data-loading">Loading driver accountsâ€¦</div> : (
             <div className="table-responsive">
               <table className="admin-table">
                 <thead><tr><th>DRIVER</th><th>CONTACT</th><th>CITY / VEHICLE</th><th>STATUS</th><th>TRIPS / RATING</th><th>ACTIONS</th></tr></thead>
@@ -1841,14 +1841,14 @@ function AdminModulePage({ module, bookings, flash }: { module: string; bookings
                   {filteredDriverRows.map((r: any) => (
                     <tr key={r.id}>
                       <td><b>{r.name}</b><small>{r.id}</small></td>
-                      <td>{r.phone || '—'}<small>{r.email}</small></td>
-                      <td>{r.city || '—'}<small>{r.vehicle || 'Sedan'}</small></td>
+                      <td>{r.phone || 'â€”'}<small>{r.email}</small></td>
+                      <td>{r.city || 'â€”'}<small>{r.vehicle || 'Sedan'}</small></td>
                       <td>
                         <span className={`status-pill ${r.verificationStatus === 'verified' ? 'done' : ''}`}>
                           {r.verificationStatus || 'pending'}
                         </span>
                       </td>
-                      <td>{r.trips || 0} trips<small>★ {r.rating || '5.0'}</small></td>
+                      <td>{r.trips || 0} trips<small>â˜… {r.rating || '5.0'}</small></td>
                       <td style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                         {r.verificationStatus !== 'verified' && (
                           <button className="inline-action-btn success" onClick={() => updateDriverVerification(r.id, 'verified')}>
@@ -1879,11 +1879,11 @@ function AdminModulePage({ module, bookings, flash }: { module: string; bookings
           <div className="panel-header">
             <div>
               <h3>{module === 'bookings' ? 'Bookings' : module === 'customers' ? 'Customers' : module === 'payments' ? 'Payments and payouts' : module === 'disputes' ? 'Open cases' : 'Activity history'}</h3>
-              <p>{loading ? 'Loading live records…' : `${(module === 'bookings' ? filteredBookings : filteredRows).length} records`}</p>
+              <p>{loading ? 'Loading live recordsâ€¦' : `${(module === 'bookings' ? filteredBookings : filteredRows).length} records`}</p>
             </div>
             <span className="status-pill done">Live data</span>
           </div>
-          {loading ? <div className="data-loading">Loading records…</div> : (
+          {loading ? <div className="data-loading">Loading recordsâ€¦</div> : (
             <div className="table-responsive">
               <table className="admin-table">
                 <thead>
@@ -1899,8 +1899,8 @@ function AdminModulePage({ module, bookings, flash }: { module: string; bookings
                   {(module === 'bookings' ? filteredBookings : filteredRows).map((r: any, i: number) =>
                     module === 'bookings' ? (
                       <tr key={r.id}>
-                        <td><b>{r.id}</b><small>{r.date} · {r.time}</small></td>
-                        <td>{r.pickup} → {r.destination}<small>{r.city}</small></td>
+                        <td><b>{r.id}</b><small>{r.date} Â· {r.time}</small></td>
+                        <td>{r.pickup} â†’ {r.destination}<small>{r.city}</small></td>
                         <td>{r.customer || 'Customer'}<small>Driver: {r.driver || 'Unassigned'}</small></td>
                         <td><b>{money(r.total)}</b><small>Platform {money(r.commission)}</small></td>
                         <td><span className="status-pill">{r.status}</span></td>
@@ -1908,22 +1908,22 @@ function AdminModulePage({ module, bookings, flash }: { module: string; bookings
                     ) : module === 'customers' ? (
                       <tr key={r.id || i}>
                         <td><b>{r.name}</b><small>{r.id}</small></td>
-                        <td>{r.phone || '—'}<small>{r.email}</small></td>
-                        <td>{r.city || '—'}</td>
+                        <td>{r.phone || 'â€”'}<small>{r.email}</small></td>
+                        <td>{r.city || 'â€”'}</td>
                         <td><span className="status-pill done">Active</span></td>
                       </tr>
                     ) : module === 'payments' ? (
                       <tr key={r.id || i}>
                         <td><b>{r.id || 'Payment'}</b></td>
-                        <td>{r.bookingId || r.booking_id || '—'}</td>
+                        <td>{r.bookingId || r.booking_id || 'â€”'}</td>
                         <td>{money(r.amount || r.total || 0)}</td>
                         <td><span className="status-pill">{r.status || r.payment_status || 'Pending'}</span></td>
                       </tr>
                     ) : module === 'disputes' ? (
                       <tr key={r.id || i}>
-                        <td><b>{String(r.id || 'Case').slice(0, 8)}…</b><small>{r.createdAt ? new Date(r.createdAt).toLocaleDateString('en-IN') : '—'}</small></td>
-                        <td>{r.userName || '—'}</td>
-                        <td>{r.subject || 'General complaint'}<small>{r.bookingId || '—'}</small></td>
+                        <td><b>{String(r.id || 'Case').slice(0, 8)}â€¦</b><small>{r.createdAt ? new Date(r.createdAt).toLocaleDateString('en-IN') : 'â€”'}</small></td>
+                        <td>{r.userName || 'â€”'}</td>
+                        <td>{r.subject || 'General complaint'}<small>{r.bookingId || 'â€”'}</small></td>
                         <td><span className={`status-pill ${r.status === 'resolved' ? 'done' : ''}`}>{r.status || 'open'}</span></td>
                         <td style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                           {r.status === 'open' && (
@@ -1936,10 +1936,10 @@ function AdminModulePage({ module, bookings, flash }: { module: string; bookings
                       </tr>
                     ) : (
                       <tr key={r.id || i}>
-                        <td>{r.timestamp ? new Date(r.timestamp).toLocaleString('en-IN') : '—'}</td>
+                        <td>{r.timestamp ? new Date(r.timestamp).toLocaleString('en-IN') : 'â€”'}</td>
                         <td>{r.adminName || 'Admin'}<small>{r.adminRole || 'operations_admin'}</small></td>
-                        <td><b>{r.action || '—'}</b><small>{r.description}</small></td>
-                        <td>{r.targetId || '—'}</td>
+                        <td><b>{r.action || 'â€”'}</b><small>{r.description}</small></td>
+                        <td>{r.targetId || 'â€”'}</td>
                       </tr>
                     )
                   )}
@@ -1985,8 +1985,8 @@ function EarningsPage({ bookings }: any) {
           completed.map((b: Booking) => (
             <div className="earning-item-row" key={b.id}>
               <div>
-                <b>{b.trip_type} · {b.pickup.split(',')[0]}</b>
-                <small>{b.date} · {b.id}</small>
+                <b>{b.trip_type} Â· {b.pickup.split(',')[0]}</b>
+                <small>{b.date} Â· {b.id}</small>
               </div>
               <strong className="green-text">+{money(b.payout)}</strong>
             </div>
@@ -2021,8 +2021,8 @@ function WalletPage({ receipts, bookings, onReceipt }: any) {
             return (
               <div className="receipt-item-row" key={r.bookingId}>
                 <div>
-                  <b>{b?.trip_type || 'Driver Service'} · {r.bookingId}</b>
-                  <small>{new Date(r.paidAt).toLocaleString('en-IN')} · Mode: {r.method}</small>
+                  <b>{b?.trip_type || 'Driver Service'} Â· {r.bookingId}</b>
+                  <small>{new Date(r.paidAt).toLocaleString('en-IN')} Â· Mode: {r.method}</small>
                 </div>
                 <b>{money(r.amount)}</b>
                 {b && (
@@ -2138,7 +2138,7 @@ function DriverProfile({ user, onUpdate, flash }: any) {
             <h2 style={{ fontSize: '22px', fontWeight: 800, color: 'var(--navy)' }}>{user?.name || 'Driver Partner'}</h2>
             <p style={{ color: 'var(--slate-500)', fontSize: '14px' }}>{user?.email}</p>
             <span className={`status-pill ${user?.verificationStatus === 'verified' ? 'done' : ''}`} style={{ marginTop: '6px', display: 'inline-block' }}>
-              {user?.verificationStatus === 'verified' ? '✓ Verified Partner' : user?.verificationStatus === 'pending' ? '⏳ Verification Pending' : 'Unverified'} · {user?.city || 'Delhi'}
+              {user?.verificationStatus === 'verified' ? 'âœ“ Verified Partner' : user?.verificationStatus === 'pending' ? 'â³ Verification Pending' : 'Unverified'} Â· {user?.city || 'Delhi'}
             </span>
           </div>
         </div>
@@ -2163,7 +2163,7 @@ function DriverProfile({ user, onUpdate, flash }: any) {
               </select>
             </div>
             <div style={{ display: 'flex', gap: '10px' }}>
-              <button className="primary-btn" onClick={save} disabled={busy}>{busy ? 'Saving…' : 'Save Changes'}</button>
+              <button className="primary-btn" onClick={save} disabled={busy}>{busy ? 'Savingâ€¦' : 'Save Changes'}</button>
               <button className="action-btn" onClick={() => setEditing(false)}>Cancel</button>
             </div>
           </div>
@@ -2171,7 +2171,7 @@ function DriverProfile({ user, onUpdate, flash }: any) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
               <span style={{ color: 'var(--slate-500)' }}>Phone</span>
-              <b>{user?.phone || '—'}</b>
+              <b>{user?.phone || 'â€”'}</b>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
               <span style={{ color: 'var(--slate-500)' }}>Vehicle class</span>
@@ -2187,7 +2187,7 @@ function DriverProfile({ user, onUpdate, flash }: any) {
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
               <span style={{ color: 'var(--slate-500)' }}>Rating</span>
-              <b>★ {user?.rating || '5.0'}</b>
+              <b>â˜… {user?.rating || '5.0'}</b>
             </div>
           </div>
         )}
@@ -2198,95 +2198,194 @@ function DriverProfile({ user, onUpdate, flash }: any) {
 
 // ----------------- Interactive Modals -----------------
 function VoiceAgentModal({ onClose, onApply, onBook, city }: { onClose: () => void; onApply: (intent: any) => void; onBook: (intent: any) => void; city: string }) {
-  const languages = [
-    { label: 'English', code: 'en-IN', speech: 'Tell me your pickup, destination, duration, and preferred time.' },
-    { label: 'हिन्दी', code: 'hi-IN', speech: 'पिकअप, गंतव्य, अवधि और समय बताइए।' },
-    { label: 'Hinglish', code: 'en-IN', speech: 'Pickup, destination, duration aur time bataiye.' },
-    { label: 'ಕನ್ನಡ', code: 'kn-IN', speech: 'ನಿಮ್ಮ ಪಿಕಪ್, ಗಮ್ಯಸ್ಥಾನ, ಅವಧಿ ಮತ್ತು ಸಮಯವನ್ನು ಹೇಳಿ.' },
-    { label: 'தமிழ்', code: 'ta-IN', speech: 'பிக்கப், செல்லும் இடம், நேரம் மற்றும் கால அளவைச் சொல்லுங்கள்.' },
-    { label: 'తెలుగు', code: 'te-IN', speech: 'పికప్, గమ్యం, వ్యవధి మరియు సమయం చెప్పండి.' }
-  ];
-  const [language, setLanguage] = useState(languages[0]);
-  const [transcript, setTranscript] = useState('');
-  const [listening, setListening] = useState(false);
-  const [interpreting, setInterpreting] = useState(false);
-  const [notice, setNotice] = useState('');
-  const [stage, setStage] = useState<'capture' | 'confirm'>('capture');
+  type Stage = 'idle' | 'listening' | 'processing' | 'confirm';
+  const [stage, setStage] = useState<Stage>('idle');
+  const [live, setLive] = useState('');          // interim text shown while speaking
+  const [final, setFinal] = useState('');        // committed transcript
   const [intent, setIntent] = useState<any>(null);
-  const recognitionRef = React.useRef<any>(null);
-  const speak = (text: string) => {
-    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = language.code;
-    utterance.rate = 0.96;
-    window.speechSynthesis.speak(utterance);
-  };
-  const startListening = (confirmation = false) => {
-    const Recognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!Recognition) { setNotice('Voice capture is not available in this browser. Type your request below instead.'); return; }
-    const recognition = new Recognition();
-    recognition.lang = language.code;
-    recognition.continuous = false;
-    recognition.interimResults = true;
-    recognition.onstart = () => { setListening(true); setNotice(confirmation ? 'Listening for your confirmation…' : 'Listening…'); };
-    recognition.onresult = (event: any) => {
-      const value = Array.from(event.results).map((result: any) => result[0]?.transcript || '').join('');
-      if (confirmation) {
-        const accepted = /confirm|book|yes|okay|ok|हाँ|हां|पक्का|कर दो|ಹೌದು|சரி|అవును/i.test(value);
-        setNotice(accepted ? 'Confirmed. Booking your trip…' : 'I heard that, but I need “confirm” to book.');
-        if (accepted && intent) onBook(intent);
-      } else {
-        setTranscript(value);
+  const [err, setErr] = useState('');
+  const [booking, setBooking] = useState(false);
+  const recRef = React.useRef<any>(null);
+  const silenceTimer = React.useRef<any>(null);
+
+  // Auto-start listening when modal opens
+  useEffect(() => { startListening(); return () => stopListening(); }, []);
+
+  function stopListening() {
+    clearTimeout(silenceTimer.current);
+    recRef.current?.stop();
+    recRef.current = null;
+  }
+
+  function startListening() {
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SR) { setErr('Voice not supported in this browser. Type your trip below.'); return; }
+    setErr(''); setLive(''); setFinal(''); setStage('listening');
+    const r = new SR();
+    r.lang = 'en-IN';
+    r.continuous = true;
+    r.interimResults = true;
+    r.maxAlternatives = 3;
+    recRef.current = r;
+
+    r.onresult = (e: any) => {
+      let interim = '', committed = '';
+      for (let i = 0; i < e.results.length; i++) {
+        const t = e.results[i][0].transcript;
+        if (e.results[i].isFinal) committed += t + ' ';
+        else interim += t;
+      }
+      setLive(interim);
+      if (committed) {
+        setFinal(prev => prev + committed);
+        // reset silence timer — stop 2s after last word
+        clearTimeout(silenceTimer.current);
+        silenceTimer.current = setTimeout(() => stopAndInterpret(), 2000);
       }
     };
-    recognition.onerror = () => { setListening(false); setNotice('I could not hear that clearly. Please try again or type it below.'); };
-    recognition.onend = () => setListening(false);
-    recognitionRef.current = recognition;
-    recognition.start();
-  };
-  const stopListening = () => { recognitionRef.current?.stop(); setListening(false); };
-  useEffect(() => {
-    const timer = window.setTimeout(() => startListening(false), 250);
-    return () => { window.clearTimeout(timer); recognitionRef.current?.stop(); window.speechSynthesis?.cancel(); };
-  }, []);
-  const interpret = async () => {
-    if (!transcript.trim()) { setNotice('Tell me where you are starting, where you are going, and when you need the driver.'); return; }
-    setInterpreting(true); setNotice('Understanding your request…');
+    r.onerror = (e: any) => {
+      if (e.error === 'no-speech') return; // ignore silence
+      setErr('Could not hear clearly. Tap the mic and speak again.');
+      setStage('idle');
+    };
+    r.onend = () => {
+      if (stage === 'listening') setStage('idle');
+    };
+    r.start();
+  }
+
+  async function stopAndInterpret() {
+    stopListening();
+    const text = final || live;
+    if (!text.trim()) { setStage('idle'); return; }
+    setStage('processing');
     try {
-      const result = await api('/voice/intent', { method: 'POST', body: JSON.stringify({ text: transcript, language: language.code, city }) });
+      const result = await api('/voice/intent', {
+        method: 'POST',
+        body: JSON.stringify({ text: text.trim(), language: 'en-IN', city })
+      });
       setIntent(result);
       onApply(result);
       setStage('confirm');
-      const confirmation = `${result.summary || 'I have understood your trip.'} Say confirm to book, or review the details first.`;
-      setNotice(confirmation);
-      speak(confirmation);
-    } catch (e: any) { setNotice(e.message || 'I could not understand that request.'); }
-    finally { setInterpreting(false); }
-  };
-  const confirmByVoice = () => startListening(true);
-  return <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-    <div className="modal voice-agent-modal">
-      <button className="modal-close-btn" onClick={onClose} aria-label="Close voice booking"><X size={18} /></button>
-      <div className="voice-agent-header"><div className={`voice-agent-mark ${listening ? 'listening' : ''}`}><Mic size={22} /></div><div><span className="eyebrow">VOICE BOOKING</span><h2>{stage === 'capture' ? 'Tell me about your trip' : 'Ready to book?'}</h2><p className="modal-sub">{stage === 'capture' ? 'Speak naturally. I will listen and prepare the trip.' : 'I have filled the booking details. Confirm when ready.'}</p></div></div>
-      {stage === 'capture' ? <>
-        <label className="field-group"><span>Your language</span><select value={language.code + language.label} onChange={(e) => setLanguage(languages.find((item) => item.code + item.label === e.target.value) || languages[0])}>{languages.map((item) => <option key={item.code + item.label} value={item.code + item.label}>{item.label}</option>)}</select></label>
-        <button className={`listen-btn ${listening ? 'recording' : ''}`} onClick={listening ? stopListening : () => startListening(false)}><Mic size={18} /> {listening ? 'Stop listening' : 'Start speaking'}</button>
-        <textarea value={transcript} onChange={(e) => setTranscript(e.target.value)} rows={4} placeholder={`Example: “${language.speech}”`} aria-label="Trip request" />
-        <div className="voice-agent-hint"><MapPin size={15} /> Service area: {city} · The agent will speak back in your selected language.</div>
-        {notice && <p className="voice-agent-notice">{notice}</p>}
-        <button className="primary-btn-wide" onClick={interpret} disabled={interpreting || !transcript.trim()}>{interpreting ? 'Understanding…' : 'Review trip details'} <ArrowRight size={17} /></button>
-      </> : <>
-        <div className="voice-confirm-card"><b>{intent?.tripType || 'Driver'} · {intent?.hours || 4} hours</b><span>{intent?.pickup || 'Pickup'} → {intent?.destination || 'Destination'}</span><small>{intent?.date || 'Date'} at {intent?.time || 'Time'}</small></div>
-        {notice && <p className="voice-agent-notice">{notice}</p>}
-        <button className={`listen-btn ${listening ? 'recording' : ''}`} onClick={listening ? stopListening : confirmByVoice}><Mic size={18} /> {listening ? 'Listening for confirm' : 'Say confirm to book'}</button>
-        <button className="primary-btn-wide" onClick={() => onBook(intent)} disabled={listening}>Confirm and book <ArrowRight size={17} /></button>
-        <button className="link-btn voice-change-btn" onClick={() => { setStage('capture'); setNotice('Tell me the corrected trip details.'); }}>Change details</button>
-      </>}
-    </div>
-  </div>;
-}
+      // Read back the trip summary
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+        const u = new SpeechSynthesisUtterance(result.summary || `Trip understood. ${result.tripType} from ${result.pickup || 'pickup'} to ${result.destination || 'destination'}. Tap Confirm to book.`);
+        u.lang = 'en-IN'; u.rate = 0.95;
+        window.speechSynthesis.speak(u);
+      }
+    } catch (e: any) {
+      setErr(e.message || 'Could not understand. Please try again.');
+      setStage('idle');
+    }
+  }
 
+  async function confirmBook() {
+    if (!intent) return;
+    setBooking(true);
+    window.speechSynthesis?.cancel();
+    try { await onBook(intent); } finally { setBooking(false); }
+  }
+
+  const displayText = final + (live ? live : '');
+
+  return (
+    <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="modal voice-agent-modal">
+        <button className="modal-close-btn" onClick={onClose} aria-label="Close"><X size={18} /></button>
+
+        {/* Header */}
+        <div className="va-header">
+          <div className={`va-orb ${stage === 'listening' ? 'va-orb-pulse' : stage === 'processing' ? 'va-orb-spin' : ''}`}>
+            <Mic size={22} />
+          </div>
+          <div>
+            <span className="eyebrow">VOICE BOOKING</span>
+            <h2 style={{fontSize:'18px',fontWeight:800,color:'var(--ink)',marginBottom:2}}>
+              {stage === 'idle' && 'Tap mic and speak'}
+              {stage === 'listening' && 'Listening…'}
+              {stage === 'processing' && 'Understanding…'}
+              {stage === 'confirm' && 'Ready to book!'}
+            </h2>
+            <p style={{fontSize:'12px',color:'var(--t5)',lineHeight:1.4}}>
+              Say your pickup, destination, date and time in one sentence.
+            </p>
+          </div>
+        </div>
+
+        {/* Live transcript box */}
+        <div className="va-transcript" aria-live="polite">
+          {stage === 'listening' && !displayText && (
+            <span className="va-placeholder">e.g. "Take me from Connaught Place to IGI Airport tomorrow at 6am"</span>
+          )}
+          {displayText && <span>{displayText}</span>}
+          {stage === 'listening' && displayText && <span className="va-cursor">|</span>}
+        </div>
+
+        {/* Error */}
+        {err && <p className="va-err">{err}</p>}
+
+        {/* Stage: idle or listening */}
+        {(stage === 'idle' || stage === 'listening') && (
+          <div style={{display:'flex',flexDirection:'column',gap:10,marginTop:8}}>
+            <button
+              className={`va-mic-btn ${stage === 'listening' ? 'va-mic-active' : ''}`}
+              onClick={stage === 'listening' ? stopAndInterpret : startListening}
+            >
+              <Mic size={20} />
+              {stage === 'listening' ? 'Done speaking — Process now' : 'Tap to speak'}
+            </button>
+            {/* Type fallback */}
+            <textarea
+              className="va-text-input"
+              value={displayText}
+              onChange={(e) => setFinal(e.target.value)}
+              placeholder="Or type your trip here…"
+              rows={3}
+            />
+            {displayText.trim() && stage !== 'listening' && (
+              <button className="primary-btn-wide" style={{marginTop:0}} onClick={stopAndInterpret}>
+                Understand my trip <ArrowRight size={16} />
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Stage: processing */}
+        {stage === 'processing' && (
+          <div className="va-processing">
+            <div className="va-spinner" />
+            <span>Analysing your request…</span>
+          </div>
+        )}
+
+        {/* Stage: confirm */}
+        {stage === 'confirm' && intent && (
+          <div style={{display:'flex',flexDirection:'column',gap:12,marginTop:4}}>
+            <div className="va-confirm-card">
+              <div className="va-confirm-row"><span>Service</span><b>{intent.tripType || 'Hourly'} · {intent.hours || 4} hrs</b></div>
+              <div className="va-confirm-row"><span>From</span><b>{intent.pickup || '—'}</b></div>
+              <div className="va-confirm-row"><span>To</span><b>{intent.destination || '—'}</b></div>
+              <div className="va-confirm-row"><span>Date</span><b>{intent.date || 'Tomorrow'}</b></div>
+              <div className="va-confirm-row"><span>Time</span><b>{intent.time || '—'}</b></div>
+              <div className="va-confirm-row"><span>City</span><b>{intent.city || city}</b></div>
+            </div>
+            <button className="primary-btn-wide" style={{marginTop:0,background:'#15803d'}} onClick={confirmBook} disabled={booking}>
+              {booking ? 'Booking…' : '✓ Confirm and Book Now'} <ArrowRight size={17} />
+            </button>
+            <button
+              className="secondary-btn"
+              style={{width:'100%',justifyContent:'center'}}
+              onClick={() => { setStage('idle'); setFinal(''); setLive(''); setIntent(null); startListening(); }}
+            >
+              <Mic size={15} /> Say it again
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 function AuthModal({ onClose, onLogin, onRegister, busy, storageReady }: any) {
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [registerRole, setRegisterRole] = useState<'customer' | 'driver'>('customer');
@@ -2321,7 +2420,7 @@ function AuthModal({ onClose, onLogin, onRegister, busy, storageReady }: any) {
 
         {mode === 'login' && (
           <div className="quick-demo-box">
-            <span className="quick-label">Quick demo sign-in · password: password123</span>
+            <span className="quick-label">Quick demo sign-in Â· password: password123</span>
             <div className="quick-buttons">
               <button type="button" onClick={() => onLogin('ananya@vaahansathi.demo', 'password123')}>Customer</button>
               <button type="button" onClick={() => onLogin('ramesh@vaahansathi.demo', 'password123')}>Driver (Gurugram)</button>
@@ -2390,7 +2489,7 @@ function AuthModal({ onClose, onLogin, onRegister, busy, storageReady }: any) {
                     <input value={licenseNumber} onChange={(e) => setLicenseNumber(e.target.value)} placeholder="DL-1420110012345" />
                   </label>
                   <div style={{ fontSize: '12px', color: 'var(--slate-500)', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '8px', padding: '10px 12px' }}>
-                    <b style={{ color: '#92400e' }}>⏳ Manual verification required</b>
+                    <b style={{ color: '#92400e' }}>â³ Manual verification required</b>
                     <br />Your account will be reviewed within 24 hours. You can log in and go online once approved.
                   </div>
                 </>
@@ -2405,11 +2504,11 @@ function AuthModal({ onClose, onLogin, onRegister, busy, storageReady }: any) {
 
           <label className="field-group">
             <span>Password</span>
-            <input type="password" required minLength={mode === 'register' ? 8 : 1} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" />
+            <input type="password" required minLength={mode === 'register' ? 8 : 1} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢" />
           </label>
 
           <button className="primary-btn-wide" type="submit" disabled={busy}>
-            {busy ? 'Processing…' : mode === 'login' ? 'Sign In' : registerRole === 'driver' ? 'Apply as Driver Partner' : 'Create Account'}
+            {busy ? 'Processingâ€¦' : mode === 'login' ? 'Sign In' : registerRole === 'driver' ? 'Apply as Driver Partner' : 'Create Account'}
           </button>
         </form>
 
@@ -2445,7 +2544,7 @@ function CheckoutModal({ booking, onClose, onPay }: any) {
         <button className="modal-close-btn" onClick={onClose}><X size={18} /></button>
         <span className="eyebrow">SECURE CHECKOUT</span>
         <h2>Complete Trip Payment</h2>
-        <p className="checkout-route">{booking.pickup} → {booking.destination}</p>
+        <p className="checkout-route">{booking.pickup} â†’ {booking.destination}</p>
 
         <div className="total-due-banner">
           <span>Total Fare Amount</span>
@@ -2574,14 +2673,14 @@ function DisputeModal({ bookings, onClose, onSubmit }: any) {
             <select value={bookingId} onChange={(e) => setBookingId(e.target.value)}>
               <option value="">No specific booking</option>
               {bookings.map((b: Booking) => (
-                <option key={b.id} value={b.id}>{b.id} — {b.pickup.split(',')[0]} → {b.destination.split(',')[0]}</option>
+                <option key={b.id} value={b.id}>{b.id} â€” {b.pickup.split(',')[0]} â†’ {b.destination.split(',')[0]}</option>
               ))}
             </select>
           </label>
           <label className="field-group">
             <span>Subject</span>
             <select value={subject} onChange={(e) => setSubject(e.target.value)} required>
-              <option value="">Select a subject…</option>
+              <option value="">Select a subjectâ€¦</option>
               <option value="Fare dispute">Fare dispute</option>
               <option value="Driver behaviour">Driver behaviour</option>
               <option value="Trip not completed">Trip not completed</option>
@@ -2596,13 +2695,13 @@ function DisputeModal({ bookings, onClose, onSubmit }: any) {
               required
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Describe what happened in detail…"
+              placeholder="Describe what happened in detailâ€¦"
               rows={4}
               style={{ width: '100%', padding: '12px', border: '1px solid var(--slate-200)', borderRadius: '8px', fontSize: '14px', resize: 'vertical', outline: 'none', fontFamily: 'inherit' }}
             />
           </label>
           <button className="primary-btn-wide" type="submit" disabled={busy || !subject || !description}>
-            {busy ? 'Submitting…' : 'Submit Dispute'}
+            {busy ? 'Submittingâ€¦' : 'Submit Dispute'}
           </button>
         </form>
       </div>
@@ -2614,7 +2713,7 @@ function ReceiptIcon(props: any) {
   return <CreditCard {...props} />;
 }
 
-// Hand-coded SVG icons — no library
+// Hand-coded SVG icons â€” no library
 function NavIcon({ name }: { name: string }) {
   const s = { width: 22, height: 22, fill: 'none', stroke: 'currentColor', strokeWidth: 1.75, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
   switch (name) {
