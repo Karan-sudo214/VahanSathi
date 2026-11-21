@@ -1397,6 +1397,11 @@ app.post(
       driverId: b.driverId,
       stars: Math.max(1, Math.min(5, Number(req.body.stars) || 5)),
       review: String(req.body.review || '').slice(0, 500),
+      whatWorked: Array.isArray(req.body.whatWorked) ? req.body.whatWorked.map((item) => String(item).slice(0, 80)).slice(0, 10) : [],
+      improvement: String(req.body.improvement || '').slice(0, 100),
+      safety: String(req.body.safety || '').slice(0, 40),
+      punctuality: String(req.body.punctuality || '').slice(0, 60),
+      communication: String(req.body.communication || '').slice(0, 60),
       createdAt: new Date().toISOString()
     };
     data.ratings.push(ratingItem);
