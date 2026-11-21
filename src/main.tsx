@@ -1291,6 +1291,29 @@ function TripsPage({ bookings, filter, setFilter, update, onRate, onPay, onTrack
                 </div>
               </div>
 
+              {/* Live, transparent trip progress */}
+              {b.status !== 'Cancelled' && (() => {
+                const stages = ['Searching', 'Driver assigned', 'Driver arriving', 'Trip started', 'Trip completed'];
+                const current = Math.max(0, stages.indexOf(b.status));
+                return (
+                  <section className="trip-progress" aria-label="Trip progress">
+                    <div className="trip-progress-heading">
+                      <div><b>Trip progress</b><small>Updates as your booking moves forward</small></div>
+                      <span>{b.status === 'Trip completed' ? 'Completed' : `${current + 1} of ${stages.length}`}</span>
+                    </div>
+                    <ol className="trip-progress-steps">
+                      {stages.map((stage, index) => (
+                        <li key={stage} className={index < current ? 'complete' : index === current ? 'current' : ''}>
+                          <span className="trip-progress-dot">{index < current ? <Check size={12} /> : index + 1}</span>
+                          <span>{stage === 'Searching' ? 'Finding a driver' : stage}</span>
+                        </li>
+                      ))}
+                    </ol>
+                    <p className="trip-progress-note"><ShieldCheck size={14} /> Only share your start OTP when you are with your assigned driver.</p>
+                  </section>
+                );
+              })()}
+
               {/* OTP Cards for active trips */}
               {['Driver assigned', 'Driver arriving', 'Trip started'].includes(b.status) && (
                 <div className="otp-banner">
