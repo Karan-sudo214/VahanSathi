@@ -610,7 +610,7 @@ function App() {
   const confirmCashAsCustomer = async (booking: Booking) => {
     const entered = prompt(`Enter the exact cash amount you handed to the driver. Fare: ${money(booking.total)}`);
     if (entered === null) return;
-    const amountGiven = Number(entered.replace(/[₹,\\s]/g, ''));
+    const amountGiven = Number(entered.replace(/[₹,]/g, '').trim());
     if (!Number.isSafeInteger(amountGiven) || amountGiven < 0) { flash('Enter a valid whole-rupee amount.'); return; }
     try {
       const result = await api('/payments/cash/customer-confirm', { method: 'POST', body: JSON.stringify({ bookingId: booking.id, amountGiven }) });
@@ -622,7 +622,7 @@ function App() {
   const confirmCashAsDriver = async (booking: Booking) => {
     const entered = prompt(`Enter the exact cash amount you received from the customer. Fare: ${money(booking.total)}`);
     if (entered === null) return;
-    const amountReceived = Number(entered.replace(/[₹,\\s]/g, ''));
+    const amountReceived = Number(entered.replace(/[₹,]/g, '').trim());
     if (!Number.isSafeInteger(amountReceived) || amountReceived < 0) { flash('Enter a valid whole-rupee amount.'); return; }
     const cashPin = prompt('Ask the customer for their 6-digit Cash Handover PIN:');
     if (cashPin === null) return;
