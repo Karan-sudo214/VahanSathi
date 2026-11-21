@@ -2569,7 +2569,7 @@ function VoiceAgentModal({ onClose, onApply, onBook, city }: { onClose: () => vo
               {booking ? 'Booking…' : 'Confirm and Book Now'} <ArrowRight size={17} />
             </button>
             <button type="button" className="secondary-btn" style={{width:'100%',justifyContent:'center'}}
-              onClick={() => { setStage('idle'); setIntent(null); setErr(''); }}>Edit trip details</button>
+              onClick={() => { setStage('idle'); setIntent(null); setErr(''); setFinal(''); }}>Edit trip details</button>
           </div>
         )}
       </div>
