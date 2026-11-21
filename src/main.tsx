@@ -2203,7 +2203,7 @@ function VoiceAgentModal({ onClose, onApply, onBook, city }: { onClose: () => vo
   const LANGS = [
     { label: 'English', code: 'en-IN', srv: 'en-IN', ph: 'Example: Take me from Connaught Place to IGI Airport tomorrow at 6 AM' },
     { label: 'हिन्दी', code: 'hi-IN', srv: 'hi-IN', ph: 'उदाहरण: कल सुबह कनॉट प्लेस से एयरपोर्ट जाना है' },
-    { label: 'Hinglish', code: 'hi-IN', srv: 'hi-hinglish', ph: 'Example: Kal subah Connaught Place se airport jaana hai' },
+    { label: 'Hinglish', code: 'en-IN', srv: 'hi-hinglish', ph: 'Example: Kal subah Connaught Place se airport jaana hai' },
   ];
   const [lang, setLang] = useState(() => {
     const saved = localStorage.getItem('vs_language');
