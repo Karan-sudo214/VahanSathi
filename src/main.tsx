@@ -587,41 +587,30 @@ function App() {
             <button className="hamburger" onClick={() => setMobileOpen(true)} aria-label="Open menu">
               <Menu size={22} />
             </button>
-            <div className="crumb">
-              <span>VaahanSathi</span>
-              <span className="crumb-sep">/</span>
-              <b>{page}</b>
+            <div className="topbar-brand">
+              <div className="topbar-logo"><CarFront size={16} /></div>
+              <span className="topbar-title">VaahanSathi</span>
             </div>
           </div>
 
           <div className="top-actions">
-            <button className="voice-top-btn" onClick={() => setVoiceAgentOpen(true)} aria-label="Open voice booking">
-              <Mic size={16} /> <span>Voice booking</span>
+            <button className="voice-top-btn" onClick={() => setVoiceAgentOpen(true)} aria-label="Voice booking">
+              <Mic size={15} /> <span>Voice</span>
             </button>
-            {/* Database indicator pill */}
-            <div className={`db-pill ${storageReady ? 'connected' : 'connecting'}`} title="Neon DB status">
-              <Database size={14} />
-              <span>{storageReady ? 'System operational' : 'Syncing status...'}</span>
-            </div>
 
-            {/* City Selector */}
-            <label className="city-pill">
-              <MapPin size={15} className="city-pin" />
+            {/* City pill — hidden on mobile to save space */}
+            <label className="city-pill" title="Select city">
+              <MapPin size={13} className="city-pin" />
               <select value={city} onChange={(e) => chooseCity(e.target.value)}>
                 <option value="Delhi">Delhi</option>
                 <option value="Gurugram">Gurugram</option>
               </select>
-              <ChevronDown size={14} />
             </label>
 
-            <button className="icon-btn" title="Emergency Help" onClick={() => setPage('Help')}>
-              <Headphones size={18} />
-            </button>
-
             {user ? (
-              <div className="user-avatar-btn" onClick={() => flash(`Signed in as ${user.name} (${user.role})`)}>
+              <button className="user-avatar-btn" onClick={() => flash(`${user.name} · ${user.role}`)}>
                 {user.name[0]}
-              </div>
+              </button>
             ) : (
               <button className="signin-header-btn" onClick={() => setModal('auth')}>
                 Sign In
@@ -646,21 +635,23 @@ function App() {
               {/* Hero Showcase */}
               <section className="hero-card">
                 <div className="hero-content">
-                  <span className="hero-badge">YOUR CAR · OUR VERIFIED DRIVER</span>
-                  <h2>Professional Drivers For Your Own Vehicle.</h2>
-                  <p>
-                    Pay only for the driver's skilled time. Never pay for rental cars or expensive taxis. Hourly, airport, night trips,
-                    and outstation journeys.
-                  </p>
+                  <span className="hero-badge">🚗 YOUR CAR · OUR VERIFIED DRIVER</span>
+                  <h2>Professional Drivers For Your Own Vehicle</h2>
+                  <p>Pay only for the driver's time. Verified, uniformed chauffeurs across Delhi & Gurugram.</p>
                   <div className="hero-cta-row">
                     <button className="hero-btn" onClick={() => setPage('Book a driver')}>
-                      Book Driver Now <ArrowRight size={17} />
+                      Book a Driver <ArrowRight size={16} />
                     </button>
+                    {!user && (
+                      <button className="hero-btn-outline" onClick={() => setModal('auth')}>
+                        Sign In
+                      </button>
+                    )}
                   </div>
                   <div className="hero-highlights">
-                    <span><ShieldCheck size={16} /> Thoroughly Police & Skill Verified</span>
-                    <span><MapPin size={16} /> {city} Service Area</span>
-                    <span><IndianRupee size={16} /> Transparent Fixed Fares</span>
+                    <span><ShieldCheck size={14} /> Police Verified</span>
+                    <span><MapPin size={14} /> {city}</span>
+                    <span><IndianRupee size={14} /> From ₹599</span>
                   </div>
                 </div>
               </section>
@@ -668,27 +659,24 @@ function App() {
               {/* Service Grid */}
               <div className="section-head">
                 <div>
-                  <h3>Choose a Driver Service</h3>
-                  <p>Transparent pricing tailored for every journey need.</p>
+                  <h3>Choose a Service</h3>
+                  <p>Tap to book instantly</p>
                 </div>
               </div>
 
               <div className="services-grid">
                 {[
-                  { id: 'Hourly', title: 'Hourly Driver', desc: 'From ₹599 · 4 Hours', icon: '01' },
-                  { id: 'Airport', title: 'Airport Transfer', desc: 'Stress-free terminal drops', icon: '02' },
-                  { id: 'Night driver', title: 'Night Driver', desc: 'Party or late commute safely', icon: '03' },
-                  { id: 'Full day', title: 'Full Day Chauffeur', desc: '8-12 hrs seamless city travel', icon: '04' },
-                  { id: 'Outstation', title: 'Outstation Trip', desc: 'Highway experienced drivers', icon: '05' },
-                  { id: 'Custom', title: 'Custom Duration', desc: 'Flexible schedule & stops', icon: '06' }
+                  { id: 'Hourly',      title: 'Hourly',      desc: 'From ₹599 · 4 hrs', icon: '🕐' },
+                  { id: 'Airport',     title: 'Airport',     desc: 'Fixed fare drop',    icon: '✈️' },
+                  { id: 'Night driver',title: 'Night',        desc: 'Safe late trips',    icon: '🌙' },
+                  { id: 'Full day',    title: 'Full Day',    desc: '8–12 hrs city',      icon: '☀️' },
+                  { id: 'Outstation',  title: 'Outstation',  desc: 'Highway trips',      icon: '🛣️' },
+                  { id: 'Custom',      title: 'Custom',      desc: 'Your schedule',      icon: '⚙️' }
                 ].map((s) => (
                   <button
                     key={s.id}
                     className={`service-card ${tripType === s.id ? 'active' : ''}`}
-                    onClick={() => {
-                      setTripType(s.id);
-                      setPage('Book a driver');
-                    }}
+                    onClick={() => { setTripType(s.id); setPage('Book a driver'); }}
                   >
                     <span className="service-emoji">{s.icon}</span>
                     <b className="service-title">{s.title}</b>
