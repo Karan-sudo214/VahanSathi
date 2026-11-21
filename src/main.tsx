@@ -230,6 +230,7 @@ function App() {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [toast, setToast] = useState('');
   const [modal, setModal] = useState('');
+  const [cashHandover, setCashHandover] = useState<{ booking: Booking; mode: 'customer' | 'driver' } | null>(null);
   const [busy, setBusy] = useState(false);
   const [tripType, setTripType] = useState('Hourly');
   const [city, setCity] = useState(localStorage.getItem('vs_city') === 'Gurugram' ? 'Gurugram' : 'Delhi');
@@ -607,31 +608,26 @@ function App() {
     }
   };
 
-  const confirmCashAsCustomer = async (booking: Booking) => {
-    const entered = prompt(`Enter the exact cash amount you handed to the driver. Fare: ${money(booking.total)}`);
-    if (entered === null) return;
-    const amountGiven = Number(entered.replace(/[₹,]/g, '').trim());
-    if (!Number.isSafeInteger(amountGiven) || amountGiven < 0) { flash('Enter a valid whole-rupee amount.'); return; }
+  const confirmCashAsCustomer = async (booking: Booking, amountGiven: number) => {
     try {
       const result = await api('/payments/cash/customer-confirm', { method: 'POST', body: JSON.stringify({ bookingId: booking.id, amountGiven }) });
       await refresh();
-      flash(result.payment_status === 'Paid · Cash' ? 'Both sides confirmed the exact cash amount. Payment is recorded.' : result.payment_status);
-    } catch (error: any) { flash(error.message || 'Cash confirmation could not be saved.'); }
+      flash(result.payment_status === 'Paid · Cash' ? 'Cash handover verified. Your receipt is ready.' : result.payment_status);
+      return true;
+    } catch (error: any) { flash(error.message || 'Cash confirmation could not be saved.'); return false; }
   };
 
-  const confirmCashAsDriver = async (booking: Booking) => {
-    const entered = prompt(`Enter the exact cash amount you received from the customer. Fare: ${money(booking.total)}`);
-    if (entered === null) return;
-    const amountReceived = Number(entered.replace(/[₹,]/g, '').trim());
-    if (!Number.isSafeInteger(amountReceived) || amountReceived < 0) { flash('Enter a valid whole-rupee amount.'); return; }
-    const cashPin = prompt('Ask the customer for their 6-digit Cash Handover PIN:');
-    if (cashPin === null) return;
+  const confirmCashAsDriver = async (booking: Booking, amountReceived: number, cashPin: string) => {
     try {
       const result = await api('/payments/cash/driver-confirm', { method: 'POST', body: JSON.stringify({ bookingId: booking.id, amountReceived, cashPin }) });
       await refresh();
-      flash(result.payment_status === 'Paid · Cash' ? 'Cash handover verified and recorded.' : result.payment_status);
-    } catch (error: any) { flash(error.message || 'Cash receipt could not be verified.'); }
+      flash(result.payment_status === 'Paid · Cash' ? 'Cash receipt verified and recorded.' : result.payment_status);
+      return true;
+    } catch (error: any) { flash(error.message || 'Cash receipt could not be verified.'); return false; }
   };
+
+  const openCustomerCashHandover = (booking: Booking) => setCashHandover({ booking, mode: 'customer' });
+  const openDriverCashHandover = (booking: Booking) => setCashHandover({ booking, mode: 'driver' });
 
   const logout = () => {
     if (user?.role === 'customer') {
@@ -972,12 +968,12 @@ function App() {
               onTrack={(b: Booking) => setModal('track:' + b.id)}
               onBook={() => setPage('Book a driver')}
               receipts={receipts}
-              onCashConfirm={confirmCashAsCustomer}
+              onCashConfirm={openCustomerCashHandover}
               cashRewardsPoints={Number(user?.cashRewardsPoints || 0)}
             />
           )}
 
-          {page === 'Requests' && <DriverPage bookings={bookings} update={updateStatus} user={user} onDutyChange={(v: boolean) => setUser((u: any) => u ? {...u, available: v} : u)} flash={flash} onCashConfirm={confirmCashAsDriver} />}
+          {page === 'Requests' && <DriverPage bookings={bookings} update={updateStatus} user={user} onDutyChange={(v: boolean) => setUser((u: any) => u ? {...u, available: v} : u)} flash={flash} onCashConfirm={openDriverCashHandover} />}
           {page === 'My trips' && <TripsPage bookings={bookings} filter={filter} setFilter={setFilter} update={updateStatus} onRate={(b: Booking) => setModal('rate:' + b.id)} onPay={(b: Booking) => setModal('payment:' + b.id)} onTrack={(b: Booking) => setModal('track:' + b.id)} onBook={() => setPage('Book a driver')} receipts={receipts} onCashConfirm={confirmCashAsCustomer} cashRewardsPoints={Number(user?.cashRewardsPoints || 0)} />}
           {page === 'Earnings' && <EarningsPage bookings={bookings} />}
           {page === 'Wallet' && <WalletPage receipts={receipts} bookings={bookings} onReceipt={downloadReceipt} />}
@@ -996,6 +992,21 @@ function App() {
           {page === 'Settings' && <AdminModulePage module="settings" bookings={bookings} flash={flash} />}
         </div>
       </main>
+
+      {cashHandover && (
+        <CashHandoverModal
+          booking={cashHandover.booking}
+          mode={cashHandover.mode}
+          onClose={() => setCashHandover(null)}
+          onSubmit={async (amount: number, pin?: string) => {
+            const ok = cashHandover.mode === 'customer'
+              ? await confirmCashAsCustomer(cashHandover.booking, amount)
+              : await confirmCashAsDriver(cashHandover.booking, amount, pin || '');
+            if (ok) setCashHandover(null);
+            return ok;
+          }}
+        />
+      )}
 
       {/* Modals */}
       {voiceAgentOpen && (
@@ -1610,7 +1621,11 @@ function TripsPage({ bookings, filter, setFilter, update, onRate, onPay, onTrack
                       {b.payment_status === 'Paid' || b.payment_status === 'Paid · Cash' ? <span className="status-pill done">Paid · {b.payment_method === 'cash' ? 'Cash' : 'Online'}</span> :
                         b.payment_method === 'cash' ? <button className="action-btn pay" onClick={() => onCashConfirm(b)} disabled={b.cashCustomerConfirmed}><IndianRupee size={16}/>{b.cashCustomerConfirmed ? 'Amount confirmation sent' : 'Confirm amount handed over'}</button> :
                         <button className="action-btn pay" onClick={() => onPay(b)}><CreditCard size={16} /> Pay {money(b.total)}</button>}
-                      {b.payment_method === 'cash' && b.cashPin && <div className="cash-reward-note"><b>Cash Handover PIN: {b.cashPin}</b><span>Share this one-time PIN with your assigned driver only after handing over the cash. Payment is recorded only when both amounts match the fare.</span></div>}
+                      {b.payment_method === 'cash' && b.cashPin && b.payment_status !== 'Paid · Cash' && <div className="cash-pin-card">
+                        <div className="cash-pin-heading"><span className="cash-pin-icon"><ShieldCheck size={17}/></span><span><b>Secure cash handover</b><small>Share this code only after giving the cash to your driver.</small></span><span className="cash-pin-live">ONE-TIME</span></div>
+                        <div className="cash-pin-digits" aria-label={`Cash handover PIN ${b.cashPin}`}>{String(b.cashPin).split('').map((digit, index) => <span key={index}>{digit}</span>)}</div>
+                        <small className="cash-pin-foot"><LockKeyhole size={13}/> Your driver needs this PIN to verify the receipt. Never share it over a call or chat.</small>
+                      </div>}
                       {b.payment_method === 'cash' && b.cashCustomerConfirmed && <small className="muted">You confirmed {money(Number(b.cashCustomerAmount || 0))}. Waiting for driver verification.</small>}
                     </div>
                     <div className="trip-actions-row">
@@ -1838,8 +1853,9 @@ function DriverPage({ bookings, update, user, onDutyChange, flash, onCashConfirm
                     </button>
                   )}
                   {b.status === 'Trip completed' && b.payment_method === 'cash' && b.payment_status !== 'Paid · Cash' && (
-                    <div style={{display:'grid',gap:8}}>
-                      <button className="primary-btn" style={{width:'100%',justifyContent:'center',background:'#0a7a6e'}} onClick={() => onCashConfirm(b)} disabled={b.cashDriverConfirmed}><IndianRupee size={17}/>{b.cashDriverConfirmed ? 'Receipt submitted' : 'Verify cash received + PIN'}</button>
+                    <div className="driver-cash-action">
+                      <div><b>Cash collection verification</b><small>Enter the amount you retained after returning any change, then verify the customer's one-time PIN.</small></div>
+                      <button className="primary-btn" style={{width:'100%',justifyContent:'center',background:'#0a7a6e'}} onClick={() => onCashConfirm(b)} disabled={b.cashDriverConfirmed}><ShieldCheck size={17}/>{b.cashDriverConfirmed ? 'Receipt submitted' : 'Verify cash handover'}</button>
                       {b.cashDriverConfirmed && <small className="muted">You reported {money(Number(b.cashDriverAmount || 0))}. Waiting for customer confirmation.</small>}
                     </div>
                   )}
@@ -2947,6 +2963,45 @@ function AuthModal({ onClose, onLogin, onRegister, onCustomerLogin, onCustomerRe
     </div>
   );
 }
+function CashHandoverModal({ booking, mode, onClose, onSubmit }: { booking: Booking; mode: 'customer' | 'driver'; onClose: () => void; onSubmit: (amount: number, pin?: string) => Promise<boolean> }) {
+  const [amount, setAmount] = useState(String(Math.round(Number(booking.total || 0))));
+  const [pin, setPin] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+  const isCustomer = mode === 'customer';
+  const validAmount = /^\\d{1,7}$/.test(amount.trim()) && Number.isSafeInteger(Number(amount)) && Number(amount) >= 0;
+  const submit = async () => {
+    if (!validAmount) { setError('Enter a valid amount in whole rupees.'); return; }
+    if (!isCustomer && !/^\\d{6}$/.test(pin)) { setError('Enter all 6 digits of the customer PIN.'); return; }
+    setSubmitting(true); setError('');
+    try { const ok = await onSubmit(Number(amount), isCustomer ? undefined : pin); if (!ok) setError('Please review the details and try again.'); }
+    finally { setSubmitting(false); }
+  };
+  return (
+    <div className="overlay cash-handover-overlay" onMouseDown={(e) => e.target === e.currentTarget && !submitting && onClose()}>
+      <div className="modal cash-handover-modal">
+        <button className="modal-close-btn" onClick={onClose} disabled={submitting}><X size={18}/></button>
+        <div className="cash-modal-emblem"><ShieldCheck size={25}/></div>
+        <span className="eyebrow">{isCustomer ? 'CUSTOMER PAYMENT CONFIRMATION' : 'DRIVER RECEIPT VERIFICATION'}</span>
+        <h2>{isCustomer ? 'Confirm cash handed over' : 'Verify cash received'}</h2>
+        <p className="cash-modal-intro">{isCustomer ? 'Enter the amount you paid to the driver. Your driver will independently confirm the amount received.' : 'Enter the final amount you kept after returning any change. Then enter the customer’s one-time PIN.'}</p>
+        <div className="cash-fare-summary"><span>Trip fare</span><b>{money(booking.total)}</b><small>Booking #{String(booking.id).slice(-8)}</small></div>
+        <label className="cash-field-label" htmlFor="cash-handover-amount">{isCustomer ? 'Amount you handed over (₹)' : 'Amount retained / received (₹)'}</label>
+        <div className="cash-amount-input"><IndianRupee size={20}/><input id="cash-handover-amount" type="text" inputMode="numeric" autoComplete="off" value={amount} onChange={(e) => { setAmount(e.target.value.replace(/[^0-9]/g, '').slice(0, 7)); setError(''); }} placeholder="Enter amount"/></div>
+        {!isCustomer && <>
+          <label className="cash-field-label" htmlFor="cash-handover-pin">Customer’s 6-digit secure PIN</label>
+          <input id="cash-handover-pin" className="cash-pin-input" type="password" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={pin} onChange={(e) => { setPin(e.target.value.replace(/\\D/g, '').slice(0, 6)); setError(''); }} placeholder="• • • • • •" aria-label="Six digit cash handover PIN"/>
+          <small className="cash-pin-hint"><LockKeyhole size={13}/> PIN is verified securely and can only be used once.</small>
+        </>}
+        {error && <p className="cash-form-error"><AlertCircle size={15}/>{error}</p>}
+        <div className="cash-modal-assurance"><ShieldCheck size={16}/><span>Both parties must confirm the same amount. Any mismatch is flagged for admin review—never silently marked as paid.</span></div>
+        <button className="primary-btn-wide cash-submit-btn" onClick={submit} disabled={submitting || !validAmount || (!isCustomer && pin.length !== 6)}>{submitting ? 'Verifying securely…' : isCustomer ? 'Confirm amount handed over' : 'Verify PIN & submit receipt'} <ArrowRight size={17}/></button>
+        <button className="cash-cancel-btn" onClick={onClose} disabled={submitting}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+
 function CheckoutModal({ booking, onClose, onPay }: any) {
   if (!booking) return null;
   return (
