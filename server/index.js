@@ -644,7 +644,10 @@ app.post(
     if (data.users.some((u) => u.email === cleanEmail)) {
       return res.status(409).json({ error: 'An account with that email already exists. Please sign in.' });
     }
-    const resolvedRole = role === 'driver' ? 'driver' : 'customer';
+    if (role !== 'driver') {
+      return res.status(403).json({ error: 'Customer accounts must be created through Firebase Authentication.' });
+    }
+    const resolvedRole = 'driver';
     const u = {
       id: randomUUID(),
       name: name.trim(),
@@ -676,6 +679,9 @@ app.post(
     const { email, password } = req.body || {};
     const cleanEmail = String(email || '').toLowerCase().trim();
     const u = data.users.find((x) => x.email === cleanEmail);
+    if (u?.role === 'customer') {
+      return res.status(403).json({ error: 'Customer sign-in is handled by Firebase Authentication. Please use the customer sign-in option.' });
+    }
     if (!u || !(await bcrypt.compare(password || '', u.password))) {
       return res.status(401).json({ error: 'Email or password is incorrect.' });
     }
