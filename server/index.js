@@ -908,6 +908,7 @@ function finalizeCashSettlement(booking) {
     booking.status = 'Trip completed';
     booking.cashSettlementCompletedAt = booking.paidAt;
     const historyItem = { id: randomUUID(), booking_id: booking.id, status: 'Trip completed', at: booking.paidAt, note: 'Cash settlement approved by customer and driver' };
+    booking.cashSettlementHistoryId = historyItem.id;
     data.history.unshift(historyItem);
   }
   return true;
@@ -933,6 +934,10 @@ app.post('/api/payments/cash/customer-confirm', auth, roles('customer'), asyncRo
     });
   }
   if (paid) {
+    if (booking.cashSettlementHistoryId) {
+      const settlementHistory = data.history.find((item) => item.id === booking.cashSettlementHistoryId);
+      if (settlementHistory) await persistItem('app_history', settlementHistory.id, settlementHistory);
+    }
     const customer = data.users.find((u) => u.id === booking.userId);
     if (customer && !booking.cashRewardAwarded) {
       const points = Math.max(1, Math.floor(amount / 100));
@@ -985,6 +990,10 @@ app.post('/api/payments/cash/driver-confirm', auth, roles('driver'), asyncRoute(
     });
   }
   if (paid) {
+    if (booking.cashSettlementHistoryId) {
+      const settlementHistory = data.history.find((item) => item.id === booking.cashSettlementHistoryId);
+      if (settlementHistory) await persistItem('app_history', settlementHistory.id, settlementHistory);
+    }
     const customer = data.users.find((u) => u.id === booking.userId);
     if (customer && !booking.cashRewardAwarded) {
       const points = Math.max(1, Math.floor(amount / 100));
