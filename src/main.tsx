@@ -315,9 +315,13 @@ function App() {
     if (user) refresh();
   }, [user]);
 
+  // Drivers poll every 2s for near-realtime incoming requests.
+  // Customers poll every 5s to see driver accepted/status updates.
+  // Admins poll every 10s.
   useEffect(() => {
     if (!user) return;
-    const timer = window.setInterval(() => refresh(), 12000);
+    const interval = user.role === 'driver' ? 2000 : user.role === 'customer' ? 5000 : 10000;
+    const timer = window.setInterval(() => refresh(), interval);
     return () => window.clearInterval(timer);
   }, [user]);
 
@@ -379,6 +383,7 @@ function App() {
         method: 'POST',
         body: JSON.stringify({ tripType, pickup, destination, date, time, hours, vehicle, city })
       });
+      // Refresh immediately so both customer and driver see the new booking without waiting
       await refresh();
       setPage('Your trips');
       setModal('');
@@ -609,7 +614,7 @@ function App() {
 
             {user ? (
               <button className="user-avatar-btn" onClick={() => flash(`${user.name} · ${user.role}`)}>
-                {user.name[0]}
+                {user.name[0].toUpperCase()}
               </button>
             ) : (
               <button className="signin-header-btn" onClick={() => setModal('auth')}>
@@ -1326,6 +1331,8 @@ function TripsPage({ bookings, filter, setFilter, update, onRate, onPay, onTrack
 function DriverPage({ bookings, update, user, onDutyChange, flash }: any) {
   const [available, setAvailable] = useState<boolean>(user?.available !== false);
   const [dutyBusy, setDutyBusy] = useState(false);
+  const prevSearching = useRef(0);
+  const newRequestRef = useRef<HTMLDivElement>(null);
 
   const toggleDuty = async () => {
     setDutyBusy(true);
@@ -1347,6 +1354,17 @@ function DriverPage({ bookings, update, user, onDutyChange, flash }: any) {
   const own = bookings.filter(
     (b: Booking) => b.driverId === user?.id || (available && ['Searching'].includes(b.status))
   );
+  const newRequests = own.filter((b: Booking) => b.status === 'Searching');
+
+  // Flash notification and scroll when a new Searching request arrives
+  useEffect(() => {
+    const count = newRequests.length;
+    if (count > prevSearching.current && prevSearching.current >= 0) {
+      flash?.('🔔 New ride request! Tap Accept to take it.');
+      setTimeout(() => newRequestRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 150);
+    }
+    prevSearching.current = count;
+  }, [newRequests.length]);
 
   const completed = bookings.filter((b: Booking) => b.driverId === user?.id && b.status === 'Trip completed');
   const totalEarnings = completed.reduce((s: number, b: Booking) => s + b.payout, 0);
@@ -1426,12 +1444,12 @@ function DriverPage({ bookings, update, user, onDutyChange, flash }: any) {
         <div className="panel empty-state">
           <CarFront size={42} className="empty-icon" />
           <h3>All caught up!</h3>
-          <p>New booking requests in {user?.city || 'your city'} will show up here automatically.</p>
+          <p>New booking requests in {user?.city || 'your city'} will appear here automatically.</p>
         </div>
       ) : (
-        <div className="trips-cards-list">
+        <div className="trips-cards-list" ref={newRequestRef}>
           {own.map((b: Booking) => (
-            <div className="panel trip-card" key={b.id}>
+            <div className={`panel trip-card ${b.status === 'Searching' ? 'new-request-card' : ''}`} key={b.id}>
               <div className="trip-card-header">
                 <div>
                   <span className="trip-id-tag">{b.id}</span>

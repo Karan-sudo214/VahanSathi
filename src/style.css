@@ -213,11 +213,20 @@ nav{display:flex;flex-direction:column;gap:2px;overflow-y:auto;flex:1}
 }
 .city-pin{color:var(--teal);flex-shrink:0}
 .city-pill select{border:none;background:transparent;font:inherit;color:inherit;font-weight:600;cursor:pointer;outline:none}
-.user-avatar-btn{
-  width:34px;height:34px;border-radius:50%;
-  background:var(--ink);color:#fff;
-  font-weight:700;font-size:13px;
-  display:grid;place-items:center;cursor:pointer;flex-shrink:0;
+.user-avatar-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--ink);
+  color: #fff;
+  font-weight: 800;
+  font-size: 14px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  /* Visible ring so it stands out on any bg */
+  box-shadow: 0 0 0 2px #fff, 0 0 0 3.5px var(--ink);
 }
 .signin-header-btn{
   background:var(--ink);color:#fff;
@@ -682,6 +691,29 @@ nav{display:flex;flex-direction:column;gap:2px;overflow-y:auto;flex:1}
   font-size:14px;font-weight:700;border-radius:var(--r-s);
 }
 .payout-highlight{font-size:16px;color:var(--green);font-weight:800}
+/* -- NEW INCOMING REQUEST — driver can't miss it ------------- */
+.new-request-card {
+  border: 2px solid #16a34a !important;
+  position: relative;
+  animation: reqPulse 1.6s ease-in-out 4;
+}
+.new-request-card::after {
+  content: 'NEW REQUEST';
+  position: absolute;
+  top: 0; right: 14px;
+  background: #16a34a;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .07em;
+  padding: 3px 10px;
+  border-radius: 0 0 8px 8px;
+  pointer-events: none;
+}
+@keyframes reqPulse {
+  0%,100% { box-shadow: 0 0 0 0 rgba(22,163,74,0); }
+  50%     { box-shadow: 0 0 0 10px rgba(22,163,74,.18); }
+}
 .pending-badge{
   display:inline-flex;align-items:center;gap:5px;
   font-size:11px;font-weight:700;
