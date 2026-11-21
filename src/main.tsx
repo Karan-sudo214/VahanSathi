@@ -2357,7 +2357,7 @@ function VoiceAgentModal({ onClose, onApply, onBook, city }: { onClose: () => vo
           const transcript = result?.[0]?.transcript;
           if (transcript) parts.push(transcript);
         }
-        if (parts.length) setFinal(parts.join(' ').replace(/\\s+/g, ' ').trim());
+        if (parts.length) setFinal(parts.join(' ').replace(/\s+/g, ' ').trim());
       };
       recognition.onerror = (event: any) => {
         if (recognitionRef.current === recognition) recognitionRef.current = null;
