@@ -15,7 +15,7 @@ const secret = process.env.JWT_SECRET || (process.env.NODE_ENV === 'production' 
 if (!secret) throw new Error('JWT_SECRET must be configured before production startup.');
 
 app.use(cors({ origin: process.env.CLIENT_ORIGIN || '*' }));
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: '1mb', verify: (req, res, buffer) => { req.rawBody = Buffer.from(buffer); } }));
 
 const dataPath = path.resolve(process.env.DATA_PATH || './data/app.json');
 fs.mkdirSync(path.dirname(dataPath), { recursive: true });
@@ -754,6 +754,49 @@ app.post('/api/payments/razorpay/order', auth, roles('customer', 'admin'), async
   await persistItem('app_payments', paymentRecord.id, paymentRecord);
   await save();
   res.status(201).json({ keyId, order: { id: order.id, amount: order.amount, currency: order.currency } });
+}));
+
+// Razorpay webhooks provide a server-to-server confirmation if the customer closes the browser.
+app.post('/api/payments/razorpay/webhook', asyncRoute(async (req, res) => {
+  const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
+  if (!webhookSecret) return res.status(503).json({ error: 'Razorpay webhook is not configured.' });
+  const supplied = String(req.headers['x-razorpay-signature'] || '');
+  const expected = createHmac('sha256', webhookSecret).update(req.rawBody || Buffer.alloc(0)).digest('hex');
+  const expectedBuffer = Buffer.from(expected, 'hex');
+  const suppliedBuffer = Buffer.from(supplied, 'hex');
+  if (!supplied || expectedBuffer.length !== suppliedBuffer.length || !timingSafeEqual(expectedBuffer, suppliedBuffer)) {
+    return res.status(400).json({ error: 'Invalid webhook signature.' });
+  }
+
+  const event = req.body?.event;
+  const entity = req.body?.payload?.payment?.entity || req.body?.payload?.order?.entity;
+  if (!entity?.order_id) return res.json({ ok: true, ignored: true });
+  const record = data.payments.find((p) => p.provider === 'razorpay' && p.orderId === entity.order_id);
+  if (!record) return res.json({ ok: true, ignored: true });
+  const booking = data.bookings.find((item) => item.id === record.bookingId);
+  if (!booking) return res.json({ ok: true, ignored: true });
+
+  if (event === 'payment.captured' || event === 'order.paid') {
+    const payment = req.body?.payload?.payment?.entity;
+    if (payment && Number(payment.amount) === Number(record.amount) && payment.currency === 'INR') {
+      record.status = 'paid';
+      record.paymentId = payment.id;
+      record.paidAt = new Date().toISOString();
+      record.method = payment.method || 'Razorpay';
+      booking.payment_status = 'Paid';
+      booking.paidAt = record.paidAt;
+      booking.payment_method = record.method;
+      await persistItem('app_payments', record.id, record);
+      await persistItem('app_bookings', booking.id, booking);
+      await save();
+    }
+  } else if (event === 'payment.failed' && record.status !== 'paid') {
+    record.status = 'failed';
+    record.failureAt = new Date().toISOString();
+    await persistItem('app_payments', record.id, record);
+    await save();
+  }
+  res.json({ ok: true });
 }));
 
 app.post('/api/payments/razorpay/verify', auth, roles('customer', 'admin'), asyncRoute(async (req, res) => {
