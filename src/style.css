@@ -1833,3 +1833,36 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   font-size: 19px;
   font-weight: 800;
 }
+
+
+/* Advanced booking preferences, CashCircle and live GPS */
+.booking-preferences-panel,.driver-style-profile{margin:22px 0;padding:18px;border:1px solid #dce7f2;border-radius:17px;background:linear-gradient(145deg,#fbfdff,#f5f9ff)}
+.booking-preferences-panel h3,.driver-style-profile h3{margin:0 0 7px;color:#172b45;font-size:15px}
+.booking-preferences-panel>p,.driver-style-profile>p{margin:0 0 14px;color:#718198;font-size:12px;line-height:1.6}
+.driver-style-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin:12px 0 20px}
+.driver-style-option{display:flex;flex-direction:column;align-items:flex-start;gap:4px;min-height:66px;padding:11px 12px;border:1px solid #dce5ef;border-radius:12px;background:#fff;color:#26364d;text-align:left;cursor:pointer}
+.driver-style-option b{font-size:12px}.driver-style-option small{color:#718198;font-size:10px;line-height:1.4}
+.driver-style-option.selected{border-color:#2873b8;background:#edf6ff;box-shadow:0 0 0 2px rgba(40,104,182,.08)}
+.payment-choice-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.payment-choice{display:flex;align-items:flex-start;gap:10px;padding:13px;border:1px solid #dce5ef;border-radius:13px;background:#fff;color:#26364d;text-align:left;cursor:pointer}
+.payment-choice.selected{border-color:#0d8278;background:#effaf8;box-shadow:0 0 0 2px rgba(13,130,120,.08)}
+.payment-choice svg{flex:0 0 auto;color:#17618f}.payment-choice span{display:flex;flex-direction:column;gap:4px}.payment-choice b{font-size:12px}.payment-choice small{font-size:10px;line-height:1.4;color:#718198}
+.cash-reward-note{display:flex;flex-direction:column;gap:4px;margin-top:12px;padding:12px 14px;border-radius:12px;background:#fff8e9;border:1px solid #f2dfb7;color:#7a5410;font-size:11px;line-height:1.5}
+.cashcircle-summary{display:flex;align-items:center;gap:12px;margin:12px 0 18px;padding:14px 16px;border:1px solid #f1dfb8;border-radius:15px;background:linear-gradient(110deg,#fffaf0,#fff5df)}
+.cashcircle-icon{display:grid;place-items:center;width:38px;height:38px;border-radius:12px;background:#f8e8bf;color:#845a10;font-size:18px;font-weight:900}
+.cashcircle-summary b{display:block;color:#60440e;font-size:13px}.cashcircle-summary small{display:block;margin-top:3px;color:#8a6c32;font-size:11px}
+.driver-badges-panel{margin:14px 0 18px}.driver-badge-list{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}
+.driver-achievement-badge{display:inline-flex;align-items:center;gap:6px;padding:7px 10px;border:1px solid #cfe4dc;border-radius:99px;background:#effaf5;color:#17634d;font-size:11px;font-weight:800}
+.driver-badges-panel>small{color:#718198;font-size:11px}.muted-note{color:#718198;font-size:12px}
+.real-tracking-modal{width:min(100% - 24px,650px);max-height:92dvh;overflow:auto}
+.live-location-map{display:block;width:100%;height:330px;border:0;border-radius:15px;background:#e8eef4;margin:16px 0}
+.live-map-placeholder{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:9px;height:260px;margin:16px 0;padding:22px;border:1px dashed #b9cadd;border-radius:15px;background:#f4f8fc;color:#315b7c;text-align:center}
+.live-map-placeholder span{max-width:280px;color:#718198;font-size:12px;line-height:1.5}
+.live-location-meta{display:flex;justify-content:space-between;align-items:center;gap:10px;color:#166b58;font-size:11px;font-weight:800}
+.live-location-meta small{color:#718198;font-weight:500}
+.gps-live-dot{display:inline-block;width:8px;height:8px;margin-right:7px;border-radius:50%;background:#16a36e;box-shadow:0 0 0 4px rgba(22,163,110,.12)}
+.gps-accuracy-note,.gps-privacy-note{color:#718198;font-size:11px;line-height:1.5}
+.gps-privacy-note{display:flex;align-items:center;gap:7px;padding-top:10px;border-top:1px solid #e6edf4}
+.tracking-route-meta{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:16px 0}
+.tracking-route-meta>div{display:flex;flex-direction:column;gap:5px;min-width:0}.tracking-route-meta small{font-size:9px;letter-spacing:.1em;color:#7b8da1;font-weight:800}.tracking-route-meta b{font-size:12px;line-height:1.5;color:#233c56;overflow-wrap:anywhere}
+@media(max-width:560px){.driver-style-options,.payment-choice-grid{grid-template-columns:1fr}.booking-preferences-panel,.driver-style-profile{padding:14px}.live-location-map{height:270px}.tracking-route-meta{grid-template-columns:1fr}}
