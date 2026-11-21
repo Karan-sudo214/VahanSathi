@@ -1074,3 +1074,151 @@ img{max-width:100%}
   0%,100% { opacity: 1; transform: scale(1); }
   50%     { opacity: .4; transform: scale(.7); }
 }
+
+/* --- VOICE AGENT ----------------------------------------------- */
+.va-header {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  margin-bottom: 16px;
+}
+.va-orb {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: #eff6ff;
+  color: var(--blue);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  transition: background .2s;
+}
+.va-orb-pulse {
+  background: #dcfce7;
+  color: #15803d;
+  animation: orbPulse 1s ease-in-out infinite;
+  box-shadow: 0 0 0 0 rgba(21,128,61,.3);
+}
+@keyframes orbPulse {
+  0%,100% { box-shadow: 0 0 0 0 rgba(21,128,61,.3); }
+  50%     { box-shadow: 0 0 0 10px rgba(21,128,61,0); }
+}
+.va-orb-spin {
+  background: #fef9c3;
+  color: #a16207;
+}
+
+.va-transcript {
+  min-height: 72px;
+  padding: 12px 14px;
+  background: var(--t0);
+  border: 1.5px solid var(--border);
+  border-radius: var(--r-s);
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--t7);
+  margin-bottom: 12px;
+  word-break: break-word;
+  position: relative;
+}
+.va-placeholder { color: var(--t4); font-style: italic; }
+.va-cursor {
+  display: inline-block;
+  color: var(--blue);
+  animation: blink .7s step-end infinite;
+  font-weight: 300;
+  margin-left: 2px;
+}
+@keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
+
+.va-err {
+  font-size: 13px;
+  color: var(--red);
+  background: var(--red-lt);
+  border: 1px solid var(--red-bd);
+  padding: 9px 12px;
+  border-radius: 8px;
+  margin-bottom: 10px;
+}
+
+.va-mic-btn {
+  width: 100%;
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  border-radius: var(--r-s);
+  font-size: 15px;
+  font-weight: 700;
+  background: var(--ink);
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(12,26,46,.2);
+  transition: background .15s, transform .1s;
+}
+.va-mic-btn:hover { background: var(--ink-2); }
+.va-mic-btn:active { transform: scale(.97); }
+.va-mic-active {
+  background: #15803d;
+  box-shadow: 0 0 0 0 rgba(21,128,61,.4);
+  animation: micPulse 1.2s ease-in-out infinite;
+}
+@keyframes micPulse {
+  0%,100% { box-shadow: 0 0 0 0 rgba(21,128,61,.4); }
+  50%     { box-shadow: 0 0 0 12px rgba(21,128,61,0); }
+}
+
+.va-text-input {
+  width: 100%;
+  padding: 11px 13px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--r-s);
+  font-size: 14px;
+  color: var(--t7);
+  background: #fff;
+  resize: none;
+  transition: border-color .18s;
+}
+.va-text-input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(26,74,138,.1); outline: none; }
+
+.va-processing {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--t6);
+}
+.va-spinner {
+  width: 20px;
+  height: 20px;
+  border: 2.5px solid var(--t2);
+  border-top-color: var(--blue);
+  border-radius: 50%;
+  animation: spin .6s linear infinite;
+  flex-shrink: 0;
+}
+
+.va-confirm-card {
+  background: var(--t0);
+  border: 1.5px solid var(--border);
+  border-radius: var(--r);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.va-confirm-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border2);
+  font-size: 13px;
+  gap: 12px;
+}
+.va-confirm-row:last-child { border-bottom: none; }
+.va-confirm-row span { color: var(--t5); flex-shrink: 0; }
+.va-confirm-row b { color: var(--t7); font-weight: 700; text-align: right; }
