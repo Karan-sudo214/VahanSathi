@@ -622,8 +622,9 @@ app.get('/api/health', (_, res) => {
     integrations: {
       database: databaseReady,
       databaseConfigured: !!neonPool,
-      razorpay: !!process.env.RAZORPAY_KEY_ID,
-      voice: !!process.env.ELEVENLABS_API_KEY
+      razorpay: !!(process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET),
+      voice: true,
+      voiceMode: 'browser-native'
     }
   });
 });
@@ -702,6 +703,102 @@ app.post('/api/fare/estimate', asyncRoute(async (req, res) => {
 }));
 
 // Bookings
+// Razorpay Checkout: create orders on the server and verify every payment before marking a booking paid.
+app.post('/api/payments/razorpay/order', auth, roles('customer', 'admin'), asyncRoute(async (req, res) => {
+  const keyId = process.env.RAZORPAY_KEY_ID;
+  const keySecret = process.env.RAZORPAY_KEY_SECRET;
+  if (!keyId || !keySecret) return res.status(503).json({ error: 'Razorpay is not configured yet. Please contact VaahanSathi support.' });
+  const booking = data.bookings.find((item) => item.id === String(req.body?.bookingId || ''));
+  if (!booking) return res.status(404).json({ error: 'Booking not found.' });
+  if (req.user.role !== 'admin' && booking.userId !== req.user.id) return res.status(403).json({ error: 'You can only pay for your own booking.' });
+  if (!['Trip completed', 'Rated'].includes(booking.status)) return res.status(409).json({ error: 'Payment is available after the trip is completed.' });
+  if (booking.payment_status === 'Paid') return res.status(409).json({ error: 'This booking is already paid.' });
+  const amount = Math.round(Number(booking.total) * 100);
+  if (!Number.isSafeInteger(amount) || amount < 100) return res.status(400).json({ error: 'The booking amount is invalid.' });
+
+  const existing = data.payments.find((p) => p.bookingId === booking.id && p.provider === 'razorpay' && p.status === 'created');
+  if (existing && existing.createdAt && Date.now() - new Date(existing.createdAt).getTime() < 10 * 60 * 1000) {
+    return res.json({ keyId, order: { id: existing.orderId, amount: existing.amount, currency: existing.currency } });
+  }
+
+  const providerResponse = await fetch('https://api.razorpay.com/v1/orders', {
+    method: 'POST',
+    headers: {
+      Authorization: 'Basic ' + Buffer.from(keyId + ':' + keySecret).toString('base64'),
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      amount,
+      currency: 'INR',
+      receipt: booking.id.slice(0, 40),
+      notes: { booking_id: booking.id, customer_id: req.user.id }
+    })
+  });
+  const order = await providerResponse.json().catch(() => ({}));
+  if (!providerResponse.ok || !order.id) {
+    console.error('Razorpay order creation failed:', providerResponse.status, order?.error?.description || 'unknown provider error');
+    return res.status(502).json({ error: 'Razorpay could not create the payment order. Please try again.' });
+  }
+  const paymentRecord = {
+    id: randomUUID(),
+    provider: 'razorpay',
+    bookingId: booking.id,
+    userId: req.user.id,
+    orderId: order.id,
+    amount: order.amount,
+    currency: order.currency,
+    status: 'created',
+    createdAt: new Date().toISOString()
+  };
+  data.payments.push(paymentRecord);
+  await persistItem('app_payments', paymentRecord.id, paymentRecord);
+  await save();
+  res.status(201).json({ keyId, order: { id: order.id, amount: order.amount, currency: order.currency } });
+}));
+
+app.post('/api/payments/razorpay/verify', auth, roles('customer', 'admin'), asyncRoute(async (req, res) => {
+  const keyId = process.env.RAZORPAY_KEY_ID;
+  const keySecret = process.env.RAZORPAY_KEY_SECRET;
+  if (!keyId || !keySecret) return res.status(503).json({ error: 'Razorpay is not configured yet.' });
+  const { bookingId, razorpay_order_id: orderId, razorpay_payment_id: paymentId, razorpay_signature: signature } = req.body || {};
+  if (![bookingId, orderId, paymentId, signature].every((value) => typeof value === 'string' && value.trim())) {
+    return res.status(400).json({ error: 'Payment verification details are incomplete.' });
+  }
+  const booking = data.bookings.find((item) => item.id === bookingId);
+  if (!booking) return res.status(404).json({ error: 'Booking not found.' });
+  if (req.user.role !== 'admin' && booking.userId !== req.user.id) return res.status(403).json({ error: 'You can only verify your own booking payment.' });
+  const record = data.payments.find((p) => p.provider === 'razorpay' && p.bookingId === booking.id && p.orderId === orderId);
+  if (!record) return res.status(404).json({ error: 'Payment order was not found for this booking.' });
+  if (record.status === 'paid' && booking.payment_status === 'Paid') return res.json({ ok: true, payment_status: 'Paid' });
+
+  const expected = createHmac('sha256', keySecret).update(orderId + '|' + paymentId).digest('hex');
+  const expectedBuffer = Buffer.from(expected, 'hex');
+  const suppliedBuffer = Buffer.from(signature, 'hex');
+  if (expectedBuffer.length !== suppliedBuffer.length || !timingSafeEqual(expectedBuffer, suppliedBuffer)) {
+    return res.status(400).json({ error: 'Payment signature could not be verified.' });
+  }
+
+  const providerResponse = await fetch('https://api.razorpay.com/v1/payments/' + encodeURIComponent(paymentId), {
+    headers: { Authorization: 'Basic ' + Buffer.from(keyId + ':' + keySecret).toString('base64') }
+  });
+  const payment = await providerResponse.json().catch(() => ({}));
+  if (!providerResponse.ok || payment.order_id !== orderId || Number(payment.amount) !== Number(record.amount) || payment.currency !== 'INR' || payment.status !== 'captured') {
+    return res.status(409).json({ error: 'Razorpay has not confirmed a captured payment for this booking yet. Do not pay again; contact support if your bank was debited.' });
+  }
+
+  record.status = 'paid';
+  record.paymentId = paymentId;
+  record.paidAt = new Date().toISOString();
+  record.method = payment.method || 'Razorpay';
+  booking.payment_status = 'Paid';
+  booking.paidAt = record.paidAt;
+  booking.payment_method = record.method;
+  await persistItem('app_payments', record.id, record);
+  await persistItem('app_bookings', booking.id, booking);
+  await save();
+  res.json({ ok: true, payment_status: 'Paid', bookingId: booking.id });
+}));
+
 app.get('/api/bookings', auth, (req, res) => {
   let rows = [...data.bookings];
   const currentUser = data.users.find((u) => u.id === req.user.id);
