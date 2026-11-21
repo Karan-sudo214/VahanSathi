@@ -1320,7 +1320,38 @@ const VOICE_PLACE_ALIASES = [
   { city: 'Gurugram', name: 'Dwarka Expressway, Gurugram', aliases: ['dwarka expressway'] },
   { city: 'Gurugram', name: 'Badshahpur, Gurugram', aliases: ['badshahpur'] },
   { city: 'Gurugram', name: 'IMT Manesar, Gurugram', aliases: ['imt manesar', 'manesar'] },
-  { city: 'Gurugram', name: 'Gwal Pahari, Gurugram', aliases: ['gwal pahari'] }
+  { city: 'Gurugram', name: 'Gwal Pahari, Gurugram', aliases: ['gwal pahari'] },
+  { city: 'Gurugram', name: 'Sushant Lok Phase 1, Gurugram', aliases: ['sushant lok phase 1', 'sushant lok'] },
+  { city: 'Gurugram', name: 'New Palam Vihar, Gurugram', aliases: ['new palam vihar'] },
+  { city: 'Gurugram', name: 'Sector 70A, Gurugram', aliases: ['sector 70a'] },
+  { city: 'Gurugram', name: 'Sector 72A, Gurugram', aliases: ['sector 72a'] },
+  { city: 'Gurugram', name: 'Sector 74A, Gurugram', aliases: ['sector 74a'] },
+  { city: 'Gurugram', name: 'Sector 75, Gurugram', aliases: ['sector 75'] },
+  { city: 'Gurugram', name: 'Sector 87, Gurugram', aliases: ['sector 87'] },
+  { city: 'Gurugram', name: 'Sector 88, Gurugram', aliases: ['sector 88'] },
+  { city: 'Gurugram', name: 'Sector 89, Gurugram', aliases: ['sector 89'] },
+  { city: 'Gurugram', name: 'Sector 95, Gurugram', aliases: ['sector 95'] },
+  { city: 'Gurugram', name: 'Sector 99, Gurugram', aliases: ['sector 99'] },
+  { city: 'Gurugram', name: 'Sector 110A, Gurugram', aliases: ['sector 110a'] },
+  { city: 'Gurugram', name: 'Sector 113, Gurugram', aliases: ['sector 113'] },
+  { city: 'Gurugram', name: 'Sector 115, Gurugram', aliases: ['sector 115'] },
+  { city: 'Gurugram', name: 'Sector 5, Gurugram', aliases: ['sector 5 gurugram'] },
+  { city: 'Gurugram', name: 'Sector 7, Gurugram', aliases: ['sector 7 gurugram'] },
+  { city: 'Gurugram', name: 'Sector 17, Gurugram', aliases: ['sector 17 gurugram'] },
+  { city: 'Gurugram', name: 'Sector 18, Gurugram', aliases: ['sector 18 gurugram'] },
+  { city: 'Gurugram', name: 'Sector 27, Gurugram', aliases: ['sector 27 gurugram'] },
+  { city: 'Gurugram', name: 'Sector 28, Gurugram', aliases: ['sector 28 gurugram'] },
+  { city: 'Gurugram', name: 'Sector 39, Gurugram', aliases: ['sector 39 gurugram'] },
+  { city: 'Gurugram', name: 'Sector 44, Gurugram', aliases: ['sector 44 gurugram'] },
+  { city: 'Gurugram', name: 'Sector 51, Gurugram', aliases: ['sector 51 gurugram'] },
+  { city: 'Gurugram', name: 'Sector 61, Gurugram', aliases: ['sector 61 gurugram'] },
+  { city: 'Gurugram', name: 'Sector 64, Gurugram', aliases: ['sector 64 gurugram'] },
+  { city: 'Gurugram', name: 'Sector 68, Gurugram', aliases: ['sector 68 gurugram'] },
+  { city: 'Gurugram', name: 'Sector 80, Gurugram', aliases: ['sector 80 gurugram'] },
+  { city: 'Gurugram', name: 'Sector 81, Gurugram', aliases: ['sector 81 gurugram'] },
+  { city: 'Gurugram', name: 'Sector 94, Gurugram', aliases: ['sector 94 gurugram'] },
+  { city: 'Gurugram', name: 'Sector 101, Gurugram', aliases: ['sector 101 gurugram'] },
+  { city: 'Gurugram', name: 'Sector 114, Gurugram', aliases: ['sector 114 gurugram'] },
 ];
 
 // Add the commonly used Gurugram sectors to voice place matching.
@@ -1333,11 +1364,11 @@ for (const sector of [9, 10, 14, 15, 21, 22, 23, 29, 31, 38, 40, 41, 42, 43, 45,
 
 function normaliseVoicePlace(value) {
   if (!value) return value;
-  const input = ' ' + String(value).toLocaleLowerCase('en-IN').replace(/[^a-z0-9\\u0900-\\u097F]+/gi, ' ').trim() + ' ';
+  const input = ' ' + String(value).toLocaleLowerCase('en-IN').replace(/[^a-z0-9\u0900-\u097F]+/gi, ' ').trim() + ' ';
   const matches = [];
   for (const place of VOICE_PLACE_ALIASES) {
     for (const alias of place.aliases) {
-      const needle = ' ' + alias.toLocaleLowerCase('en-IN').replace(/[^a-z0-9\\u0900-\\u097F]+/gi, ' ').trim() + ' ';
+      const needle = ' ' + alias.toLocaleLowerCase('en-IN').replace(/[^a-z0-9\u0900-\u097F]+/gi, ' ').trim() + ' ';
       if (input.includes(needle)) matches.push({ name: place.name, length: needle.length });
     }
   }
