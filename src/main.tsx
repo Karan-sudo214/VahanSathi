@@ -2213,10 +2213,10 @@ function VoiceAgentModal({ onClose, onApply, onBook, city }: { onClose: () => vo
     { label: 'हिन्दी', code: 'hi-IN', srv: 'hi-IN', ph: 'उदा.: कल सुबह कनॉट प्लेस से एयरपोर्ट जाना है' },
     { label: 'Hinglish', code: 'en-IN', srv: 'hi-hinglish', ph: 'e.g. Kal subah Connaught Place se airport jaana hai' },
   ];
-  const [lang, setLang] = React.useState(LANGS[0]);
+  const [lang, setLang] = React.useState(() => { const saved = localStorage.getItem('vs_language'); return LANGS[saved === 'hi' ? 1 : saved === 'hinglish' ? 2 : 0]; });
 
   // Auto-start listening when modal opens
-  useEffect(() => { startListening(); return () => stopListening(); }, []);
+  useEffect(() => { startListening(); return () => stopListening(); }, [lang]);
 
   function stopListening() {
     clearTimeout(silenceTimer.current);
@@ -2324,7 +2324,7 @@ function VoiceAgentModal({ onClose, onApply, onBook, city }: { onClose: () => vo
         <div className="va-lang-row">
           {LANGS.map(l => (
             <button key={l.label} className={"va-lang-btn" + (lang.label === l.label ? " active" : "")}
-              onClick={() => { setLang(l); setErr(""); }}>{l.label}</button>
+              onClick={() => { stopListening(); setLang(l); setErr(""); }}>{l.label}</button>
           ))}
         </div>
         <div className="va-transcript" aria-live="polite">
