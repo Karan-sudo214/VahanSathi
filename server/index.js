@@ -613,9 +613,11 @@ app.get('/api/health', (_, res) => {
   res.json({
     ok: true,
     service: 'VaahanSathi',
-    mode: databaseReady ? 'neon-postgres' : process.env.NODE_ENV === 'production' ? 'storage-initializing' : 'local-development',
+    mode: databaseReady ? 'neon-postgres' : DATABASE_URL ? 'database-unavailable' : process.env.NODE_ENV === 'production' ? 'local-json-fallback' : 'local-development',
     database: databaseReady,
     databaseConfigured: !!neonPool,
+    persistentStorage: databaseReady,
+    degraded: !databaseReady,
     error: databaseError || null,
     integrations: {
       database: databaseReady,
