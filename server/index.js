@@ -855,9 +855,10 @@ function finalizeCashSettlement(booking) {
     booking.cashDispute = { customerAmount, driverAmount, detectedAt: new Date().toISOString() };
     return false;
   }
-  if (customerAmount < Number(booking.total || 0)) {
-    booking.payment_status = 'Partially paid · Cash';
-    booking.cashBalanceDue = Number(booking.total || 0) - customerAmount;
+  if (customerAmount !== Number(booking.total || 0)) {
+    booking.payment_status = 'Cash amount mismatch · under review';
+    booking.cashBalanceDue = Math.max(0, Number(booking.total || 0) - customerAmount);
+    booking.cashDispute = { customerAmount, driverAmount, expectedFare: Number(booking.total || 0), detectedAt: new Date().toISOString() };
     return false;
   }
   booking.payment_status = 'Paid · Cash';
@@ -905,6 +906,7 @@ app.post('/api/payments/cash/driver-confirm', auth, roles('driver'), asyncRoute(
   if (!Number.isSafeInteger(amount) || amount < 0 || amount > 1000000) return res.status(400).json({ error: 'Enter the exact amount of cash received in whole rupees.' });
   if (!/^\d{6}$/.test(pin)) return res.status(400).json({ error: 'Enter the customer's 6-digit cash confirmation PIN.' });
   if (booking.cashDriverConfirmed) return res.status(409).json({ error: 'Your cash receipt has already been submitted.' });
+  if (booking.cashPinLockedAt) return res.status(423).json({ error: 'Cash PIN is locked. Contact support.' });
   const expected = createHmac('sha256', secret).update(String(booking.cashPin || '')).digest();
   const supplied = createHmac('sha256', secret).update(pin).digest();
   if (!booking.cashPin || !timingSafeEqual(expected, supplied)) {
@@ -914,7 +916,6 @@ app.post('/api/payments/cash/driver-confirm', auth, roles('driver'), asyncRoute(
     await save();
     return res.status(booking.cashPinAttempts >= 5 ? 423 : 400).json({ error: booking.cashPinAttempts >= 5 ? 'Cash PIN locked after too many attempts. Contact support.' : 'Cash PIN is incorrect.' });
   }
-  if (booking.cashPinLockedAt) return res.status(423).json({ error: 'Cash PIN is locked. Contact support.' });
   booking.cashDriverAmount = amount;
   booking.cashDriverConfirmed = true;
   booking.cashPinVerifiedAt = new Date().toISOString();
@@ -1230,8 +1231,9 @@ app.post(
     await persistItem('app_history', historyItem.id, historyItem);
     await save();
 
+    const customerBooking = { ...b, cashPin: undefined };
     res.status(201).json({
-      booking: b,
+      booking: customerBooking,
       message: availableDriver
         ? `${availableDriver.name} has been assigned to your ride.`
         : 'Your request is dispatched to verified drivers in your city.'
