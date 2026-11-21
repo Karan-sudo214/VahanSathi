@@ -830,6 +830,7 @@ async function recordCashEvent(booking, actor, action, amount, details = {}) {
     bookingId: booking.id,
     actorId: actor.id,
     actorRole: actor.role,
+    actorName: actor.name || 'Account user',
     action,
     amount: Number(amount),
     currency: 'INR',
