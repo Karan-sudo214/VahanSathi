@@ -956,6 +956,7 @@ function App() {
               onAuth={() => setModal('auth')}
               storageReady={storageReady}
               fareError={fareError}
+              onDemoPayment={() => setModal('payment-demo')}
             />
           )}
 
@@ -1026,6 +1027,8 @@ function App() {
           storageReady={storageReady}
         />
       )}
+
+      {modal === 'payment-demo' && <DemoPaymentModal onClose={() => setModal('')} />}
 
       {modal.startsWith('payment:') && (
         <CheckoutModal
@@ -1202,6 +1205,91 @@ const SERVICE_LOCATIONS: Record<string, string[]> = {
 };
 
 // ----------------- Booking Page Component -----------------
+
+function DemoPaymentModal({ onClose }: { onClose: () => void }) {
+  const [amount, setAmount] = useState('599');
+  const [method, setMethod] = useState('UPI');
+  const [scenario, setScenario] = useState('success');
+  const [result, setResult] = useState('');
+  const [reference, setReference] = useState('');
+  const numericAmount = Math.max(0, Math.min(500000, Math.round(Number(amount) || 0)));
+  const driverShare = Math.round(numericAmount * 0.8);
+  const platformShare = numericAmount - driverShare;
+
+  const runDemo = () => {
+    if (numericAmount < 1) return;
+    setReference('VS-DEMO-' + Date.now().toString().slice(-8));
+    setResult(scenario);
+  };
+
+  return (
+    <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="modal" role="dialog" aria-modal="true" aria-labelledby="demo-payment-title" style={{width:'min(560px, 100%)',maxHeight:'90vh',overflowY:'auto'}}>
+        <button className="modal-close-btn" onClick={onClose} aria-label="Close"><X size={18}/></button>
+        <div className="modal-brand"><CreditCard size={24}/><span>VaahanSathi Payments</span></div>
+        <span className="eyebrow">INTERACTIVE PAYMENT SANDBOX</span>
+        <h2 id="demo-payment-title" style={{marginTop:8}}>Online payment demo</h2>
+        <p className="modal-sub">Preview how a payment amount is recorded and how an illustrative driver/platform split is calculated.</p>
+        <div style={{padding:12,borderRadius:12,background:'#fff7ed',border:'1px solid #fed7aa',color:'#9a3412',fontSize:12,fontWeight:700,marginBottom:16}}>
+          DEMO ONLY — no money is charged, transferred, settled or sent to a bank account. This does not connect to Razorpay.
+        </div>
+        <div className="field-group" style={{marginBottom:12}}>
+          <span>Choose a sample amount</span>
+          <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+            {['599','927','1500','2500'].map((v) => <button key={v} type="button" className={amount===v?'primary-btn-sm':'action-btn'} onClick={() => {setAmount(v);setResult('');}}>{money(Number(v))}</button>)}
+          </div>
+          <input aria-label="Custom payment amount in rupees" type="number" min="1" max="500000" value={amount} onChange={(e) => {setAmount(e.target.value);setResult('');}} placeholder="Enter custom amount" />
+          <small>Enter any amount from ₹1 to ₹5,00,000.</small>
+        </div>
+        <div className="field-group" style={{marginBottom:12}}>
+          <span>Demo payment method</span>
+          <select value={method} onChange={(e) => {setMethod(e.target.value);setResult('');}}>
+            <option>UPI</option><option>Debit card</option><option>Credit card</option><option>Net banking</option><option>Wallet</option>
+          </select>
+        </div>
+        <div className="field-group" style={{marginBottom:14}}>
+          <span>Simulate gateway response</span>
+          <select value={scenario} onChange={(e) => {setScenario(e.target.value);setResult('');}}>
+            <option value="success">Payment successful</option>
+            <option value="pending">Payment pending</option>
+            <option value="failed">Payment failed</option>
+          </select>
+        </div>
+        <div style={{border:'1px solid var(--line, #e2e8f0)',borderRadius:14,padding:14,marginBottom:14}}>
+          <div style={{display:'flex',justifyContent:'space-between',gap:10,marginBottom:12}}><b>Illustrative transfer breakdown</b><strong>{money(numericAmount)}</strong></div>
+          <div style={{display:'flex',justifyContent:'space-between',padding:'9px 0',borderBottom:'1px solid #e5e7eb'}}><span>Driver partner · 80%</span><b>{money(driverShare)}</b></div>
+          <div style={{display:'flex',justifyContent:'space-between',padding:'9px 0'}}><span>VaahanSathi · remaining 20%</span><b>{money(platformShare)}</b></div>
+          <div style={{height:10,display:'flex',overflow:'hidden',borderRadius:20,background:'#e5e7eb',marginTop:8}}>
+            <div style={{width:'80%',background:'#0d9488'}}/><div style={{width:'20%',background:'#64748b'}}/>
+          </div>
+          <small style={{display:'block',marginTop:8,color:'var(--t5,#64748b)'}}>Illustrative split only. Actual taxes, gateway fees, commissions and payout rules may differ.</small>
+        </div>
+        <button type="button" className="primary-btn-wide" style={{width:'100%',justifyContent:'center'}} disabled={numericAmount<1} onClick={runDemo}>
+          <Zap size={17}/> Run demo payment
+        </button>
+        {result && (
+          <div style={{marginTop:14,borderRadius:14,padding:14,border:'1px solid '+(result==='success'?'#86efac':result==='pending'?'#fcd34d':'#fca5a5'),background:result==='success'?'#f0fdf4':result==='pending'?'#fffbeb':'#fef2f2'}}>
+            <b style={{color:result==='success'?'#166534':result==='pending'?'#92400e':'#991b1b'}}>
+              {result==='success'?'Demo payment successful':result==='pending'?'Demo payment pending':'Demo payment failed'}
+            </b>
+            <p style={{fontSize:13,margin:'6px 0 10px',color:'#334155'}}>
+              {result==='success'?'The sandbox has simulated a successful gateway response. The split below is illustrative and no real settlement occurred.':result==='pending'?'The sandbox is waiting for a simulated gateway confirmation. No amount is treated as paid and no payout is released.':'The sandbox simulated a declined payment. No amount is treated as paid and no payout is released.'}
+            </p>
+            <div style={{display:'flex',justifyContent:'space-between',fontSize:13}}><span>Demo reference</span><b>{reference}</b></div>
+            <div style={{display:'flex',justifyContent:'space-between',fontSize:13,marginTop:6}}><span>Method</span><b>{method}</b></div>
+            <div style={{display:'flex',justifyContent:'space-between',fontSize:13,marginTop:6}}><span>Gateway amount</span><b>{money(numericAmount)}</b></div>
+            {result==='success' && <>
+              <div style={{display:'flex',justifyContent:'space-between',fontSize:13,marginTop:6}}><span>Driver payout (simulated)</span><b>{money(driverShare)}</b></div>
+              <div style={{display:'flex',justifyContent:'space-between',fontSize:13,marginTop:6}}><span>Platform share (simulated)</span><b>{money(platformShare)}</b></div>
+            </>}
+          </div>
+        )}
+        <button type="button" className="action-btn" style={{width:'100%',justifyContent:'center',marginTop:12}} onClick={() => {setResult('');setReference('');}}>Reset demo</button>
+      </div>
+    </div>
+  );
+}
+
 function BookingPage(p: any) {
   const clearFare = () => p.clearFare?.();
   return (
@@ -1360,6 +1448,7 @@ function BookingPage(p: any) {
               <button type="button" className={`payment-choice ${p.paymentMethod === 'online' ? 'selected' : ''}`} onClick={() => p.setPaymentMethod('online')}><CreditCard size={19}/><span><b>Pay online</b><small>UPI, cards and net banking after your trip</small></span></button>
               <button type="button" className={`payment-choice ${p.paymentMethod === 'cash' ? 'selected' : ''}`} onClick={() => p.setPaymentMethod('cash')}><IndianRupee size={19}/><span><b>Pay by cash</b><small>Pay the driver after your trip and earn CashCircle points</small></span></button>
             </div>
+            {p.paymentMethod === 'online' && <button type="button" className="secondary-btn" style={{width:'100%',justifyContent:'center',marginTop:10}} onClick={p.onDemoPayment}><CreditCard size={16}/> Preview online payment demo</button>}
             {p.paymentMethod === 'cash' && <div className="cash-reward-note"><b>CashCircle rewards</b><span>Earn 1 reward point for every ₹100 paid in cash. Points are added after both you and your driver confirm payment.</span></div>}
           </section>
 
