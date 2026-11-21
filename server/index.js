@@ -388,26 +388,35 @@ async function loadNeon() {
 }
 
 // ----------------- Helpers & Routes -----------------
-const safe = (u) => ({
-  id: u.id,
-  name: u.name,
-  email: u.email,
-  role: u.role,
-  phone: u.phone,
-  city: u.city,
-  vehicle: u.vehicle,
-  rating: u.rating,
-  trips: u.trips,
-  driverStyleTags: Array.isArray(u.driverStyleTags) ? u.driverStyleTags : ['friendly'],
-  cashRewardsPoints: Number(u.cashRewardsPoints || 0),
-  driverBadges: u.role === 'driver' ? [
-    ...(Number(u.trips || 0) >= 500 ? ['Elite Partner'] : Number(u.trips || 0) >= 100 ? ['Trusted Partner'] : []),
-    ...(Number(u.rating || 0) >= 4.8 ? ['5-Star Service'] : []),
-    ...(Number(u.trips || 0) >= 25 ? ['Road Ready'] : [])
-  ] : [],
-  verificationStatus: u.verificationStatus || 'verified',
-  adminRole: u.adminRole || (u.role === 'admin' ? 'operations_admin' : undefined)
-});
+const safe = (u) => {
+  const completedTrips = u.role === 'driver'
+    ? data.bookings.filter((booking) => booking.driverId === u.id && ['Trip completed', 'Rated'].includes(booking.status)).length
+    : Number(u.trips || 0);
+  const driverRatings = u.role === 'driver' ? data.ratings.filter((rating) => rating.driverId === u.id) : [];
+  const averageRating = driverRatings.length
+    ? Number((driverRatings.reduce((sum, rating) => sum + Number(rating.stars || 0), 0) / driverRatings.length).toFixed(1))
+    : Number(u.rating || 0);
+  return {
+    id: u.id,
+    name: u.name,
+    email: u.email,
+    role: u.role,
+    phone: u.phone,
+    city: u.city,
+    vehicle: u.vehicle,
+    rating: averageRating || u.rating,
+    trips: completedTrips,
+    driverStyleTags: Array.isArray(u.driverStyleTags) ? u.driverStyleTags : ['friendly'],
+    cashRewardsPoints: Number(u.cashRewardsPoints || 0),
+    driverBadges: u.role === 'driver' ? [
+      ...(completedTrips >= 500 ? ['Elite Partner'] : completedTrips >= 100 ? ['Trusted Partner'] : []),
+      ...(averageRating >= 4.8 ? ['5-Star Service'] : []),
+      ...(completedTrips >= 25 ? ['Road Ready'] : [])
+    ] : [],
+    verificationStatus: u.verificationStatus || 'verified',
+    adminRole: u.adminRole || (u.role === 'admin' ? 'operations_admin' : undefined)
+  };
+};
 
 async function auth(req, res, next) {
   try {
