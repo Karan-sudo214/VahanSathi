@@ -28,7 +28,13 @@ import {
   Wallet,
   X,
   Zap,
-  RotateCcw
+  RotateCcw,
+  AlertCircle,
+  Edit2,
+  Power,
+  FileText,
+  User as UserIcon,
+  Car
 } from 'lucide-react';
 import './style.css';
 
@@ -338,12 +344,12 @@ function App() {
     }
   };
 
-  const register = async (name: string, email: string, password: string, accountCity: string, role = 'customer') => {
+  const register = async (name: string, email: string, password: string, accountCity: string, phone = '', role = 'customer', vehicle = 'Sedan', licenseNumber = '') => {
     setBusy(true);
     try {
       const d = await api('/auth/register', {
         method: 'POST',
-        body: JSON.stringify({ name, email, password, city: accountCity, role })
+        body: JSON.stringify({ name, email, password, city: accountCity, role, phone, vehicle, licenseNumber })
       });
       localStorage.setItem('vs_token', d.token);
       localStorage.setItem('vs_user', JSON.stringify(d.user));
@@ -351,7 +357,10 @@ function App() {
       chooseCity(accountCity);
       setPage(d.user.role === 'driver' ? 'Requests' : 'Home');
       setModal('');
-      flash(`Account created! Welcome to VaahanSathi, ${d.user.name.split(' ')[0]}.`);
+      const msg = d.user.role === 'driver'
+        ? `Driver account created! Your profile is under review — you'll be verified within 24 hours.`
+        : `Account created! Welcome to VaahanSathi, ${d.user.name.split(' ')[0]}.`;
+      flash(msg);
     } catch (e: any) {
       flash(e.message);
     } finally {
@@ -787,23 +796,23 @@ function App() {
             />
           )}
 
-          {page === 'Requests' && <DriverPage bookings={bookings} update={updateStatus} user={user} />}
+          {page === 'Requests' && <DriverPage bookings={bookings} update={updateStatus} user={user} onDutyChange={(v: boolean) => setUser((u: any) => u ? {...u, available: v} : u)} flash={flash} />}
           {page === 'My trips' && <TripsPage bookings={bookings} filter={filter} setFilter={setFilter} update={updateStatus} onRate={(b: Booking) => setModal('rate:' + b.id)} onPay={(b: Booking) => setModal('payment:' + b.id)} onTrack={(b: Booking) => setModal('track:' + b.id)} onBook={() => setPage('Book a driver')} receipts={receipts} />}
           {page === 'Earnings' && <EarningsPage bookings={bookings} />}
           {page === 'Wallet' && <WalletPage receipts={receipts} bookings={bookings} onReceipt={downloadReceipt} />}
-          {page === 'Help' && <HelpPage flash={flash} />}
-          {page === 'Profile' && <DriverProfile user={user} />}
-          {page === 'Overview' && <LiveAdminPage bookings={bookings} focus="Overview" />}
-          {page === 'Live trips' && <LiveAdminPage bookings={bookings} focus="Trips" />}
-          {page === 'Bookings' && <AdminModulePage module="bookings" bookings={bookings} />}
-          {page === 'Drivers' && <LiveAdminPage bookings={bookings} focus="Drivers" />}
-          {page === 'Customers' && <AdminModulePage module="customers" bookings={bookings} />}
-          {page === 'Payments & Payouts' && <AdminModulePage module="payments" bookings={bookings} />}
-          {page === 'Disputes' && <AdminModulePage module="disputes" bookings={bookings} />}
+          {page === 'Help' && <HelpPage flash={flash} onDispute={() => setModal('dispute')} />}
+          {page === 'Profile' && <DriverProfile user={user} onUpdate={(u: any) => { setUser(u); localStorage.setItem('vs_user', JSON.stringify(u)); }} flash={flash} />}
+          {page === 'Overview' && <LiveAdminPage bookings={bookings} focus="Overview" flash={flash} />}
+          {page === 'Live trips' && <LiveAdminPage bookings={bookings} focus="Trips" flash={flash} />}
+          {page === 'Bookings' && <AdminModulePage module="bookings" bookings={bookings} flash={flash} />}
+          {page === 'Drivers' && <AdminModulePage module="drivers" bookings={bookings} flash={flash} />}
+          {page === 'Customers' && <AdminModulePage module="customers" bookings={bookings} flash={flash} />}
+          {page === 'Payments & Payouts' && <AdminModulePage module="payments" bookings={bookings} flash={flash} />}
+          {page === 'Disputes' && <AdminModulePage module="disputes" bookings={bookings} flash={flash} />}
           {page === 'Pricing & Revenue' && <LiveAdminPage bookings={bookings} focus="Pricing" flash={flash} />}
-          {page === 'Analytics' && <AdminModulePage module="analytics" bookings={bookings} />}
-          {page === 'Audit Logs' && <AdminModulePage module="audit" bookings={bookings} />}
-          {page === 'Settings' && <AdminModulePage module="settings" bookings={bookings} />}
+          {page === 'Analytics' && <AdminModulePage module="analytics" bookings={bookings} flash={flash} />}
+          {page === 'Audit Logs' && <AdminModulePage module="audit" bookings={bookings} flash={flash} />}
+          {page === 'Settings' && <AdminModulePage module="settings" bookings={bookings} flash={flash} />}
         </div>
       </main>
 
@@ -856,6 +865,64 @@ function App() {
             }
           }}
         />
+      )}
+
+      {/* Dispute filing modal */}
+      {modal === 'dispute' && (
+        <DisputeModal
+          bookings={bookings}
+          onClose={() => setModal('')}
+          onSubmit={async (bookingId: string, subject: string, description: string) => {
+            try {
+              await api('/disputes', {
+                method: 'POST',
+                body: JSON.stringify({ bookingId, subject, description })
+              });
+              setModal('');
+              flash('Dispute filed. Our team will review and respond within 24 hours.');
+            } catch (e: any) {
+              flash(e.message);
+            }
+          }}
+        />
+      )}
+
+      {/* Mobile bottom nav bar */}
+      {user && (
+        <nav className="bottom-nav">
+          {(user.role === 'customer'
+            ? [
+                { label: 'Home', icon: <CarFront size={20} />, page: 'Home' },
+                { label: 'Book', icon: <Plus size={20} />, page: 'Book a driver' },
+                { label: 'Trips', icon: <CalendarDays size={20} />, page: 'Your trips', badge: bookings.filter(b => ['Searching','Driver assigned','Driver arriving','Trip started'].includes(b.status)).length },
+                { label: 'Wallet', icon: <Wallet size={20} />, page: 'Wallet' },
+                { label: 'Help', icon: <Headphones size={20} />, page: 'Help' },
+              ]
+            : user.role === 'driver'
+            ? [
+                { label: 'Dashboard', icon: <Navigation size={20} />, page: 'Requests', badge: bookings.filter(b => b.status === 'Searching').length },
+                { label: 'My Trips', icon: <CalendarDays size={20} />, page: 'My trips' },
+                { label: 'Earnings', icon: <Wallet size={20} />, page: 'Earnings' },
+                { label: 'Profile', icon: <UserIcon size={20} />, page: 'Profile' },
+              ]
+            : [
+                { label: 'Overview', icon: <Activity size={20} />, page: 'Overview' },
+                { label: 'Bookings', icon: <CalendarDays size={20} />, page: 'Bookings' },
+                { label: 'Drivers', icon: <BadgeCheck size={20} />, page: 'Drivers' },
+                { label: 'Disputes', icon: <Headphones size={20} />, page: 'Disputes' },
+              ]
+          ).map((item) => (
+            <button
+              key={item.page}
+              className={`bottom-nav-item ${page === item.page ? 'active' : ''}`}
+              onClick={() => { setPage(item.page); setMobileOpen(false); }}
+            >
+              {(item as any).badge > 0 && <span className="bnav-badge">{(item as any).badge}</span>}
+              {item.icon}
+              <span>{item.label}</span>
+            </button>
+          ))}
+        </nav>
       )}
 
       {/* Floating Toast Notification */}
@@ -1264,10 +1331,33 @@ function TripsPage({ bookings, filter, setFilter, update, onRate, onPay, onTrack
 }
 
 // ----------------- Driver Partner Page -----------------
-function DriverPage({ bookings, update, user }: any) {
+function DriverPage({ bookings, update, user, onDutyChange, flash }: any) {
+  const [available, setAvailable] = useState<boolean>(user?.available !== false);
+  const [dutyBusy, setDutyBusy] = useState(false);
+
+  const toggleDuty = async () => {
+    setDutyBusy(true);
+    try {
+      const d = await api('/driver/duty', {
+        method: 'PATCH',
+        body: JSON.stringify({ available: !available })
+      });
+      setAvailable(d.available);
+      onDutyChange?.(d.available);
+      flash?.(d.available ? 'You are now Online — accepting ride requests.' : 'You are now Offline — no new requests.');
+    } catch (e: any) {
+      flash?.(e.message);
+    } finally {
+      setDutyBusy(false);
+    }
+  };
+
   const own = bookings.filter(
-    (b: Booking) => b.driverId === user?.id || ['Searching', 'Driver assigned', 'Driver arriving', 'Trip started'].includes(b.status)
+    (b: Booking) => b.driverId === user?.id || (available && ['Searching'].includes(b.status))
   );
+
+  const completed = bookings.filter((b: Booking) => b.driverId === user?.id && b.status === 'Trip completed');
+  const totalEarnings = completed.reduce((s: number, b: Booking) => s + b.payout, 0);
 
   return (
     <div className="driver-view">
@@ -1277,48 +1367,70 @@ function DriverPage({ bookings, update, user }: any) {
           <h1>Driver Dashboard</h1>
           <p>Welcome, {user?.name || 'Driver Partner'}. Manage your requests, trips, and earnings.</p>
         </div>
-        <div className="service-market-pill">
-          <BadgeCheck size={16} color="#087f72" /> Verified Partner ({user?.city || 'Delhi'})
+        {user?.verificationStatus === 'pending' && (
+          <span className="pending-badge"><Clock3 size={12} /> Verification pending</span>
+        )}
+        {user?.verificationStatus === 'verified' && (
+          <div className="service-market-pill">
+            <BadgeCheck size={16} color="#087f72" /> Verified Partner ({user?.city || 'Delhi'})
+          </div>
+        )}
+      </div>
+
+      {/* Real duty toggle — wired to backend */}
+      <div className="duty-toggle-row">
+        <div>
+          <b>{available ? '● Online — Accepting Requests' : '○ Offline — Not Accepting'}</b>
+          <small>{available ? 'Customers in your city can assign trips to you.' : 'Go online to receive new ride requests.'}</small>
         </div>
+        <label className="toggle-switch">
+          <input
+            type="checkbox"
+            checked={available}
+            disabled={dutyBusy}
+            onChange={toggleDuty}
+          />
+          <span className="toggle-track" />
+        </label>
       </div>
 
       <div className="stats-cards-grid">
         <div className="stat-card panel">
           <small>TOTAL EARNINGS</small>
-          <b>
-            {money(
-              bookings
-                .filter((b: Booking) => b.driverId === user?.id && b.status === 'Trip completed')
-                .reduce((s: number, b: Booking) => s + b.payout, 0)
-            )}
-          </b>
+          <b>{money(totalEarnings)}</b>
           <span>80% driver direct share</span>
         </div>
         <div className="stat-card panel">
           <small>COMPLETED TRIPS</small>
-          <b>{bookings.filter((b: Booking) => b.driverId === user?.id && b.status === 'Trip completed').length}</b>
-          <span>This week</span>
+          <b>{completed.length}</b>
+          <span>All time</span>
         </div>
         <div className="stat-card panel">
           <small>PARTNER RATING</small>
-          <b>★ 4.9</b>
-          <span>Top rated partner</span>
+          <b>★ {user?.rating || '5.0'}</b>
+          <span>Customer average</span>
         </div>
         <div className="stat-card panel">
           <small>DUTY STATUS</small>
-          <b className="status-online">● Online</b>
-          <span>Accepting requests</span>
+          <b className={available ? 'status-online' : ''}>{available ? '● Online' : '○ Offline'}</b>
+          <span>{available ? 'Accepting requests' : 'Duty off'}</span>
         </div>
       </div>
 
       <div className="section-head">
         <div>
           <h3>Ride Requests & Active Duties</h3>
-          <p>Pick up requests in your approved zone.</p>
+          <p>{available ? `Showing open requests in ${user?.city || 'your city'} and your assigned trips.` : 'Go online to see new ride requests.'}</p>
         </div>
       </div>
 
-      {own.length === 0 ? (
+      {!available && own.filter((b: Booking) => b.driverId === user?.id).length === 0 ? (
+        <div className="panel empty-state">
+          <Power size={42} className="empty-icon" />
+          <h3>You're offline</h3>
+          <p>Toggle duty on above to start accepting ride requests in {user?.city || 'your city'}.</p>
+        </div>
+      ) : own.length === 0 ? (
         <div className="panel empty-state">
           <CarFront size={42} className="empty-icon" />
           <h3>All caught up!</h3>
@@ -1570,38 +1682,250 @@ function LiveAdminPage({ bookings, focus = 'Overview', flash }: any) {
 }
 
 // ----------------- Admin modules -----------------
-function AdminModulePage({ module, bookings }: { module: string; bookings: Booking[] }) {
+function AdminModulePage({ module, bookings, flash }: { module: string; bookings: Booking[]; flash?: (s: string) => void }) {
   const [rows, setRows] = useState<any[]>([]);
+  const [driverRows, setDriverRows] = useState<any[]>([]);
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  useEffect(() => {
-    let mounted = true;
-    const load = async () => {
-      setLoading(true);
-      try {
-        const endpoint = module === 'customers' ? '/admin/users?role=customer' : module === 'audit' ? '/admin/audit-logs' : module === 'disputes' ? '/admin/disputes' : module === 'payments' ? '/admin/payments' : null;
-        if (endpoint) {
-          const result = await api(endpoint);
-          if (mounted) setRows(result.users || result.logs || result.disputes || result.payments || []);
-        }
-        setError('');
-      } catch (e: any) { if (mounted) setError(e.message); }
-      finally { if (mounted) setLoading(false); }
-    };
-    load();
-    return () => { mounted = false; };
-  }, [module]);
-  const title: Record<string, string> = { bookings: 'Booking management', customers: 'Customer management', payments: 'Payments & driver payouts', disputes: 'Dispute resolution', analytics: 'Network analytics', audit: 'Immutable audit logs', settings: 'Operations settings' };
-  const subtitle: Record<string, string> = { bookings: 'Search, filter, and inspect every trip in the network.', customers: 'Customer profiles, spend, activity, and support context.', payments: 'Separate customer GMV, platform revenue, refunds, and driver payouts.', disputes: 'Resolve complaints with an accountable, auditable workflow.', analytics: 'Growth, quality, utilisation, and unit economics.', audit: 'Every critical admin action is recorded and cannot be deleted.', settings: 'Configure role-aware operations controls and integrations.' };
-  const filteredBookings = bookings.filter((b) => `${b.id} ${b.customer || ''} ${b.driver || ''} ${b.pickup} ${b.destination}`.toLowerCase().includes(query.toLowerCase()));
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      if (module === 'customers') {
+        const r = await api('/admin/users?role=customer');
+        setRows(r.users || []);
+      } else if (module === 'drivers') {
+        const r = await api('/admin/users?role=driver');
+        setDriverRows(r.users || []);
+      } else if (module === 'audit') {
+        const r = await api('/admin/audit-logs');
+        setRows(r.logs || []);
+      } else if (module === 'disputes') {
+        const r = await api('/admin/disputes');
+        setRows(r.disputes || []);
+      } else if (module === 'payments') {
+        const r = await api('/admin/payments');
+        setRows(r.payments || []);
+      }
+      setError('');
+    } catch (e: any) { setError(e.message); }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { load(); }, [module]);
+
+  const updateDriverVerification = async (driverId: string, status: string) => {
+    try {
+      await api(`/admin/drivers/${driverId}/verification`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status })
+      });
+      flash?.(status === 'verified' ? 'Driver approved and verified.' : 'Driver rejected.');
+      load();
+    } catch (e: any) { flash?.(e.message); }
+  };
+
+  const resolveDispute = async (disputeId: string, status: string) => {
+    const resolution = prompt('Enter resolution note:');
+    if (!resolution) return;
+    try {
+      await api(`/admin/disputes/${disputeId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status, resolution })
+      });
+      flash?.('Dispute updated.');
+      load();
+    } catch (e: any) { flash?.(e.message); }
+  };
+
+  const title: Record<string, string> = {
+    bookings: 'Booking management', customers: 'Customer management',
+    drivers: 'Driver partner network', payments: 'Payments & driver payouts',
+    disputes: 'Dispute resolution', analytics: 'Network analytics',
+    audit: 'Immutable audit logs', settings: 'Operations settings'
+  };
+  const subtitle: Record<string, string> = {
+    bookings: 'Search, filter, and inspect every trip in the network.',
+    customers: 'Customer profiles, spend, activity, and support context.',
+    drivers: 'Review, approve, and manage driver partner accounts.',
+    payments: 'Customer GMV, platform revenue, refunds, and driver payouts.',
+    disputes: 'Resolve complaints with an accountable, auditable workflow.',
+    analytics: 'Growth, quality, utilisation, and unit economics.',
+    audit: 'Every critical admin action is recorded and cannot be deleted.',
+    settings: 'Configure role-aware operations controls and integrations.'
+  };
+
+  const filteredBookings = bookings.filter((b) =>
+    `${b.id} ${b.customer || ''} ${b.driver || ''} ${b.pickup} ${b.destination}`.toLowerCase().includes(query.toLowerCase())
+  );
   const filteredRows = rows.filter((r) => JSON.stringify(r).toLowerCase().includes(query.toLowerCase()));
-  return <div className="admin-view">
-    <div className="section-head"><div><span className="eyebrow">OPERATIONS CONSOLE</span><h1>{title[module]}</h1><p>{subtitle[module]}</p></div><span className="service-market-pill"><Database size={15} /> Role-protected</span></div>
-    <div className="admin-toolbar"><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={module === 'audit' ? 'Search admin, action, target…' : 'Search by name, ID, phone, route…'} /><button className="secondary-btn" onClick={() => setQuery('')}>Clear</button></div>
-    {error && <div className="inline-error">{error}</div>}
-    {module === 'analytics' ? <div className="stats-cards-grid"><div className="stat-card panel"><small>COMPLETION RATE</small><b>{bookings.length ? Math.round(bookings.filter((b) => b.status === 'Trip completed').length / bookings.length * 100) : 0}%</b><span>Completed bookings</span></div><div className="stat-card panel"><small>GMV</small><b>{money(bookings.reduce((n, b) => n + Number(b.total || 0), 0))}</b><span>Customer booking value</span></div><div className="stat-card panel"><small>DRIVER PAYOUTS</small><b>{money(bookings.reduce((n, b) => n + Number(b.payout || 0), 0))}</b><span>Separate from platform revenue</span></div><div className="stat-card panel"><small>TAKE RATE</small><b>{bookings.length ? Math.round(bookings.reduce((n, b) => n + Number(b.commission || 0), 0) / Math.max(1, bookings.reduce((n, b) => n + Number(b.total || 0), 0)) * 100) : 0}%</b><span>Platform commission</span></div></div> : module === 'settings' ? <section className="panel empty-state"><ShieldCheck size={28} /><h3>Protected operations workspace</h3><p>Admin access is enforced by signed server sessions. Pricing changes, verification decisions, refunds, payout actions, and role changes must be handled through privileged API routes and are written to Audit Logs.</p></section> : <section className="panel bookings-table-panel"><div className="panel-header"><div><h3>{module === 'bookings' ? 'Bookings' : module === 'customers' ? 'Customers' : module === 'payments' ? 'Payments and payouts' : module === 'disputes' ? 'Open cases' : 'Activity history'}</h3><p>{loading ? 'Loading live records…' : `${(module === 'bookings' ? filteredBookings : filteredRows).length} records`}</p></div><span className="status-pill done">Live data</span></div><div className="table-responsive"><table className="admin-table"><thead><tr>{module === 'bookings' ? <><th>BOOKING</th><th>ROUTE</th><th>CUSTOMER / DRIVER</th><th>FARE</th><th>STATUS</th></> : module === 'customers' ? <><th>CUSTOMER</th><th>CONTACT</th><th>CITY</th><th>ACCOUNT</th></> : module === 'payments' ? <><th>PAYMENT</th><th>BOOKING</th><th>AMOUNT</th><th>STATUS</th></> : module === 'disputes' ? <><th>CASE</th><th>BOOKING</th><th>TYPE</th><th>STATUS</th></> : <><th>TIMESTAMP</th><th>ADMIN / ROLE</th><th>ACTION</th><th>TARGET</th></>}</tr></thead><tbody>{(module === 'bookings' ? filteredBookings : filteredRows).map((r: any, i) => module === 'bookings' ? <tr key={r.id}><td><b>{r.id}</b><small>{r.date} · {r.time}</small></td><td>{r.pickup} → {r.destination}<small>{r.city}</small></td><td>{r.customer || 'Customer'}<small>Driver: {r.driver || 'Unassigned'}</small></td><td><b>{money(r.total)}</b><small>Platform {money(r.commission)}</small></td><td><span className="status-pill">{r.status}</span></td></tr> : module === 'customers' ? <tr key={r.id || i}><td><b>{r.name}</b><small>{r.id}</small></td><td>{r.phone || '—'}<small>{r.email}</small></td><td>{r.city || '—'}</td><td><span className="status-pill done">Active</span></td></tr> : module === 'payments' ? <tr key={r.id || i}><td><b>{r.id || 'Payment'}</b></td><td>{r.bookingId || r.booking_id || '—'}</td><td>{money(r.amount || r.total)}</td><td><span className="status-pill">{r.status || r.payment_status || 'Pending'}</span></td></tr> : module === 'disputes' ? <tr key={r.id || i}><td><b>{r.id || 'Case'}</b><small>{r.createdAt || r.created_at || '—'}</small></td><td>{r.bookingId || r.booking_id || '—'}</td><td>{r.type || r.disputeType || 'General complaint'}</td><td><span className="status-pill">{r.status || 'Open'}</span></td></tr> : <tr key={r.id || i}><td>{r.timestamp || '—'}</td><td>{r.adminName || 'Admin'}<small>{r.adminRole || 'operations_admin'}</small></td><td><b>{r.action || '—'}</b><small>{r.description}</small></td><td>{r.targetId || '—'}</td></tr>)}</tbody></table></div>{!loading && (module === 'bookings' ? filteredBookings : filteredRows).length === 0 && <div className="empty-state"><Activity size={24} /><p>No records match this search.</p></div>}</section>}
-  </div>;
+  const filteredDriverRows = driverRows.filter((r) => JSON.stringify(r).toLowerCase().includes(query.toLowerCase()));
+
+  return (
+    <div className="admin-view">
+      <div className="section-head">
+        <div>
+          <span className="eyebrow">OPERATIONS CONSOLE</span>
+          <h1>{title[module] || module}</h1>
+          <p>{subtitle[module] || ''}</p>
+        </div>
+        <span className="service-market-pill"><Database size={15} /> Role-protected</span>
+      </div>
+
+      <div className="admin-toolbar">
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder={module === 'audit' ? 'Search admin, action, target…' : 'Search by name, ID, route…'}
+        />
+        <button className="secondary-btn" onClick={() => setQuery('')}>Clear</button>
+        <button className="secondary-btn" onClick={load}>Refresh</button>
+      </div>
+
+      {error && <div className="inline-error">{error}</div>}
+
+      {module === 'analytics' ? (
+        <div className="stats-cards-grid">
+          <div className="stat-card panel"><small>COMPLETION RATE</small><b>{bookings.length ? Math.round(bookings.filter((b) => b.status === 'Trip completed').length / bookings.length * 100) : 0}%</b><span>Completed bookings</span></div>
+          <div className="stat-card panel"><small>GMV</small><b>{money(bookings.reduce((n, b) => n + Number(b.total || 0), 0))}</b><span>Customer booking value</span></div>
+          <div className="stat-card panel"><small>DRIVER PAYOUTS</small><b>{money(bookings.reduce((n, b) => n + Number(b.payout || 0), 0))}</b><span>Separate from platform revenue</span></div>
+          <div className="stat-card panel"><small>TAKE RATE</small><b>{bookings.length ? Math.round(bookings.reduce((n, b) => n + Number(b.commission || 0), 0) / Math.max(1, bookings.reduce((n, b) => n + Number(b.total || 0), 0)) * 100) : 0}%</b><span>Platform commission</span></div>
+          <div className="stat-card panel"><small>AVG BOOKING VALUE</small><b>{bookings.length ? money(Math.round(bookings.reduce((n, b) => n + Number(b.total || 0), 0) / bookings.length)) : '₹0'}</b><span>Per trip</span></div>
+          <div className="stat-card panel"><small>TRIPS IN PROGRESS</small><b>{bookings.filter((b) => ['Driver assigned', 'Driver arriving', 'Trip started'].includes(b.status)).length}</b><span>Active right now</span></div>
+        </div>
+      ) : module === 'settings' ? (
+        <section className="panel empty-state">
+          <ShieldCheck size={28} />
+          <h3>Protected operations workspace</h3>
+          <p>Admin access is enforced by signed server sessions. Pricing changes, verification decisions, refunds, payout actions, and role changes must be handled through privileged API routes and are written to Audit Logs.</p>
+        </section>
+      ) : module === 'drivers' ? (
+        <section className="panel">
+          <div className="panel-header">
+            <div><h3>Driver Partner Network</h3><p>{loading ? 'Loading…' : `${filteredDriverRows.length} drivers`}</p></div>
+          </div>
+          {loading ? <div className="data-loading">Loading driver accounts…</div> : (
+            <div className="table-responsive">
+              <table className="admin-table">
+                <thead><tr><th>DRIVER</th><th>CONTACT</th><th>CITY / VEHICLE</th><th>STATUS</th><th>TRIPS / RATING</th><th>ACTIONS</th></tr></thead>
+                <tbody>
+                  {filteredDriverRows.map((r: any) => (
+                    <tr key={r.id}>
+                      <td><b>{r.name}</b><small>{r.id}</small></td>
+                      <td>{r.phone || '—'}<small>{r.email}</small></td>
+                      <td>{r.city || '—'}<small>{r.vehicle || 'Sedan'}</small></td>
+                      <td>
+                        <span className={`status-pill ${r.verificationStatus === 'verified' ? 'done' : ''}`}>
+                          {r.verificationStatus || 'pending'}
+                        </span>
+                      </td>
+                      <td>{r.trips || 0} trips<small>★ {r.rating || '5.0'}</small></td>
+                      <td style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                        {r.verificationStatus !== 'verified' && (
+                          <button className="inline-action-btn success" onClick={() => updateDriverVerification(r.id, 'verified')}>
+                            Approve
+                          </button>
+                        )}
+                        {r.verificationStatus === 'verified' && (
+                          <button className="inline-action-btn danger" onClick={() => updateDriverVerification(r.id, 'rejected')}>
+                            Reject
+                          </button>
+                        )}
+                        {r.verificationStatus === 'pending' && (
+                          <button className="inline-action-btn danger" onClick={() => updateDriverVerification(r.id, 'rejected')}>
+                            Reject
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {filteredDriverRows.length === 0 && <div className="empty-state"><p>No drivers match this search.</p></div>}
+            </div>
+          )}
+        </section>
+      ) : (
+        <section className="panel bookings-table-panel">
+          <div className="panel-header">
+            <div>
+              <h3>{module === 'bookings' ? 'Bookings' : module === 'customers' ? 'Customers' : module === 'payments' ? 'Payments and payouts' : module === 'disputes' ? 'Open cases' : 'Activity history'}</h3>
+              <p>{loading ? 'Loading live records…' : `${(module === 'bookings' ? filteredBookings : filteredRows).length} records`}</p>
+            </div>
+            <span className="status-pill done">Live data</span>
+          </div>
+          {loading ? <div className="data-loading">Loading records…</div> : (
+            <div className="table-responsive">
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    {module === 'bookings' ? <><th>BOOKING</th><th>ROUTE</th><th>CUSTOMER / DRIVER</th><th>FARE</th><th>STATUS</th></> :
+                     module === 'customers' ? <><th>CUSTOMER</th><th>CONTACT</th><th>CITY</th><th>ACCOUNT</th></> :
+                     module === 'payments' ? <><th>PAYMENT</th><th>BOOKING</th><th>AMOUNT</th><th>STATUS</th></> :
+                     module === 'disputes' ? <><th>CASE</th><th>FILED BY</th><th>SUBJECT</th><th>STATUS</th><th>ACTIONS</th></> :
+                     <><th>TIMESTAMP</th><th>ADMIN / ROLE</th><th>ACTION</th><th>TARGET</th></>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {(module === 'bookings' ? filteredBookings : filteredRows).map((r: any, i: number) =>
+                    module === 'bookings' ? (
+                      <tr key={r.id}>
+                        <td><b>{r.id}</b><small>{r.date} · {r.time}</small></td>
+                        <td>{r.pickup} → {r.destination}<small>{r.city}</small></td>
+                        <td>{r.customer || 'Customer'}<small>Driver: {r.driver || 'Unassigned'}</small></td>
+                        <td><b>{money(r.total)}</b><small>Platform {money(r.commission)}</small></td>
+                        <td><span className="status-pill">{r.status}</span></td>
+                      </tr>
+                    ) : module === 'customers' ? (
+                      <tr key={r.id || i}>
+                        <td><b>{r.name}</b><small>{r.id}</small></td>
+                        <td>{r.phone || '—'}<small>{r.email}</small></td>
+                        <td>{r.city || '—'}</td>
+                        <td><span className="status-pill done">Active</span></td>
+                      </tr>
+                    ) : module === 'payments' ? (
+                      <tr key={r.id || i}>
+                        <td><b>{r.id || 'Payment'}</b></td>
+                        <td>{r.bookingId || r.booking_id || '—'}</td>
+                        <td>{money(r.amount || r.total || 0)}</td>
+                        <td><span className="status-pill">{r.status || r.payment_status || 'Pending'}</span></td>
+                      </tr>
+                    ) : module === 'disputes' ? (
+                      <tr key={r.id || i}>
+                        <td><b>{String(r.id || 'Case').slice(0, 8)}…</b><small>{r.createdAt ? new Date(r.createdAt).toLocaleDateString('en-IN') : '—'}</small></td>
+                        <td>{r.userName || '—'}</td>
+                        <td>{r.subject || 'General complaint'}<small>{r.bookingId || '—'}</small></td>
+                        <td><span className={`status-pill ${r.status === 'resolved' ? 'done' : ''}`}>{r.status || 'open'}</span></td>
+                        <td style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                          {r.status === 'open' && (
+                            <>
+                              <button className="inline-action-btn success" onClick={() => resolveDispute(r.id, 'resolved')}>Resolve</button>
+                              <button className="inline-action-btn danger" onClick={() => resolveDispute(r.id, 'closed')}>Close</button>
+                            </>
+                          )}
+                        </td>
+                      </tr>
+                    ) : (
+                      <tr key={r.id || i}>
+                        <td>{r.timestamp ? new Date(r.timestamp).toLocaleString('en-IN') : '—'}</td>
+                        <td>{r.adminName || 'Admin'}<small>{r.adminRole || 'operations_admin'}</small></td>
+                        <td><b>{r.action || '—'}</b><small>{r.description}</small></td>
+                        <td>{r.targetId || '—'}</td>
+                      </tr>
+                    )
+                  )}
+                </tbody>
+              </table>
+              {!loading && (module === 'bookings' ? filteredBookings : filteredRows).length === 0 && (
+                <div className="empty-state"><Activity size={24} /><p>No records match this search.</p></div>
+              )}
+            </div>
+          )}
+        </section>
+      )}
+    </div>
+  );
 }
 
 // ----------------- Other Support Pages -----------------
@@ -1687,7 +2011,7 @@ function WalletPage({ receipts, bookings, onReceipt }: any) {
   );
 }
 
-function HelpPage({ flash }: any) {
+function HelpPage({ flash, onDispute }: any) {
   return (
     <div className="help-view">
       <div className="section-head">
@@ -1713,10 +2037,10 @@ function HelpPage({ flash }: any) {
           <span>Call 112 Helpline <ArrowRight size={14} /></span>
         </button>
 
-        <button className="panel help-action-card" onClick={() => flash('Dispute review request logged.')}>
-          <Activity size={28} />
-          <b>Fare Clarification</b>
-          <p>Submit questions about tolls, parking, or night charges.</p>
+        <button className="panel help-action-card" onClick={onDispute}>
+          <AlertCircle size={28} />
+          <b>File a Dispute</b>
+          <p>Report a problem with a trip, fare, or driver behaviour.</p>
           <span>Raise Ticket <ArrowRight size={14} /></span>
         </button>
       </div>
@@ -1740,7 +2064,30 @@ function HelpPage({ flash }: any) {
   );
 }
 
-function DriverProfile({ user }: any) {
+function DriverProfile({ user, onUpdate, flash }: any) {
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState(user?.name || '');
+  const [phone, setPhone] = useState(user?.phone || '');
+  const [vehicle, setVehicle] = useState(user?.vehicle || 'Sedan');
+  const [busy, setBusy] = useState(false);
+
+  const save = async () => {
+    setBusy(true);
+    try {
+      const d = await api('/me', {
+        method: 'PATCH',
+        body: JSON.stringify({ name, phone, vehicle })
+      });
+      onUpdate?.(d.user);
+      setEditing(false);
+      flash?.('Profile updated successfully.');
+    } catch (e: any) {
+      flash?.(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div className="profile-view">
       <div className="section-head">
@@ -1749,15 +2096,73 @@ function DriverProfile({ user }: any) {
           <h1>Driver Account</h1>
           <p>Personal and verification details.</p>
         </div>
+        {!editing && (
+          <button className="primary-btn" onClick={() => setEditing(true)}>
+            <Edit2 size={15} /> Edit Profile
+          </button>
+        )}
       </div>
 
-      <div className="panel profile-hero-card">
-        <div className="profile-avatar-large">{user?.name ? user.name[0] : 'V'}</div>
-        <div>
-          <h2>{user?.name || 'Driver Partner'}</h2>
-          <p>{user?.email} · {user?.phone || '+91 98765 43211'}</p>
-          <span className="status-pill done">Verified Partner · {user?.city || 'Delhi'}</span>
+      <div className="panel profile-edit-card">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '24px' }}>
+          <div className="profile-avatar-large">{user?.name ? user.name[0] : 'V'}</div>
+          <div>
+            <h2 style={{ fontSize: '22px', fontWeight: 800, color: 'var(--navy)' }}>{user?.name || 'Driver Partner'}</h2>
+            <p style={{ color: 'var(--slate-500)', fontSize: '14px' }}>{user?.email}</p>
+            <span className={`status-pill ${user?.verificationStatus === 'verified' ? 'done' : ''}`} style={{ marginTop: '6px', display: 'inline-block' }}>
+              {user?.verificationStatus === 'verified' ? '✓ Verified Partner' : user?.verificationStatus === 'pending' ? '⏳ Verification Pending' : 'Unverified'} · {user?.city || 'Delhi'}
+            </span>
+          </div>
         </div>
+
+        {editing ? (
+          <div>
+            <div className="field-group" style={{ marginBottom: '14px' }}>
+              <span>Full Name</span>
+              <input value={name} onChange={(e) => setName(e.target.value)} />
+            </div>
+            <div className="field-group" style={{ marginBottom: '14px' }}>
+              <span>Phone Number</span>
+              <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+91 98765 43211" />
+            </div>
+            <div className="field-group" style={{ marginBottom: '20px' }}>
+              <span><Car size={13} /> Vehicle Class</span>
+              <select value={vehicle} onChange={(e) => setVehicle(e.target.value)}>
+                <option value="Hatchback">Hatchback</option>
+                <option value="Sedan">Sedan</option>
+                <option value="SUV">SUV</option>
+                <option value="Luxury">Luxury</option>
+              </select>
+            </div>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button className="primary-btn" onClick={save} disabled={busy}>{busy ? 'Saving…' : 'Save Changes'}</button>
+              <button className="action-btn" onClick={() => setEditing(false)}>Cancel</button>
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
+              <span style={{ color: 'var(--slate-500)' }}>Phone</span>
+              <b>{user?.phone || '—'}</b>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
+              <span style={{ color: 'var(--slate-500)' }}>Vehicle class</span>
+              <b>{user?.vehicle || 'Sedan'}</b>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
+              <span style={{ color: 'var(--slate-500)' }}>City</span>
+              <b>{user?.city || 'Delhi'}</b>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
+              <span style={{ color: 'var(--slate-500)' }}>Total trips</span>
+              <b>{user?.trips || 0}</b>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
+              <span style={{ color: 'var(--slate-500)' }}>Rating</span>
+              <b>★ {user?.rating || '5.0'}</b>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1856,15 +2261,19 @@ function VoiceAgentModal({ onClose, onApply, onBook, city }: { onClose: () => vo
 
 function AuthModal({ onClose, onLogin, onRegister, busy, storageReady }: any) {
   const [mode, setMode] = useState<'login' | 'register'>('login');
+  const [registerRole, setRegisterRole] = useState<'customer' | 'driver'>('customer');
   const [name, setName] = useState('');
   const [city, setCity] = useState('Delhi');
+  const [phone, setPhone] = useState('');
+  const [vehicle, setVehicle] = useState('Sedan');
+  const [licenseNumber, setLicenseNumber] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     if (mode === 'login') onLogin(email, password);
-    else onRegister(name, email, password, city);
+    else onRegister(name, email, password, city, phone, registerRole, vehicle, licenseNumber);
   };
 
   return (
@@ -1877,9 +2286,9 @@ function AuthModal({ onClose, onLogin, onRegister, busy, storageReady }: any) {
           <span>VaahanSathi</span>
         </div>
 
-        <h2>{mode === 'login' ? 'Sign In to Your Account' : 'Create Customer Account'}</h2>
+        <h2>{mode === 'login' ? 'Sign In to Your Account' : registerRole === 'driver' ? 'Join as Driver Partner' : 'Create Customer Account'}</h2>
         <p className="modal-sub">
-          {mode === 'login' ? 'Access your rides and bookings' : 'Book verified drivers for your personal vehicle'}
+          {mode === 'login' ? 'Access your rides and bookings' : registerRole === 'driver' ? 'Drive customers in your city and earn 80% of every fare' : 'Book verified drivers for your personal vehicle'}
         </p>
 
         {mode === 'login' && (
@@ -1896,10 +2305,38 @@ function AuthModal({ onClose, onLogin, onRegister, busy, storageReady }: any) {
         <form onSubmit={submit} className="auth-form">
           {mode === 'register' && (
             <>
+              {/* Role selector */}
+              <div className="role-switcher">
+                <button
+                  type="button"
+                  className={`role-switcher-btn ${registerRole === 'customer' ? 'active' : ''}`}
+                  onClick={() => setRegisterRole('customer')}
+                >
+                  <UserIcon size={20} />
+                  Customer
+                  <span>Book a driver for your car</span>
+                </button>
+                <button
+                  type="button"
+                  className={`role-switcher-btn ${registerRole === 'driver' ? 'active' : ''}`}
+                  onClick={() => setRegisterRole('driver')}
+                >
+                  <Car size={20} />
+                  Driver Partner
+                  <span>Earn by driving customer cars</span>
+                </button>
+              </div>
+
               <label className="field-group">
                 <span>Full Name</span>
                 <input required value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Rahul Sharma" />
               </label>
+
+              <label className="field-group">
+                <span>Phone Number</span>
+                <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+91 98765 43210" />
+              </label>
+
               <label className="field-group">
                 <span>City / Service Area</span>
                 <select value={city} onChange={(e) => setCity(e.target.value)}>
@@ -1907,6 +2344,28 @@ function AuthModal({ onClose, onLogin, onRegister, busy, storageReady }: any) {
                   <option value="Gurugram">Gurugram</option>
                 </select>
               </label>
+
+              {registerRole === 'driver' && (
+                <>
+                  <label className="field-group">
+                    <span><Car size={13} /> Vehicle Class You Drive</span>
+                    <select value={vehicle} onChange={(e) => setVehicle(e.target.value)}>
+                      <option value="Hatchback">Hatchback</option>
+                      <option value="Sedan">Sedan</option>
+                      <option value="SUV">SUV</option>
+                      <option value="Luxury">Luxury</option>
+                    </select>
+                  </label>
+                  <label className="field-group">
+                    <span>Driving Licence Number</span>
+                    <input value={licenseNumber} onChange={(e) => setLicenseNumber(e.target.value)} placeholder="DL-1420110012345" />
+                  </label>
+                  <div style={{ fontSize: '12px', color: 'var(--slate-500)', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '8px', padding: '10px 12px' }}>
+                    <b style={{ color: '#92400e' }}>⏳ Manual verification required</b>
+                    <br />Your account will be reviewed within 24 hours. You can log in and go online once approved.
+                  </div>
+                </>
+              )}
             </>
           )}
 
@@ -1921,7 +2380,7 @@ function AuthModal({ onClose, onLogin, onRegister, busy, storageReady }: any) {
           </label>
 
           <button className="primary-btn-wide" type="submit" disabled={busy}>
-            {busy ? 'Processing...' : mode === 'login' ? 'Sign In' : 'Create Account'}
+            {busy ? 'Processing…' : mode === 'login' ? 'Sign In' : registerRole === 'driver' ? 'Apply as Driver Partner' : 'Create Account'}
           </button>
         </form>
 
@@ -2050,6 +2509,73 @@ function RatingModal({ stars, setStars, onClose, onSubmit }: any) {
         <button className="primary-btn-wide" onClick={onSubmit}>
           Submit Rating <Check size={16} />
         </button>
+      </div>
+    </div>
+  );
+}
+
+// ----------------- Dispute Modal -----------------
+function DisputeModal({ bookings, onClose, onSubmit }: any) {
+  const [bookingId, setBookingId] = useState('');
+  const [subject, setSubject] = useState('');
+  const [description, setDescription] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!subject.trim() || !description.trim()) return;
+    setBusy(true);
+    try {
+      await onSubmit(bookingId, subject, description);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="modal dispute-modal">
+        <button className="modal-close-btn" onClick={onClose}><X size={18} /></button>
+        <div className="modal-brand"><AlertCircle size={22} /><span>File a Dispute</span></div>
+        <h2 style={{ fontSize: '20px', marginBottom: '6px' }}>Report a Problem</h2>
+        <p className="modal-sub">Our team reviews and responds within 24 hours.</p>
+        <form onSubmit={submit} className="auth-form">
+          <label className="field-group">
+            <span>Related Booking (optional)</span>
+            <select value={bookingId} onChange={(e) => setBookingId(e.target.value)}>
+              <option value="">No specific booking</option>
+              {bookings.map((b: Booking) => (
+                <option key={b.id} value={b.id}>{b.id} — {b.pickup.split(',')[0]} → {b.destination.split(',')[0]}</option>
+              ))}
+            </select>
+          </label>
+          <label className="field-group">
+            <span>Subject</span>
+            <select value={subject} onChange={(e) => setSubject(e.target.value)} required>
+              <option value="">Select a subject…</option>
+              <option value="Fare dispute">Fare dispute</option>
+              <option value="Driver behaviour">Driver behaviour</option>
+              <option value="Trip not completed">Trip not completed</option>
+              <option value="OTP issue">OTP issue</option>
+              <option value="Payment issue">Payment issue</option>
+              <option value="Other">Other</option>
+            </select>
+          </label>
+          <label className="field-group">
+            <span>Description</span>
+            <textarea
+              required
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Describe what happened in detail…"
+              rows={4}
+              style={{ width: '100%', padding: '12px', border: '1px solid var(--slate-200)', borderRadius: '8px', fontSize: '14px', resize: 'vertical', outline: 'none', fontFamily: 'inherit' }}
+            />
+          </label>
+          <button className="primary-btn-wide" type="submit" disabled={busy || !subject || !description}>
+            {busy ? 'Submitting…' : 'Submit Dispute'}
+          </button>
+        </form>
       </div>
     </div>
   );

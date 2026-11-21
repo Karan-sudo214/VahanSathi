@@ -614,7 +614,7 @@ app.get('/api/health', (_, res) => {
 app.post(
   '/api/auth/register',
   asyncRoute(async (req, res) => {
-    const { name, email, password, phone, role = 'customer', city = 'Delhi' } = req.body || {};
+    const { name, email, password, phone, role = 'customer', city = 'Delhi', vehicle = 'Sedan', licenseNumber = '' } = req.body || {};
     if (!name || !email || !password || password.length < 8) {
       return res.status(400).json({ error: 'Enter your name, email, and a password with at least 8 characters.' });
     }
@@ -625,14 +625,21 @@ app.post(
     if (data.users.some((u) => u.email === cleanEmail)) {
       return res.status(409).json({ error: 'An account with that email already exists. Please sign in.' });
     }
+    const resolvedRole = role === 'driver' ? 'driver' : 'customer';
     const u = {
       id: randomUUID(),
       name: name.trim(),
       email: cleanEmail,
       password: await bcrypt.hash(password, 10),
       phone: phone || '',
-      role: role === 'driver' ? 'driver' : 'customer',
+      role: resolvedRole,
       city,
+      vehicle: resolvedRole === 'driver' ? (vehicle || 'Sedan') : undefined,
+      licenseNumber: resolvedRole === 'driver' ? (licenseNumber || '') : undefined,
+      verificationStatus: resolvedRole === 'driver' ? 'pending' : undefined,
+      available: resolvedRole === 'driver' ? false : undefined,
+      trips: resolvedRole === 'driver' ? 0 : undefined,
+      rating: resolvedRole === 'driver' ? 5.0 : undefined,
       createdAt: new Date().toISOString()
     };
     data.users.push(u);
@@ -920,6 +927,81 @@ app.patch(
     res.json({ ok: true, pricing: data.pricing });
   })
 );
+
+// ── Driver duty toggle ──────────────────────────────────────────────────────
+app.patch('/api/driver/duty', auth, roles('driver'), asyncRoute(async (req, res) => {
+  const u = data.users.find((x) => x.id === req.user.id);
+  if (!u) return res.status(404).json({ error: 'User not found.' });
+  u.available = req.body.available === true || req.body.available === 'true';
+  await persistItem('app_users', u.id, u);
+  await save();
+  res.json({ available: u.available });
+}));
+
+// ── Profile update ───────────────────────────────────────────────────────────
+app.patch('/api/me', auth, asyncRoute(async (req, res) => {
+  const u = data.users.find((x) => x.id === req.user.id);
+  if (!u) return res.status(404).json({ error: 'User not found.' });
+  const allowed = ['name', 'phone', 'city', 'vehicle'];
+  for (const k of allowed) {
+    if (req.body[k] !== undefined) u[k] = String(req.body[k]).trim();
+  }
+  await persistItem('app_users', u.id, u);
+  await save();
+  res.json({ user: safe(u) });
+}));
+
+// ── Customer dispute filing ───────────────────────────────────────────────────
+app.post('/api/disputes', auth, roles('customer', 'admin'), asyncRoute(async (req, res) => {
+  const { bookingId, subject, description } = req.body || {};
+  if (!subject || !description) return res.status(400).json({ error: 'Subject and description are required.' });
+  const booking = data.bookings.find((b) => b.id === bookingId);
+  const dispute = {
+    id: randomUUID(),
+    bookingId: bookingId || null,
+    userId: req.user.id,
+    userName: req.user.name,
+    subject: String(subject).slice(0, 120),
+    description: String(description).slice(0, 1000),
+    status: 'open',
+    createdAt: new Date().toISOString(),
+    route: booking ? `${booking.pickup} → ${booking.destination}` : null,
+  };
+  data.disputes.push(dispute);
+  await persistItem('app_disputes', dispute.id, dispute);
+  await save();
+  res.status(201).json({ dispute });
+}));
+
+// ── Admin: resolve/close dispute ─────────────────────────────────────────────
+app.patch('/api/admin/disputes/:id', auth, adminOnly, asyncRoute(async (req, res) => {
+  const d = data.disputes.find((x) => x.id === req.params.id);
+  if (!d) return res.status(404).json({ error: 'Dispute not found.' });
+  d.status = ['resolved', 'closed', 'escalated'].includes(req.body.status) ? req.body.status : d.status;
+  d.resolution = String(req.body.resolution || '').slice(0, 500);
+  d.resolvedAt = new Date().toISOString();
+  d.resolvedBy = req.user.name;
+  await persistItem('app_disputes', d.id, d);
+  await audit(req, 'dispute_updated', 'disputes', d.id, null, { status: d.status }, req.body.resolution || 'Dispute updated');
+  await save();
+  res.json({ dispute: d });
+}));
+
+// ── Admin: cancel any booking ─────────────────────────────────────────────────
+app.patch('/api/admin/bookings/:id/cancel', auth, adminOnly, asyncRoute(async (req, res) => {
+  const b = data.bookings.find((x) => x.id === req.params.id);
+  if (!b) return res.status(404).json({ error: 'Booking not found.' });
+  b.status = 'Cancelled';
+  b.cancelledBy = req.user.name;
+  b.cancelledAt = new Date().toISOString();
+  await persistItem('app_bookings', b.id, b);
+  await audit(req, 'booking_cancelled', 'bookings', b.id, null, { status: 'Cancelled' }, req.body.reason || 'Admin cancelled');
+  await save();
+  res.json({ booking: b });
+}));
+
+// ── Admin: update pricing ────────────────────────────────────────────────────
+// (already exists above; keeping alias here for clarity)
 
 // Voice booking intent parser. The browser handles listening; this endpoint normalises
 // the transcript into the same fields used by the real booking form.
