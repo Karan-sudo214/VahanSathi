@@ -932,6 +932,22 @@ function App() {
   );
 }
 
+function SearchingTimer({ createdAt }) {
+  const [secs, setSecs] = React.useState(0);
+  React.useEffect(() => {
+    const start = createdAt ? new Date(createdAt).getTime() : Date.now();
+    const tick = () => setSecs(Math.floor((Date.now() - start) / 1000));
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [createdAt]);
+  const m = Math.floor(secs / 60), s = secs % 60;
+  return React.createElement('div', {className:'searching-timer'},
+    React.createElement('span', {className:'searching-dot'}),
+    React.createElement('span', null, 'Searching' + (m>0?' '+m+'m ':' ') + s + 's')
+  );
+}
+
 // ----------------- Booking Page Component -----------------
 function BookingPage(p: any) {
   const clearFare = () => p.clearFare?.();
@@ -1278,13 +1294,14 @@ function TripsPage({ bookings, filter, setFilter, update, onRate, onPay, onTrack
               )}
 
               <div className="trip-card-footer">
-                <div className="driver-assigned-info">
-                  <span className="driver-avatar">{b.driver ? b.driver[0] : 'V'}</span>
-                  <div>
-                    <small>ASSIGNED DRIVER</small>
-                    <b>{b.driver || 'Matching nearby driver...'}</b>
+                {b.status === 'Searching' ? (
+                  <SearchingTimer createdAt={b.createdAt} />
+                ) : (
+                  <div className="driver-assigned-info">
+                    <span className="driver-avatar">{b.driver ? b.driver[0] : 'V'}</span>
+                    <div><small>ASSIGNED DRIVER</small><b>{b.driver}</b></div>
                   </div>
-                </div>
+                )}
 
                 <div className="trip-actions-row single">
                   {['Driver assigned', 'Driver arriving', 'Trip started'].includes(b.status) && (
@@ -2307,7 +2324,8 @@ function AuthModal({ onClose, onLogin, onRegister, busy, storageReady }: any) {
             <span className="quick-label">Quick demo sign-in · password: password123</span>
             <div className="quick-buttons">
               <button type="button" onClick={() => onLogin('ananya@vaahansathi.demo', 'password123')}>Customer</button>
-              <button type="button" onClick={() => onLogin('ramesh@vaahansathi.demo', 'password123')}>Driver</button>
+              <button type="button" onClick={() => onLogin('ramesh@vaahansathi.demo', 'password123')}>Driver (Gurugram)</button>
+              <button type="button" onClick={() => onLogin('priya@vaahansathi.demo', 'password123')}>Driver (Delhi)</button>
               <button type="button" onClick={() => onLogin('admin@vaahansathi.demo', 'password123')}>Admin</button>
             </div>
           </div>
