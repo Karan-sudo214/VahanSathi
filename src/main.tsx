@@ -497,7 +497,8 @@ function App() {
       : ['Home', 'Book a driver', 'Your trips', 'Wallet', 'Help'];
 
   return (
-    <div className="app">\n      <LanguageSwitcher />
+    <div className="app">
+      <LanguageSwitcher />
       {/* Mobile Drawer Overlay */}
       {mobileOpen && <div className="drawer-backdrop" onClick={() => setMobileOpen(false)} />}
 
