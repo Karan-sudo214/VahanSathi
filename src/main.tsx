@@ -59,7 +59,7 @@ type User = {
   verificationStatus?: string;
   driverStyleTags?: string[];
   driverBadges?: string[];
-  driverBatch?: { name: string; completedTrips: number; averageRating: number; nextMilestone: number | null };
+  driverBatch?: { name: string; completedTrips: number; averageRating: number; nextMilestone: number | null; ratingRequired: number; progressPercent: number; tripsRemaining: number; benefits: string[] };
   cashRewardsPoints?: number;
   available?: boolean;
 };
@@ -1746,14 +1746,18 @@ function DriverPage({ bookings, update, user, onDutyChange, flash, onCashConfirm
       </div>
 
       <section className="panel driver-badges-panel">
-        <div className="panel-header"><div><h3>Your Driver Performance Batch</h3><p>Batch is calculated from completed trips and customer ratings.</p></div><span className="driver-achievement-badge"><BadgeCheck size={14}/>{user?.driverBatch?.name || 'Starter'} Batch</span></div>
+        <div className="panel-header"><div><span className="eyebrow">PARTNER GROWTH</span><h3>Your Driver Performance Batch</h3><p>Transparent levels based on completed rides and verified customer ratings.</p></div><span className="driver-achievement-badge"><BadgeCheck size={14}/>{user?.driverBatch?.name || 'Starter'} Batch</span></div>
         <div className="stats-cards-grid">
-          <div className="stat-card"><small>QUALITY TRIPS</small><b>{user?.driverBatch?.completedTrips ?? completed.length}</b><span>Completed rides</span></div>
-          <div className="stat-card"><small>AVERAGE RATING</small><b>★ {user?.driverBatch?.averageRating ?? user?.rating ?? '—'}</b><span>Customer feedback</span></div>
+          <div className="stat-card"><small>QUALIFYING TRIPS</small><b>{user?.driverBatch?.completedTrips ?? completed.length}</b><span>Completed rides</span></div>
+          <div className="stat-card"><small>AVERAGE RATING</small><b>★ {user?.driverBatch?.averageRating ? user.driverBatch.averageRating.toFixed(1) : 'New'}</b><span>Customer feedback</span></div>
+          <div className="stat-card"><small>NEXT LEVEL</small><b>{user?.driverBatch?.nextMilestone ? user.driverBatch.tripsRemaining : '—'}</b><span>{user?.driverBatch?.nextMilestone ? 'quality trips remaining' : 'Top batch reached'}</span></div>
         </div>
-        <div className="driver-badge-list">{(user?.driverBadges || []).length ? user.driverBadges.map((badge: string) => <span className="driver-achievement-badge" key={badge}><BadgeCheck size={14}/>{badge}</span>) : <span className="muted-note">Complete quality trips to unlock your first badge.</span>}</div>
+        {user?.driverBatch?.nextMilestone ? <div className="batch-progress-wrap"><div className="batch-progress-copy"><b>{user.driverBatch.progressPercent}% progress</b><span>{user.driverBatch.completedTrips} / {user.driverBatch.nextMilestone} trips</span></div><div className="batch-progress-track"><span style={{width: user.driverBatch.progressPercent + '%'}} /></div><small>Next level requires at least {user.driverBatch.ratingRequired.toFixed(1)}★ average rating and {user.driverBatch.nextMilestone} completed trips.</small></div> : <div className="batch-progress-wrap batch-top-level"><b>Top performance level achieved</b><span>Keep delivering safe, reliable and highly rated rides.</span></div>}
+        <div className="batch-levels-grid">
+          {([{name:'Starter',trips:0,rating:0},{name:'Silver',trips:15,rating:4.3},{name:'Gold',trips:50,rating:4.6},{name:'Platinum',trips:150,rating:4.8},{name:'Elite',trips:500,rating:4.9}]).map((level) => <div className={`batch-level-card ${user?.driverBatch?.name === level.name ? 'current' : ''}`} key={level.name}><b>{level.name}</b><span>{level.trips.toLocaleString('en-IN')} trips</span><small>{level.rating ? `Rating ${level.rating.toFixed(1)}★+` : 'Starting level'}</small>{user?.driverBatch?.name === level.name && <em>Current</em>}</div>)}
+        </div>
+        <div className="driver-badge-list">{(user?.driverBadges || []).length ? user.driverBadges.map((badge: string) => <span className="driver-achievement-badge" key={badge}><BadgeCheck size={14}/>{badge}</span>) : <span className="muted-note">Complete quality trips and earn positive ratings to unlock badges.</span>}</div>
         <small>Communication styles: {(user?.driverStyleTags || ['friendly']).join(' · ')}</small>
-        {user?.driverBatch?.nextMilestone && <small>Next batch milestone: {user.driverBatch.nextMilestone} completed quality trips. Keep your rating high to qualify.</small>}
       </section>
       <div className="stats-cards-grid">
         <div className="stat-card panel">
