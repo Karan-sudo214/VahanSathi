@@ -1,8 +1,8 @@
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap');
 
-/* ─────────────────────────────────────────────
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    TOKENS
-───────────────────────────────────────────── */
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 :root {
   --ink:     #0c1a2e;
   --ink-2:   #1b3045;
@@ -44,9 +44,9 @@
   --top:  58px;
 }
 
-/* ─────────────────────────────────────────────
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    RESET
-───────────────────────────────────────────── */
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 html{-webkit-text-size-adjust:100%;scroll-behavior:smooth}
 body{
@@ -64,9 +64,9 @@ a{color:var(--blue);text-decoration:none}
 img{max-width:100%;display:block}
 button,a{-webkit-tap-highlight-color:transparent}
 
-/* ─────────────────────────────────────────────
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    APP SHELL
-───────────────────────────────────────────── */
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .app{display:flex;min-height:100dvh;position:relative}
 
 /* SIDEBAR */
@@ -241,9 +241,9 @@ nav{display:flex;flex-direction:column;gap:2px;overflow-y:auto;flex:1}
   width:100%;max-width:1340px;margin:0 auto;
 }
 
-/* ─────────────────────────────────────────────
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    TYPE
-───────────────────────────────────────────── */
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .eyebrow{
   font-size:10px;font-weight:700;letter-spacing:.12em;
   color:var(--t5);display:block;text-transform:uppercase;margin-bottom:4px;
@@ -252,9 +252,9 @@ nav{display:flex;flex-direction:column;gap:2px;overflow-y:auto;flex:1}
 .eyebrow.white{color:rgba(255,255,255,.55)}
 .subhead{font-size:14px;color:var(--t6);margin-top:3px;line-height:1.5}
 
-/* ─────────────────────────────────────────────
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    PANELS
-───────────────────────────────────────────── */
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .section-head{
   display:flex;align-items:flex-start;justify-content:space-between;
   margin-bottom:14px;gap:10px;flex-wrap:wrap;
@@ -274,9 +274,9 @@ nav{display:flex;flex-direction:column;gap:2px;overflow-y:auto;flex:1}
 .panel-header h3{font-size:15px;font-weight:700;color:var(--ink)}
 .panel-header p{font-size:12px;color:var(--t5);margin-top:1px}
 
-/* ─────────────────────────────────────────────
-   BUTTONS — all large, clear, touchable
-───────────────────────────────────────────── */
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+   BUTTONS â€” all large, clear, touchable
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .primary-btn{
   display:inline-flex;align-items:center;gap:7px;
   background:var(--ink);color:#fff;
@@ -321,7 +321,7 @@ nav{display:flex;flex-direction:column;gap:2px;overflow-y:auto;flex:1}
 .link-btn{background:none;color:var(--blue);font-size:13px;font-weight:600;display:inline-flex;align-items:center;gap:4px}
 .link-btn-inline{background:none;color:var(--blue);font-weight:700;padding:0;font-size:13px}
 
-/* action buttons on trip cards — big and clear */
+/* action buttons on trip cards â€” big and clear */
 .action-btn{
   display:inline-flex;align-items:center;justify-content:center;gap:7px;
   background:#fff;border:1.5px solid var(--border);
@@ -338,9 +338,9 @@ nav{display:flex;flex-direction:column;gap:2px;overflow-y:auto;flex:1}
 .action-btn.rate{background:#fffbeb;border-color:#fde68a;color:#92400e}
 .action-btn.danger-soft{background:#fef2f2;border-color:#fecaca;color:#991b1b}
 
-/* ─────────────────────────────────────────────
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    HERO
-───────────────────────────────────────────── */
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .welcome-banner{margin-bottom:16px}
 .welcome-banner h1{font-size:24px;font-weight:800;color:var(--ink)}
 
@@ -381,9 +381,9 @@ nav{display:flex;flex-direction:column;gap:2px;overflow-y:auto;flex:1}
 .hero-highlights{display:flex;gap:14px;font-size:12px;color:rgba(255,255,255,.65);flex-wrap:wrap}
 .hero-highlights span{display:flex;align-items:center;gap:5px}
 
-/* ─────────────────────────────────────────────
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    SERVICE GRID
-───────────────────────────────────────────── */
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .services-grid{
   display:grid;grid-template-columns:repeat(3,1fr);
   gap:10px;margin-bottom:22px;
@@ -402,9 +402,9 @@ nav{display:flex;flex-direction:column;gap:2px;overflow-y:auto;flex:1}
 .service-title{font-size:12px;font-weight:700;color:var(--t7);display:block}
 .service-desc{font-size:11px;color:var(--t5);margin-top:3px;display:block}
 
-/* ─────────────────────────────────────────────
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    HOME PANELS
-───────────────────────────────────────────── */
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .home-panels-grid{display:flex;flex-direction:column;gap:14px}
 .promise-panel{background:#f0fdf9;border:1px solid #c6f7f0;display:flex;gap:14px;align-items:flex-start}
 .promise-icon{width:44px;height:44px;border-radius:10px;background:#fff;color:var(--teal);display:grid;place-items:center;flex-shrink:0;box-shadow:var(--s1)}
@@ -416,9 +416,9 @@ nav{display:flex;flex-direction:column;gap:2px;overflow-y:auto;flex:1}
 .empty-panel h4{font-size:15px;font-weight:700;color:var(--ink);margin-bottom:5px}
 .empty-panel p{font-size:13px;color:var(--t5);margin-bottom:14px}
 
-/* ─────────────────────────────────────────────
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    STATS GRID
-───────────────────────────────────────────── */
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .stats-cards-grid{
   display:grid;grid-template-columns:repeat(2,1fr);
   gap:10px;margin-bottom:20px;
@@ -428,9 +428,9 @@ nav{display:flex;flex-direction:column;gap:2px;overflow-y:auto;flex:1}
 .stat-card span{font-size:11px;color:var(--t5)}
 .status-online{color:var(--green)!important}
 
-/* ─────────────────────────────────────────────
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    BOOKING PAGE
-───────────────────────────────────────────── */
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .booking-view{max-width:100%}
 .back-link-btn{
   background:none;color:var(--t5);
@@ -529,9 +529,9 @@ nav{display:flex;flex-direction:column;gap:2px;overflow-y:auto;flex:1}
 .driver-share-box small{font-size:11px;color:#166534}
 .payment-terms-note{display:flex;align-items:center;justify-content:center;gap:5px;font-size:11px;color:var(--t5);margin-top:7px;text-align:center}
 
-/* ─────────────────────────────────────────────
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    BOOKING ROW / TRIP CARDS
-───────────────────────────────────────────── */
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .booking-item-row{
   display:flex;align-items:center;gap:12px;
   padding:13px 0;border-bottom:1px solid var(--border2);cursor:pointer;
@@ -583,7 +583,7 @@ nav{display:flex;flex-direction:column;gap:2px;overflow-y:auto;flex:1}
 .route-point small{font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--t4);display:block}
 .route-point b{font-size:13px;color:var(--t7)}
 
-/* OTP — big, prominent, can't miss it */
+/* OTP â€” big, prominent, can't miss it */
 .otp-banner{
   display:flex;align-items:center;gap:12px;
   background:#f0fdf4;border:1.5px solid #86efac;
@@ -600,7 +600,7 @@ nav{display:flex;flex-direction:column;gap:2px;overflow-y:auto;flex:1}
 .otp-box.end b{color:var(--amber)}
 .otp-hint{display:flex;align-items:center;gap:6px;font-size:12px;color:#0d6e3c}
 
-/* Trip card footer — stacked buttons, full width */
+/* Trip card footer â€” stacked buttons, full width */
 .trip-card-footer{
   display:flex;flex-direction:column;gap:12px;
   padding-top:14px;border-top:1px solid var(--border2);
@@ -614,7 +614,7 @@ nav{display:flex;flex-direction:column;gap:2px;overflow-y:auto;flex:1}
 .driver-assigned-info small{font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--t4);display:block}
 .driver-assigned-info b{font-size:14px;color:var(--t7)}
 
-/* ALL BUTTONS IN A ROW — FULL WIDTH, CLEARLY VISIBLE */
+/* ALL BUTTONS IN A ROW â€” FULL WIDTH, CLEARLY VISIBLE */
 .trip-actions-row{
   display:grid;grid-template-columns:repeat(2,1fr);
   gap:9px;width:100%;
@@ -630,9 +630,9 @@ nav{display:flex;flex-direction:column;gap:2px;overflow-y:auto;flex:1}
 .trip-actions-row.single{grid-template-columns:1fr}
 .trip-actions-row.triple{grid-template-columns:repeat(3,1fr)}
 
-/* ─────────────────────────────────────────────
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    TABS
-───────────────────────────────────────────── */
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .tabs-row{
   display:flex;gap:2px;border-bottom:1px solid var(--border);
   margin-bottom:16px;overflow-x:auto;
@@ -648,10 +648,10 @@ nav{display:flex;flex-direction:column;gap:2px;overflow-y:auto;flex:1}
 .tab-btn.active{border-color:var(--ink);color:var(--ink);font-weight:700}
 .tab-count{font-size:10px;background:var(--t1);padding:2px 6px;border-radius:9px;color:var(--t6)}
 
-/* ─────────────────────────────────────────────
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    DRIVER DASHBOARD
-───────────────────────────────────────────── */
-/* Duty toggle — large, prominent */
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* Duty toggle â€” large, prominent */
 .duty-toggle-row{
   display:flex;align-items:center;justify-content:space-between;
   padding:16px 18px;border-radius:var(--r);
@@ -679,7 +679,7 @@ nav{display:flex;flex-direction:column;gap:2px;overflow-y:auto;flex:1}
 .toggle-switch input:checked+.toggle-track{background:#16a34a}
 .toggle-switch input:checked+.toggle-track::after{transform:translateX(24px)}
 
-/* Driver action buttons — full width stack */
+/* Driver action buttons â€” full width stack */
 .driver-action-footer{
   display:flex;flex-direction:column;gap:10px;
   padding-top:14px;border-top:1px solid var(--border2);
@@ -691,7 +691,7 @@ nav{display:flex;flex-direction:column;gap:2px;overflow-y:auto;flex:1}
   font-size:14px;font-weight:700;border-radius:var(--r-s);
 }
 .payout-highlight{font-size:16px;color:var(--green);font-weight:800}
-/* -- NEW INCOMING REQUEST � driver can't miss it ------------- */
+/* -- NEW INCOMING REQUEST — driver can't miss it ------------- */
 .new-request-card {
   border: 2px solid #16a34a !important;
   position: relative;
@@ -721,9 +721,9 @@ nav{display:flex;flex-direction:column;gap:2px;overflow-y:auto;flex:1}
   border-radius:6px;padding:4px 10px;
 }
 
-/* ─────────────────────────────────────────────
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    ADMIN
-───────────────────────────────────────────── */
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .admin-toolbar{display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap}
 .admin-toolbar input{
   flex:1;min-width:200px;
@@ -758,9 +758,9 @@ nav{display:flex;flex-direction:column;gap:2px;overflow-y:auto;flex:1}
 .driver-admin-info b{font-size:13px;color:var(--t7);display:block}
 .driver-admin-info small{font-size:12px;color:var(--t5)}
 
-/* ─────────────────────────────────────────────
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    EARNINGS / WALLET
-───────────────────────────────────────────── */
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .earnings-hero-card{background:var(--ink);color:#fff;margin-bottom:14px}
 .earnings-hero-card h2{font-size:32px;font-weight:800;margin:6px 0 4px}
 .earnings-hero-card p{font-size:13px;color:rgba(255,255,255,.65)}
@@ -772,9 +772,9 @@ nav{display:flex;flex-direction:column;gap:2px;overflow-y:auto;flex:1}
 .receipt-item-row b{font-size:13px;color:var(--t7);display:block}
 .receipt-item-row small{font-size:12px;color:var(--t5);display:block;margin-top:2px}
 
-/* ─────────────────────────────────────────────
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    HELP
-───────────────────────────────────────────── */
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .help-cards-grid{display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:20px}
 .help-action-card{text-align:left;display:flex;flex-direction:column;gap:6px;cursor:pointer}
 .help-action-card svg{color:var(--blue);margin-bottom:4px}
@@ -785,14 +785,14 @@ nav{display:flex;flex-direction:column;gap:2px;overflow-y:auto;flex:1}
 .faq-card summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--t7);display:flex;justify-content:space-between;align-items:center;list-style:none}
 .faq-card details p{margin-top:8px;font-size:13px;color:var(--t6);line-height:1.6}
 
-/* ─────────────────────────────────────────────
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    PROFILE
-───────────────────────────────────────────── */
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .profile-avatar-large{width:54px;height:54px;border-radius:50%;background:#dbeafe;color:var(--blue);font-size:22px;font-weight:800;display:grid;place-items:center;flex-shrink:0}
 
-/* ─────────────────────────────────────────────
-   MODALS — bottom sheet on mobile
-───────────────────────────────────────────── */
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+   MODALS â€” bottom sheet on mobile
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .overlay{
   position:fixed;inset:0;
   background:rgba(12,26,46,.72);
@@ -890,9 +890,9 @@ nav{display:flex;flex-direction:column;gap:2px;overflow-y:auto;flex:1}
 .voice-confirm-card small{color:var(--t5);font-size:12px}
 .voice-change-btn{width:100%;justify-content:center;margin-top:8px}
 
-/* ─────────────────────────────────────────────
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    TOAST
-───────────────────────────────────────────── */
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .toast-notification{
   position:fixed;bottom:140px;left:50%;
   transform:translateX(-50%);
@@ -908,17 +908,17 @@ nav{display:flex;flex-direction:column;gap:2px;overflow-y:auto;flex:1}
 .toast-icon{color:#4ade80;flex-shrink:0}
 .toast-close{background:none;color:var(--t4);display:grid;place-items:center;min-height:0;margin-left:4px}
 
-/* ─────────────────────────────────────────────
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    EMPTY STATES
-───────────────────────────────────────────── */
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .empty-state{text-align:center;padding:36px 20px;display:flex;flex-direction:column;align-items:center;gap:8px}
 .empty-icon{color:var(--t2)}
 .empty-state h3{font-size:17px;font-weight:700;color:var(--ink)}
 .empty-state p{font-size:13px;color:var(--t5);max-width:360px;line-height:1.55}
 
-/* ─────────────────────────────────────────────
-   BOTTOM NAV — floating pill, not a bottom bar
-───────────────────────────────────────────── */
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+   BOTTOM NAV â€” floating pill, not a bottom bar
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .bottom-nav {
   display: flex;
   position: fixed;
@@ -1000,9 +1000,9 @@ nav{display:flex;flex-direction:column;gap:2px;overflow-y:auto;flex:1}
   z-index: 1;
 }
 
-/* ─────────────────────────────────────────────
-   DESKTOP  ≥769px
-───────────────────────────────────────────── */
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+   DESKTOP  â‰¥769px
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 @media(min-width:769px){
   body{font-size:15px}
   .sidebar{transform:translateX(0);transition:none}
@@ -1039,9 +1039,9 @@ nav{display:flex;flex-direction:column;gap:2px;overflow-y:auto;flex:1}
   .stats-cards-grid{grid-template-columns:repeat(4,1fr)}
 }
 
-/* ─────────────────────────────────────────────
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    MICRO FIXES
-───────────────────────────────────────────── */
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .trip-id-tag,.route-info b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .admin-table td b{word-break:break-all}
 img{max-width:100%}
@@ -1052,7 +1052,7 @@ img{max-width:100%}
   .content{padding:16px 12px calc(var(--bnav) + 16px)}
 }
 
-/* Searching timer � live second counter on trip card */
+/* Searching timer — live second counter on trip card */
 .searching-timer {
   display: flex;
   align-items: center;
@@ -1246,4 +1246,37 @@ img{max-width:100%}
   border-color: var(--ink);
   background: var(--ink);
   color: #fff;
+}
+
+
+/* Application-wide language selector */
+.vs-language-switcher {
+  position: fixed;
+  z-index: 1200;
+  top: 14px;
+  right: 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 9px;
+  border: 1px solid rgba(148,163,184,.38);
+  border-radius: 999px;
+  background: rgba(255,255,255,.94);
+  color: #17324d;
+  box-shadow: 0 5px 20px rgba(15,23,42,.12);
+  backdrop-filter: blur(12px);
+}
+.vs-language-icon { font-size: 15px; line-height: 1; }
+.vs-language-switcher select {
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+@media (max-width: 640px) {
+  .vs-language-switcher { top: 9px; right: 9px; padding: 4px 7px; }
 }
