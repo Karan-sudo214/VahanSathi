@@ -64,7 +64,7 @@ const translations: Record<AppLanguage, Record<string, string>> = {
   }
 };
 
-const normalize = (value: string) => value.replace(/\\s+/g, ' ').trim();
+const normalize = (value: string) => value.replace(/\s+/g, ' ').trim();
 const sourceText = (value: string) => {
   const key = normalize(value);
   for (const language of ['hi', 'hinglish'] as AppLanguage[]) {
@@ -84,8 +84,8 @@ function applyTranslations(root: HTMLElement, language: AppLanguage) {
   while (walker.nextNode()) nodes.push(walker.currentNode as Text);
   nodes.forEach(node => {
     const original = node.textContent ?? '';
-    const leading = original.match(/^\\s*/)?.[0] ?? '';
-    const trailing = original.match(/\\s*$/)?.[0] ?? '';
+    const leading = original.match(/^\s*/)?.[0] ?? '';
+    const trailing = original.match(/\s*$/)?.[0] ?? '';
     const clean = normalize(original);
     if (!clean) return;
     const source = sourceText(clean);
