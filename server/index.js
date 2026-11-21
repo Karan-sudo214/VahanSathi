@@ -822,47 +822,130 @@ app.post('/api/fare/estimate', asyncRoute(async (req, res) => {
 
 // Bookings
 // Razorpay Checkout: create orders on the server and verify every payment before marking a booking paid.
-app.post('/api/payments/cash/confirm', auth, asyncRoute(async (req, res) => {
+// Cash settlement is a two-sided receipt: both parties enter the amount, and the driver
+// must also enter the customer's trip-specific cash PIN. Never accept a one-sided "paid" flag.
+async function recordCashEvent(booking, actor, action, amount, details = {}) {
+  const event = {
+    id: randomUUID(),
+    bookingId: booking.id,
+    actorId: actor.id,
+    actorRole: actor.role,
+    action,
+    amount: Number(amount),
+    currency: 'INR',
+    details,
+    createdAt: new Date().toISOString()
+  };
+  booking.cashEvents = Array.isArray(booking.cashEvents) ? booking.cashEvents : [];
+  booking.cashEvents.push(event);
+  data.payments.push({ ...event, provider: 'cash', status: 'event' });
+  await persistItem('app_payments', event.id, { ...event, provider: 'cash', status: 'event' });
+  return event;
+}
+
+function finalizeCashSettlement(booking) {
+  const customerAmount = Number(booking.cashCustomerAmount);
+  const driverAmount = Number(booking.cashDriverAmount);
+  if (!booking.cashCustomerConfirmed || !booking.cashDriverConfirmed) {
+    booking.payment_status = 'Cash confirmation pending';
+    return false;
+  }
+  if (customerAmount !== driverAmount) {
+    booking.payment_status = 'Cash amount mismatch · under review';
+    booking.cashDispute = { customerAmount, driverAmount, detectedAt: new Date().toISOString() };
+    return false;
+  }
+  if (customerAmount < Number(booking.total || 0)) {
+    booking.payment_status = 'Partially paid · Cash';
+    booking.cashBalanceDue = Number(booking.total || 0) - customerAmount;
+    return false;
+  }
+  booking.payment_status = 'Paid · Cash';
+  booking.paidAt = new Date().toISOString();
+  booking.cashBalanceDue = 0;
+  return true;
+}
+
+app.post('/api/payments/cash/customer-confirm', auth, roles('customer'), asyncRoute(async (req, res) => {
   const booking = data.bookings.find((item) => item.id === String(req.body?.bookingId || ''));
   if (!booking) return res.status(404).json({ error: 'Booking not found.' });
-  if (!['Trip completed', 'Rated'].includes(booking.status)) return res.status(409).json({ error: 'Cash can only be confirmed after the trip is completed.' });
-  if (booking.payment_method !== 'cash') return res.status(409).json({ error: 'This booking was not selected for cash payment.' });
-  if (booking.payment_status === 'Paid · Cash') return res.json({ ok: true, payment_status: booking.payment_status, cashRewardsPoints: Number(data.users.find((u) => u.id === booking.userId)?.cashRewardsPoints || 0) });
-
-  if (req.user.role === 'customer') {
-    if (booking.userId !== req.user.id) return res.status(403).json({ error: 'You can only confirm cash for your own booking.' });
-    booking.cashCustomerConfirmed = true;
-  } else if (req.user.role === 'driver') {
-    if (booking.driverId !== req.user.id) return res.status(403).json({ error: 'Only the assigned driver can confirm cash received.' });
-    booking.cashDriverConfirmed = true;
-  } else if (req.user.role === 'admin') {
-    booking.cashCustomerConfirmed = true;
-    booking.cashDriverConfirmed = true;
-  } else {
-    return res.status(403).json({ error: 'You cannot confirm this cash payment.' });
-  }
-
-  if (booking.cashCustomerConfirmed && booking.cashDriverConfirmed) {
-    booking.payment_status = 'Paid · Cash';
-    booking.paidAt = new Date().toISOString();
-    booking.payment_method = 'cash';
+  if (booking.userId !== req.user.id) return res.status(403).json({ error: 'You can only confirm your own cash payment.' });
+  if (booking.payment_method !== 'cash' || !['Trip completed', 'Rated'].includes(booking.status)) return res.status(409).json({ error: 'Cash confirmation is available only after your cash trip is completed.' });
+  if (booking.payment_status === 'Paid · Cash') return res.json({ ok: true, payment_status: booking.payment_status });
+  const amount = Number(req.body?.amountGiven);
+  if (!Number.isSafeInteger(amount) || amount < 0 || amount > 1000000) return res.status(400).json({ error: 'Enter the exact cash amount you handed to the driver in whole rupees.' });
+  if (booking.cashCustomerConfirmed) return res.status(409).json({ error: 'Your cash amount has already been submitted. Contact support if it is incorrect.' });
+  booking.cashCustomerAmount = amount;
+  booking.cashCustomerConfirmed = true;
+  await recordCashEvent(booking, req.user, 'customer_declared_cash_handed_over', amount);
+  const paid = finalizeCashSettlement(booking);
+  if (paid) {
     const customer = data.users.find((u) => u.id === booking.userId);
     if (customer && !booking.cashRewardAwarded) {
-      const points = Math.max(1, Math.floor(Number(booking.total || 0) / 100));
+      const points = Math.max(1, Math.floor(amount / 100));
       customer.cashRewardsPoints = Number(customer.cashRewardsPoints || 0) + points;
       booking.cashRewardAwarded = true;
       booking.cashRewardPoints = points;
       await persistItem('app_users', customer.id, customer);
     }
-  } else {
-    booking.payment_status = booking.cashCustomerConfirmed ? 'Waiting for driver confirmation' : 'Waiting for customer confirmation';
   }
-
   await persistItem('app_bookings', booking.id, booking);
   await save();
-  const customer = data.users.find((u) => u.id === booking.userId);
-  res.json({ ok: true, payment_status: booking.payment_status, cashRewardsPoints: Number(customer?.cashRewardsPoints || 0), pointsEarned: booking.cashRewardPoints || 0 });
+  res.json({ ok: true, payment_status: booking.payment_status, cashBalanceDue: booking.cashBalanceDue || 0 });
 }));
+
+app.post('/api/payments/cash/driver-confirm', auth, roles('driver'), asyncRoute(async (req, res) => {
+  const booking = data.bookings.find((item) => item.id === String(req.body?.bookingId || ''));
+  if (!booking) return res.status(404).json({ error: 'Booking not found.' });
+  if (booking.driverId !== req.user.id) return res.status(403).json({ error: 'Only the assigned driver can confirm this cash handover.' });
+  if (booking.payment_method !== 'cash' || !['Trip completed', 'Rated'].includes(booking.status)) return res.status(409).json({ error: 'Cash confirmation is available only after the assigned trip is completed.' });
+  if (booking.payment_status === 'Paid · Cash') return res.json({ ok: true, payment_status: booking.payment_status });
+  const amount = Number(req.body?.amountReceived);
+  const pin = String(req.body?.cashPin || '').trim();
+  if (!Number.isSafeInteger(amount) || amount < 0 || amount > 1000000) return res.status(400).json({ error: 'Enter the exact amount of cash received in whole rupees.' });
+  if (!/^\d{6}$/.test(pin)) return res.status(400).json({ error: 'Enter the customer's 6-digit cash confirmation PIN.' });
+  if (booking.cashDriverConfirmed) return res.status(409).json({ error: 'Your cash receipt has already been submitted.' });
+  const expected = createHmac('sha256', secret).update(String(booking.cashPin || '')).digest();
+  const supplied = createHmac('sha256', secret).update(pin).digest();
+  if (!booking.cashPin || !timingSafeEqual(expected, supplied)) {
+    booking.cashPinAttempts = Number(booking.cashPinAttempts || 0) + 1;
+    if (booking.cashPinAttempts >= 5) booking.cashPinLockedAt = new Date().toISOString();
+    await persistItem('app_bookings', booking.id, booking);
+    await save();
+    return res.status(booking.cashPinAttempts >= 5 ? 423 : 400).json({ error: booking.cashPinAttempts >= 5 ? 'Cash PIN locked after too many attempts. Contact support.' : 'Cash PIN is incorrect.' });
+  }
+  if (booking.cashPinLockedAt) return res.status(423).json({ error: 'Cash PIN is locked. Contact support.' });
+  booking.cashDriverAmount = amount;
+  booking.cashDriverConfirmed = true;
+  booking.cashPinVerifiedAt = new Date().toISOString();
+  await recordCashEvent(booking, req.user, 'driver_declared_cash_received', amount, { cashPinVerified: true });
+  const paid = finalizeCashSettlement(booking);
+  if (paid) {
+    const customer = data.users.find((u) => u.id === booking.userId);
+    if (customer && !booking.cashRewardAwarded) {
+      const points = Math.max(1, Math.floor(amount / 100));
+      customer.cashRewardsPoints = Number(customer.cashRewardsPoints || 0) + points;
+      booking.cashRewardAwarded = true;
+      booking.cashRewardPoints = points;
+      await persistItem('app_users', customer.id, customer);
+    }
+  }
+  await persistItem('app_bookings', booking.id, booking);
+  await save();
+  res.json({ ok: true, payment_status: booking.payment_status, cashBalanceDue: booking.cashBalanceDue || 0, cashAmountMatch: booking.cashCustomerConfirmed ? Number(booking.cashCustomerAmount) === amount : null });
+}));
+
+// Admin-only cash ledger: amounts, confirmations, mismatches and timestamps are visible for reconciliation.
+app.get('/api/admin/cash-ledger', auth, adminOnly, (req, res) => {
+  const rows = data.bookings.filter((b) => b.payment_method === 'cash').map((b) => ({
+    bookingId: b.id, customer: b.customer, driver: b.driver, fare: b.total,
+    customerAmount: b.cashCustomerAmount ?? null, driverAmount: b.cashDriverAmount ?? null,
+    customerConfirmed: !!b.cashCustomerConfirmed, driverConfirmed: !!b.cashDriverConfirmed,
+    status: b.payment_status, balanceDue: b.cashBalanceDue || 0,
+    events: b.cashEvents || [], dispute: b.cashDispute || null
+  }));
+  res.json({ cashBookings: rows });
+});
 
 app.post('/api/payments/razorpay/order', auth, roles('customer', 'admin'), asyncRoute(async (req, res) => {
   const keyId = process.env.RAZORPAY_KEY_ID;
@@ -1063,6 +1146,10 @@ app.get('/api/bookings', auth, (req, res) => {
       ...b,
       start_otp: req.user.role === 'customer' || req.user.role === 'admin' ? b.start_otp : undefined,
       end_otp: (req.user.role === 'customer' && b.status === 'Trip started') || req.user.role === 'admin' ? b.end_otp : undefined,
+      cashPin: req.user.role === 'customer' && b.payment_method === 'cash' && ['Trip completed', 'Rated'].includes(b.status) && !b.cashPinLockedAt ? b.cashPin : undefined,
+      cashEvents: req.user.role === 'admin' ? (b.cashEvents || []) : undefined,
+      cashCustomerAmount: req.user.role === 'customer' ? b.cashCustomerAmount : undefined,
+      cashDriverAmount: req.user.role === 'driver' ? b.cashDriverAmount : undefined,
       driver: driverUser ? driverUser.name : b.driver || null,
       customer: customerUser ? customerUser.name : b.customer || null
     };
@@ -1127,6 +1214,8 @@ app.post(
       payment_status: paymentMethod === 'cash' ? 'Cash due after trip' : 'Payment due after trip',
       cashCustomerConfirmed: false,
       cashDriverConfirmed: false,
+      cashPin: paymentMethod === 'cash' ? String(randomInt(100000, 999999)) : null,
+      cashPinAttempts: 0,
       status: availableDriver ? 'Driver assigned' : 'Searching',
       start_otp: String(randomInt(1000, 9999)),
       end_otp: String(randomInt(1000, 9999)),
