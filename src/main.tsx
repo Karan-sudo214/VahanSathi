@@ -466,10 +466,62 @@ function App() {
     }
   };
 
-  const completePayment = (_b: Booking, _method: string) => {
-    // No payment-creation or payment-verification endpoint is currently configured.
-    // Never generate a receipt or claim that money was collected without a verified provider response.
-    flash('Online payment is not connected yet. No payment was charged. Please contact support.');
+  const completePayment = async (b: Booking) => {
+    if (!b) return;
+    setBusy(true);
+    try {
+      const orderData = await api('/payments/razorpay/order', {
+        method: 'POST',
+        body: JSON.stringify({ bookingId: b.id })
+      });
+      if (!orderData?.keyId || !orderData?.order?.id) throw new Error('Secure checkout could not be started. Please try again.');
+      const loadCheckout = () => new Promise<void>((resolve, reject) => {
+        if ((window as any).Razorpay) return resolve();
+        const script = document.createElement('script');
+        script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+        script.onload = () => resolve();
+        script.onerror = () => reject(new Error('Razorpay Checkout could not load. Check your connection and try again.'));
+        document.body.appendChild(script);
+      });
+      await loadCheckout();
+      setBusy(false);
+      const checkout = new (window as any).Razorpay({
+        key: orderData.keyId,
+        amount: orderData.order.amount,
+        currency: orderData.order.currency,
+        name: 'VaahanSathi',
+        description: 'Driver service booking ' + b.id,
+        order_id: orderData.order.id,
+        prefill: { name: user?.name || '', email: user?.email || '', contact: user?.phone || '' },
+        theme: { color: '#0f766e' },
+        handler: async (response: any) => {
+          try {
+            await api('/payments/razorpay/verify', {
+              method: 'POST',
+              body: JSON.stringify({
+                bookingId: b.id,
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature: response.razorpay_signature
+              })
+            });
+            await refresh();
+            setModal('');
+            flash('Payment verified successfully. Your booking is paid.');
+          } catch (error: any) {
+            flash(error?.message || 'Payment verification is pending. Please contact support before paying again.');
+          }
+        },
+        modal: { ondismiss: () => flash('Checkout closed. No payment was confirmed.') }
+      });
+      checkout.on('payment.failed', (event: any) => {
+        flash(event?.error?.description || 'Payment failed. No paid status was recorded.');
+      });
+      checkout.open();
+    } catch (error: any) {
+      setBusy(false);
+      flash(error?.message || 'Could not start secure payment.');
+    }
   };
 
   const logout = () => {
@@ -2245,117 +2297,78 @@ function VoiceAgentModal({ onClose, onApply, onBook, city }: { onClose: () => vo
   const [intent, setIntent] = useState<any>(null);
   const [err, setErr] = useState('');
   const [booking, setBooking] = useState(false);
-  const recorderRef = useRef<MediaRecorder | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
+  const recognitionRef = useRef<any>(null);
   const LANGS = [
     { label: 'English', code: 'en-IN', srv: 'en-IN', ph: 'Example: Take me from Connaught Place to IGI Airport tomorrow at 6 AM' },
     { label: 'हिन्दी', code: 'hi-IN', srv: 'hi-IN', ph: 'उदाहरण: कल सुबह कनॉट प्लेस से एयरपोर्ट जाना है' },
-    { label: 'Hinglish', code: 'hi-IN', srv: 'hi-hinglish', ph: 'Example: Kal subah Connaught Place se airport jaana hai' },
+    { label: 'Hinglish', code: 'en-IN', srv: 'hi-hinglish', ph: 'Example: Kal subah Connaught Place se airport jaana hai' },
   ];
   const [lang, setLang] = useState(() => {
     const saved = localStorage.getItem('vs_language');
     return LANGS[saved === 'hi' ? 1 : saved === 'hinglish' ? 2 : 0];
   });
 
-  function releaseMic() {
-    streamRef.current?.getTracks().forEach(track => track.stop());
-    streamRef.current = null;
-  }
-
   useEffect(() => () => {
-    try { recorderRef.current?.stop(); } catch {}
-    recorderRef.current = null;
-    releaseMic();
+    try { recognitionRef.current?.abort(); } catch {}
+    recognitionRef.current = null;
     if ('speechSynthesis' in window) window.speechSynthesis.cancel();
   }, []);
 
   function stopListening() {
-    const recorder = recorderRef.current;
-    if (recorder && recorder.state !== 'inactive') {
-      setStage('processing');
-      try { recorder.stop(); } catch {
-        recorderRef.current = null;
-        releaseMic();
-        setStage('idle');
-        setErr('Could not finish the recording. Please try again or type your trip.');
-      }
-    } else {
-      releaseMic();
+    try { recognitionRef.current?.stop(); }
+    catch {
+      recognitionRef.current = null;
       setStage('idle');
+      setErr('Could not stop voice recognition. Please type your trip instead.');
     }
   }
 
-  async function startListening() {
-    if (!window.isSecureContext && location.hostname !== 'localhost') {
-      setErr('Microphone access requires a secure HTTPS connection. Open the secure VaahanSathi website or type your trip.');
-      return;
-    }
-    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
-      setErr('Audio recording is not supported in this browser. Please use the latest Safari or Chrome, or type your trip below.');
+  function startListening() {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      setErr('Voice input is not supported by this browser. Please use the latest supported Chrome or type your trip below.');
       return;
     }
     try {
       setErr('');
       setFinal('');
       setIntent(null);
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
-      });
-      streamRef.current = stream;
-      const candidates = ['audio/webm;codecs=opus', 'audio/mp4', 'audio/webm', 'audio/ogg;codecs=opus'];
-      const mimeType = candidates.find(type => MediaRecorder.isTypeSupported?.(type));
-      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
-      recorderRef.current = recorder;
-      const chunks: BlobPart[] = [];
-      recorder.ondataavailable = event => {
-        if (event.data && event.data.size > 0) chunks.push(event.data);
+      const recognition = new SpeechRecognition();
+      recognitionRef.current = recognition;
+      recognition.lang = lang.code;
+      recognition.continuous = false;
+      recognition.interimResults = true;
+      recognition.maxAlternatives = 1;
+      recognition.onresult = (event: any) => {
+        let transcript = '';
+        for (let i = 0; i < event.results.length; i++) {
+          transcript += event.results[i][0]?.transcript || '';
+        }
+        setFinal(transcript.trim());
       };
-      recorder.onerror = () => {
-        recorderRef.current = null;
-        releaseMic();
+      recognition.onerror = (event: any) => {
         setStage('idle');
-        setErr('Recording failed. Check microphone permission and try again, or type your trip.');
+        const messages: Record<string, string> = {
+          'not-allowed': 'Microphone permission is blocked. Allow microphone access in your browser settings, then try again.',
+          'service-not-allowed': 'This browser or device has blocked speech recognition. Please type your trip instead.',
+          'no-speech': 'No speech was detected. Tap the microphone and speak clearly, or type your trip.',
+          'audio-capture': 'No microphone is available. Please check your device or type your trip.',
+          network: 'The browser speech service is unavailable. Check your connection or type your trip.'
+        };
+        setErr(messages[event.error] || 'Voice recognition stopped unexpectedly. Please try again or type your trip.');
       };
-      recorder.onstop = async () => {
-        recorderRef.current = null;
-        releaseMic();
-        const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' });
-        if (blob.size < 1000) {
-          setStage('idle');
-          setErr('The recording was too short. Please hold the microphone and speak for a moment.');
-          return;
-        }
-        try {
-          setStage('processing');
-          const mime = blob.type.split(';')[0] || 'audio/webm';
-          const result = await api('/voice/transcribe?language=' + encodeURIComponent(lang.srv), {
-            method: 'POST',
-            body: blob,
-            headers: { 'Content-Type': mime }
-          });
-          const transcript = typeof result?.text === 'string' ? result.text.trim() : '';
-          if (!transcript) throw new Error('No words were detected. Please try again or type your trip.');
-          setFinal(transcript);
-          setStage('idle');
-          setErr('');
-        } catch (error: any) {
-          setStage('idle');
-          setErr(error?.message || 'Voice transcription failed. Please try again or type your trip.');
-        }
+      recognition.onend = () => {
+        if (recognitionRef.current === recognition) recognitionRef.current = null;
+        setStage(current => current === 'listening' ? 'idle' : current);
       };
-      recorder.start(250);
+      recognition.start();
       setStage('listening');
     } catch (error: any) {
-      releaseMic();
+      recognitionRef.current = null;
       setStage('idle');
-      const name = error?.name;
-      setErr(name === 'NotAllowedError' || name === 'SecurityError'
-        ? 'Microphone permission is blocked. Allow microphone access in your phone browser settings, then try again.'
-        : name === 'NotFoundError'
-          ? 'No microphone was found on this device. Please type your trip.'
-          : name === 'NotReadableError'
-            ? 'Your microphone is busy in another app. Close other apps using it and try again.'
-            : 'Could not access the microphone. Check your browser permission or type your trip below.');
+      setErr(error?.name === 'NotAllowedError'
+        ? 'Microphone permission is blocked. Allow microphone access in your browser settings, then try again.'
+        : 'Could not start voice recognition on this device. Please type your trip instead.');
     }
   }
 
@@ -2432,7 +2445,7 @@ function VoiceAgentModal({ onClose, onApply, onBook, city }: { onClose: () => vo
           {LANGS.map(option => (
             <button key={option.label} type="button" className={'va-lang-btn' + (lang.label === option.label ? ' active' : '')}
               onClick={() => {
-                if (recorderRef.current?.state === 'recording') stopListening();
+                if (recognitionRef.current) stopListening();
                 setLang(option); setErr(''); setFinal(''); setIntent(null);
               }}>{option.label}</button>
           ))}
@@ -2635,38 +2648,21 @@ function AuthModal({ onClose, onLogin, onRegister, busy, storageReady }: any) {
 }
 
 function CheckoutModal({ booking, onClose, onPay }: any) {
-  const [method, setMethod] = useState('UPI');
   if (!booking) return null;
-
   return (
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal checkout-modal-box">
         <button className="modal-close-btn" onClick={onClose}><X size={18} /></button>
-        <span className="eyebrow">SECURE CHECKOUT</span>
+        <span className="eyebrow">RAZORPAY SECURE CHECKOUT</span>
         <h2>Complete Trip Payment</h2>
         <p className="checkout-route">{booking.pickup} → {booking.destination}</p>
-
         <div className="total-due-banner">
           <span>Total Fare Amount</span>
           <b>{money(booking.total)}</b>
         </div>
-
-        <div className="payment-options-list">
-          {['UPI / GooglePay / PhonePe', 'Credit / Debit Card', 'Net Banking'].map((m) => (
-            <button
-              key={m}
-              className={`payment-method-row ${method === m ? 'selected' : ''}`}
-              onClick={() => setMethod(m)}
-            >
-              <CreditCard size={18} />
-              <span>{m}</span>
-              {method === m && <Check size={16} className="selected-check" />}
-            </button>
-          ))}
-        </div>
-
-        <button className="primary-btn-wide" onClick={() => onPay(booking, method)}>
-          Pay {money(booking.total)} Securely <ArrowRight size={17} />
+        <p className="modal-sub">Pay securely using UPI, cards, or net banking through Razorpay. VaahanSathi records payment only after server verification.</p>
+        <button className="primary-btn-wide" onClick={() => onPay(booking)}>
+          Continue to secure payment <ArrowRight size={17} />
         </button>
       </div>
     </div>
