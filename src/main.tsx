@@ -78,6 +78,14 @@ type Booking = {
   start_otp: string;
   end_otp: string;
   payment_status: string;
+  payment_method?: string;
+  requestedDriverStyle?: string;
+  driverLocation?: { lat: number; lng: number; accuracy?: number; heading?: number | null; speed?: number | null; updatedAt?: string };
+  pickupCoordinates?: [number, number];
+  destinationCoordinates?: [number, number];
+  cashCustomerConfirmed?: boolean;
+  cashDriverConfirmed?: boolean;
+  cashRewardPoints?: number;
   driver?: string;
   vehicle?: string;
   createdAt?: string;
@@ -223,6 +231,8 @@ function App() {
   const [time, setTime] = useState('08:00');
   const [hours, setHours] = useState(4);
   const [vehicle, setVehicle] = useState('Sedan');
+  const [paymentMethod, setPaymentMethod] = useState<'online' | 'cash'>('online');
+  const [driverStyle, setDriverStyle] = useState('any');
   const [fare, setFare] = useState<any>(null);
   const [fareBusy, setFareBusy] = useState(false);
   const fareRequestId = useRef(0);
@@ -448,7 +458,7 @@ function App() {
     try {
       const d = await api('/bookings', {
         method: 'POST',
-        body: JSON.stringify({ tripType, pickup, destination, date, time, hours, vehicle, city })
+        body: JSON.stringify({ tripType, pickup, destination, date, time, hours, vehicle, city, paymentMethod, driverStyle })
       });
       // Refresh immediately so both customer and driver see the new booking without waiting
       await refresh();
@@ -587,6 +597,14 @@ function App() {
       setBusy(false);
       flash(error?.message || 'Could not start secure payment.');
     }
+  };
+
+  const confirmCashPayment = async (booking: Booking) => {
+    try {
+      const result = await api('/payments/cash/confirm', { method: 'POST', body: JSON.stringify({ bookingId: booking.id }) });
+      await refresh();
+      flash(result.payment_status === 'Paid · Cash' ? `Cash payment confirmed. You earned ${result.pointsEarned || 0} CashCircle points!` : result.payment_status);
+    } catch (error: any) { flash(error.message || 'Cash confirmation could not be saved.'); }
   };
 
   const logout = () => {
@@ -898,6 +916,10 @@ function App() {
               setHours={setHours}
               vehicle={vehicle}
               setVehicle={setVehicle}
+              paymentMethod={paymentMethod}
+              setPaymentMethod={setPaymentMethod}
+              driverStyle={driverStyle}
+              setDriverStyle={setDriverStyle}
               fare={fare}
               fareBusy={fareBusy}
               onEstimate={estimateFare}
@@ -924,11 +946,13 @@ function App() {
               onTrack={(b: Booking) => setModal('track:' + b.id)}
               onBook={() => setPage('Book a driver')}
               receipts={receipts}
+              onCashConfirm={confirmCashPayment}
+              cashRewardsPoints={Number(user?.cashRewardsPoints || 0)}
             />
           )}
 
-          {page === 'Requests' && <DriverPage bookings={bookings} update={updateStatus} user={user} onDutyChange={(v: boolean) => setUser((u: any) => u ? {...u, available: v} : u)} flash={flash} />}
-          {page === 'My trips' && <TripsPage bookings={bookings} filter={filter} setFilter={setFilter} update={updateStatus} onRate={(b: Booking) => setModal('rate:' + b.id)} onPay={(b: Booking) => setModal('payment:' + b.id)} onTrack={(b: Booking) => setModal('track:' + b.id)} onBook={() => setPage('Book a driver')} receipts={receipts} />}
+          {page === 'Requests' && <DriverPage bookings={bookings} update={updateStatus} user={user} onDutyChange={(v: boolean) => setUser((u: any) => u ? {...u, available: v} : u)} flash={flash} onCashConfirm={confirmCashPayment} />}
+          {page === 'My trips' && <TripsPage bookings={bookings} filter={filter} setFilter={setFilter} update={updateStatus} onRate={(b: Booking) => setModal('rate:' + b.id)} onPay={(b: Booking) => setModal('payment:' + b.id)} onTrack={(b: Booking) => setModal('track:' + b.id)} onBook={() => setPage('Book a driver')} receipts={receipts} onCashConfirm={confirmCashPayment} cashRewardsPoints={Number(user?.cashRewardsPoints || 0)} />}
           {page === 'Earnings' && <EarningsPage bookings={bookings} />}
           {page === 'Wallet' && <WalletPage receipts={receipts} bookings={bookings} onReceipt={downloadReceipt} />}
           {page === 'Help' && <HelpPage flash={flash} onDispute={() => setModal('dispute')} />}
@@ -1279,6 +1303,27 @@ function BookingPage(p: any) {
             </label>
           </div>
 
+          <section className="booking-preferences-panel">
+            <h3>3. Your Driver, Your Comfort</h3>
+            <p>Choose the communication style you prefer. We'll match verified, online drivers who have selected the same style.</p>
+            <div className="driver-style-options">
+              {[
+                { value: 'any', title: 'Best available', desc: 'Any communication style' },
+                { value: 'friendly', title: 'Friendly', desc: 'Warm and polite' },
+                { value: 'talkative', title: 'Talkative', desc: 'Enjoys conversation' },
+                { value: 'humorous', title: 'Fun & humorous', desc: 'Light-hearted company' },
+                { value: 'professional', title: 'Professional', desc: 'Formal and focused' },
+                { value: 'quiet', title: 'Quiet ride', desc: 'Minimal conversation' }
+              ].map((style) => <button type="button" key={style.value} className={`driver-style-option ${p.driverStyle === style.value ? 'selected' : ''}`} onClick={() => p.setDriverStyle(style.value)}><b>{style.title}</b><small>{style.desc}</small></button>)}
+            </div>
+            <h3>4. Choose Payment Method</h3>
+            <div className="payment-choice-grid">
+              <button type="button" className={`payment-choice ${p.paymentMethod === 'online' ? 'selected' : ''}`} onClick={() => p.setPaymentMethod('online')}><CreditCard size={19}/><span><b>Pay online</b><small>UPI, cards and net banking after your trip</small></span></button>
+              <button type="button" className={`payment-choice ${p.paymentMethod === 'cash' ? 'selected' : ''}`} onClick={() => p.setPaymentMethod('cash')}><IndianRupee size={19}/><span><b>Pay by cash</b><small>Pay the driver after your trip and earn CashCircle points</small></span></button>
+            </div>
+            {p.paymentMethod === 'cash' && <div className="cash-reward-note"><b>CashCircle rewards</b><span>Earn 1 reward point for every ₹100 paid in cash. Points are added after both you and your driver confirm payment.</span></div>}
+          </section>
+
           <div className="booking-policy-box">
             <ShieldCheck size={18} />
             <div>
@@ -1385,7 +1430,7 @@ function BookingRow({ booking: b, onClick }: any) {
 }
 
 // ----------------- Trips Page -----------------
-function TripsPage({ bookings, filter, setFilter, update, onRate, onPay, onTrack, onBook, receipts }: any) {
+function TripsPage({ bookings, filter, setFilter, update, onRate, onPay, onTrack, onBook, receipts, onCashConfirm, cashRewardsPoints = 0 }: any) {
   const filters = ['Upcoming', 'Completed', 'Cancelled'];
   const list = bookings.filter((b: Booking) =>
     filter === 'Upcoming'
@@ -1408,6 +1453,7 @@ function TripsPage({ bookings, filter, setFilter, update, onRate, onPay, onTrack
         </button>
       </div>
 
+      <div className="cashcircle-summary"><span className="cashcircle-icon">₹</span><div><b>CashCircle rewards</b><small>{cashRewardsPoints} points earned from confirmed cash trips</small></div></div>
       <div className="tabs-row">
         {filters.map((f) => (
           <button
@@ -1534,12 +1580,10 @@ function TripsPage({ bookings, filter, setFilter, update, onRate, onPay, onTrack
                 {b.status === 'Trip completed' && (
                   <>
                     <div className="trip-actions-row">
-                      <button className="action-btn rate" onClick={() => onRate(b)}>
-                        <Star size={16} /> Rate Driver
-                      </button>
-                      <button className="action-btn pay" onClick={() => onPay(b)}>
-                        <CreditCard size={16} /> Pay {money(b.total)}
-                      </button>
+                      <button className="action-btn rate" onClick={() => onRate(b)}><Star size={16} /> Rate Driver</button>
+                      {b.payment_status === 'Paid' || b.payment_status === 'Paid · Cash' ? <span className="status-pill done">Paid · {b.payment_method === 'cash' ? 'Cash' : 'Online'}</span> :
+                        b.payment_method === 'cash' ? <button className="action-btn pay" onClick={() => onCashConfirm(b)} disabled={b.cashCustomerConfirmed}><IndianRupee size={16}/>{b.cashCustomerConfirmed ? 'Cash confirmation sent' : 'Confirm cash paid'}</button> :
+                        <button className="action-btn pay" onClick={() => onPay(b)}><CreditCard size={16} /> Pay {money(b.total)}</button>}
                     </div>
                     <div className="trip-actions-row">
                       <button className="action-btn" onClick={() => downloadInvoice(b)}>
@@ -1566,7 +1610,7 @@ function TripsPage({ bookings, filter, setFilter, update, onRate, onPay, onTrack
 }
 
 // ----------------- Driver Partner Page -----------------
-function DriverPage({ bookings, update, user, onDutyChange, flash }: any) {
+function DriverPage({ bookings, update, user, onDutyChange, flash, onCashConfirm }: any) {
   const [available, setAvailable] = useState<boolean>(user?.available !== false);
   const [dutyBusy, setDutyBusy] = useState(false);
   const prevSearching = useRef(0);
@@ -1607,6 +1651,22 @@ function DriverPage({ bookings, update, user, onDutyChange, flash }: any) {
   const completed = bookings.filter((b: Booking) => b.driverId === user?.id && b.status === 'Trip completed');
   const totalEarnings = completed.reduce((s: number, b: Booking) => s + b.payout, 0);
 
+  // Share precise GPS only for assigned active trips. The browser asks the driver for location permission.
+  useEffect(() => {
+    if (!navigator.geolocation) return;
+    const active = bookings.filter((b: Booking) => b.driverId === user?.id && ['Driver assigned', 'Driver arriving', 'Trip started'].includes(b.status));
+    if (!active.length) return;
+    const watchers = active.map((booking: Booking) => navigator.geolocation.watchPosition(
+      (position) => api(`/bookings/${booking.id}/location`, {
+        method: 'POST',
+        body: JSON.stringify({ lat: position.coords.latitude, lng: position.coords.longitude, accuracy: position.coords.accuracy, heading: position.coords.heading, speed: position.coords.speed })
+      }).catch((error: any) => console.warn('GPS update:', error.message)),
+      (error) => console.warn('Driver GPS permission or signal:', error.message),
+      { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 }
+    ));
+    return () => watchers.forEach((watchId) => navigator.geolocation.clearWatch(watchId));
+  }, [bookings.map((b: Booking) => `${b.id}:${b.status}:${b.driverId}`).join('|'), user?.id]);
+
   return (
     <div className="driver-view">
       <div className="section-head">
@@ -1642,6 +1702,11 @@ function DriverPage({ bookings, update, user, onDutyChange, flash }: any) {
         </label>
       </div>
 
+      <section className="panel driver-badges-panel">
+        <div className="panel-header"><div><h3>Your Driver Badges</h3><p>Recognition for reliable service and customer feedback.</p></div></div>
+        <div className="driver-badge-list">{(user?.driverBadges || []).length ? user.driverBadges.map((badge: string) => <span className="driver-achievement-badge" key={badge}><BadgeCheck size={14}/>{badge}</span>) : <span className="muted-note">Complete quality trips to unlock your first badge.</span>}</div>
+        <small>Communication styles: {(user?.driverStyleTags || ['friendly']).join(' · ')}</small>
+      </section>
       <div className="stats-cards-grid">
         <div className="stat-card panel">
           <small>TOTAL EARNINGS</small>
@@ -1737,6 +1802,9 @@ function DriverPage({ bookings, update, user, onDutyChange, flash }: any) {
                     >
                       <ArrowRight size={18} /> Start Trip — Enter OTP
                     </button>
+                  )}
+                  {b.status === 'Trip completed' && b.payment_method === 'cash' && b.payment_status !== 'Paid · Cash' && (
+                    <button className="primary-btn" style={{width:'100%',justifyContent:'center',background:'#0a7a6e'}} onClick={() => onCashConfirm(b)} disabled={b.cashDriverConfirmed}><IndianRupee size={17}/>{b.cashDriverConfirmed ? 'Cash confirmation sent' : 'Confirm cash received'}</button>
                   )}
                   {b.status === 'Trip started' && (
                     <button
@@ -2318,6 +2386,7 @@ function DriverProfile({ user, onUpdate, flash }: any) {
   const [name, setName] = useState(user?.name || '');
   const [phone, setPhone] = useState(user?.phone || '');
   const [vehicle, setVehicle] = useState(user?.vehicle || 'Sedan');
+  const [selectedStyles, setSelectedStyles] = useState<string[]>(user?.driverStyleTags || ['friendly']);
   const [busy, setBusy] = useState(false);
 
   const save = async () => {
@@ -2325,7 +2394,7 @@ function DriverProfile({ user, onUpdate, flash }: any) {
     try {
       const d = await api('/me', {
         method: 'PATCH',
-        body: JSON.stringify({ name, phone, vehicle })
+        body: JSON.stringify({ name, phone, vehicle, driverStyleTags: selectedStyles })
       });
       onUpdate?.(d.user);
       setEditing(false);
@@ -2353,6 +2422,19 @@ function DriverProfile({ user, onUpdate, flash }: any) {
       </div>
 
       <div className="panel profile-edit-card">
+        <section className="driver-style-profile">
+          <h3>Communication style tags</h3>
+          <p>Select the styles that genuinely describe how you interact with customers.</p>
+          <div className="driver-style-options">
+            {[
+              { value: 'friendly', title: 'Friendly', desc: 'Warm and polite' },
+              { value: 'talkative', title: 'Talkative', desc: 'Enjoys conversation' },
+              { value: 'humorous', title: 'Fun & humorous', desc: 'Light-hearted company' },
+              { value: 'professional', title: 'Professional', desc: 'Formal and focused' },
+              { value: 'quiet', title: 'Quiet ride', desc: 'Minimal conversation' }
+            ].map((style) => <button type="button" key={style.value} className={`driver-style-option ${selectedStyles.includes(style.value) ? 'selected' : ''}`} onClick={() => setSelectedStyles((current) => current.includes(style.value) ? current.filter((tag) => tag !== style.value) : [...current, style.value])}><b>{style.title}</b><small>{style.desc}</small></button>)}
+          </div>
+        </section>
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '24px' }}>
           <div className="profile-avatar-large">{user?.name ? user.name[0] : 'V'}</div>
           <div>
@@ -2848,49 +2930,53 @@ function CheckoutModal({ booking, onClose, onPay }: any) {
 }
 
 function TrackingModal({ booking, onClose }: any) {
-  const [progress, setProgress] = useState(35);
-
+  const [location, setLocation] = useState<any>(booking?.driverLocation || null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [lastUpdated, setLastUpdated] = useState('');
   useEffect(() => {
-    const timer = setInterval(() => {
-      setProgress((p) => (p >= 100 ? 0 : p + 4));
-    }, 800);
-    return () => clearInterval(timer);
-  }, []);
-
+    if (!booking?.id) return;
+    let active = true;
+    const load = async () => {
+      try {
+        const result = await api(`/bookings/${booking.id}/location`);
+        if (!active) return;
+        setLocation(result.driverLocation || null);
+        setLastUpdated(result.updatedAt || '');
+        setError('');
+      } catch (e: any) { if (active) setError(e.message || 'Live location is not available yet.'); }
+      finally { if (active) setLoading(false); }
+    };
+    load();
+    const timer = window.setInterval(load, 5000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [booking?.id]);
   if (!booking) return null;
-
+  const coords = location ? [location.lat, location.lng] : booking.pickupCoordinates;
+  const mapUrl = coords ? (() => {
+    const lat = Number(coords[0] ?? coords.lat), lng = Number(coords[1] ?? coords.lng), delta = 0.025;
+    return `https://www.openstreetmap.org/export/embed.html?bbox=${lng-delta}%2C${lat-delta}%2C${lng+delta}%2C${lat+delta}&layer=mapnik&marker=${lat}%2C${lng}`;
+  })() : '';
+  const age = lastUpdated ? Math.max(0, Math.round((Date.now() - new Date(lastUpdated).getTime()) / 1000)) : null;
   return (
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal tracking-modal-box">
+      <div className="modal tracking-modal-box real-tracking-modal">
         <button className="modal-close-btn" onClick={onClose}><X size={18} /></button>
-        <span className="eyebrow">LIVE RIDE TRACKING</span>
-        <h2>Your Driver is on the Move</h2>
-        <p className="subhead">{booking.driver || 'Ramesh Kumar'} is driving your car to destination.</p>
-
-        <div className="simulated-map-container">
-          <div className="map-road-line">
-            <div className="map-car-icon" style={{ left: `${progress}%` }}>
-              <CarFront size={20} />
-            </div>
-          </div>
-          <div className="map-labels">
-            <span><MapPin size={14} /> {booking.pickup.split(',')[0]}</span>
-            <span><Navigation size={14} /> {booking.destination.split(',')[0]}</span>
-          </div>
-        </div>
-
-        <div className="eta-counter-box">
-          <div>
-            <b>{Math.max(1, Math.round((100 - progress) * 0.25))} mins</b>
-            <small>Estimated Arrival</small>
-          </div>
-          <div className="otp-pill">Start OTP: {booking.start_otp || '4821'}</div>
-        </div>
+        <span className="eyebrow">LIVE DRIVER LOCATION</span>
+        <h2>{booking.status === 'Trip started' ? 'Your trip is in progress' : 'Your driver is on the way'}</h2>
+        <p className="subhead">{booking.driver || 'Your assigned driver'} · {booking.status}</p>
+        {mapUrl ? <iframe title="Live driver location map" className="live-location-map" src={mapUrl} loading="lazy" referrerPolicy="no-referrer-when-downgrade" /> :
+          <div className="live-map-placeholder"><MapPin size={30}/><b>Waiting for driver GPS</b><span>The map will show the driver's real position when location sharing starts.</span></div>}
+        <div className="live-location-meta"><span><i className="gps-live-dot"/> {location ? 'GPS location received' : loading ? 'Connecting to driver GPS…' : 'Waiting for GPS signal'}</span><small>{age !== null ? (age < 60 ? `Updated ${age}s ago` : `Updated ${Math.floor(age/60)}m ago`) : 'No GPS update yet'}</small></div>
+        {location && <p className="gps-accuracy-note">GPS accuracy ±{Math.round(location.accuracy || 0)}m · Location refreshes every 5 seconds.</p>}
+        {error && <p className="fare-error">{error}</p>}
+        <div className="tracking-route-meta"><div><small>PICKUP</small><b>{booking.pickup}</b></div><div><small>DESTINATION</small><b>{booking.destination}</b></div></div>
+        {booking.start_otp && ['Driver assigned', 'Driver arriving'].includes(booking.status) && <div className="otp-pill">Start OTP: {booking.start_otp}</div>}
+        <p className="gps-privacy-note"><ShieldCheck size={14}/> Driver GPS is shared only during this assigned active booking.</p>
       </div>
     </div>
   );
 }
-
 function RatingModal({ stars, setStars, onClose, onSubmit }: any) {
   return (
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
