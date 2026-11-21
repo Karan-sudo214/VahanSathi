@@ -408,6 +408,12 @@ const safe = (u) => {
     trips: completedTrips,
     driverStyleTags: Array.isArray(u.driverStyleTags) ? u.driverStyleTags : ['friendly'],
     cashRewardsPoints: Number(u.cashRewardsPoints || 0),
+    driverBatch: u.role === 'driver' ? {
+      name: completedTrips >= 150 && averageRating >= 4.8 ? 'Platinum' : completedTrips >= 50 && averageRating >= 4.6 ? 'Gold' : completedTrips >= 15 && averageRating >= 4.3 ? 'Silver' : 'Starter',
+      completedTrips,
+      averageRating,
+      nextMilestone: completedTrips < 15 ? 15 : completedTrips < 50 ? 50 : completedTrips < 150 ? 150 : null
+    } : undefined,
     driverBadges: u.role === 'driver' ? [
       ...(completedTrips >= 500 ? ['Elite Partner'] : completedTrips >= 100 ? ['Trusted Partner'] : []),
       ...(averageRating >= 4.8 ? ['5-Star Service'] : []),
