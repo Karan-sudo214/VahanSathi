@@ -1745,9 +1745,14 @@ function TripsPage({ bookings, filter, setFilter, update, onRate, onPay, onTrack
 
 // ----------------- Driver Partner Page -----------------
 function DriverPage({ bookings, update, user, onDutyChange, flash, onCashConfirm }: any) {
-  const [available, setAvailable] = useState<boolean>(user?.available !== false);
+  const [available, setAvailable] = useState<boolean>(user?.available === true);
   const [dutyBusy, setDutyBusy] = useState(false);
   const prevSearching = useRef(0);
+
+  // Keep the dashboard's duty switch in sync with the latest server profile.
+  useEffect(() => {
+    if (typeof user?.available === 'boolean') setAvailable(user.available);
+  }, [user?.available]);
   const newRequestRef = useRef<HTMLDivElement>(null);
 
   const toggleDuty = async () => {
