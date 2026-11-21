@@ -2216,7 +2216,7 @@ function AdminModulePage({ module, bookings, flash }: { module: string; bookings
                   <tr>
                     {module === 'bookings' ? <><th>BOOKING</th><th>ROUTE</th><th>CUSTOMER / DRIVER</th><th>FARE</th><th>STATUS</th></> :
                      module === 'customers' ? <><th>CUSTOMER</th><th>CONTACT</th><th>CITY</th><th>ACCOUNT</th></> :
-                     module === 'payments' ? <><th>PAYMENT</th><th>BOOKING</th><th>AMOUNT</th><th>STATUS</th></> :
+                     module === 'payments' ? <><th>PAYMENT / EVENT</th><th>BOOKING</th><th>AMOUNT</th><th>CONFIRMED BY</th><th>TIME</th><th>STATUS</th></> :
                      module === 'disputes' ? <><th>CASE</th><th>FILED BY</th><th>SUBJECT</th><th>STATUS</th><th>ACTIONS</th></> :
                      <><th>TIMESTAMP</th><th>ADMIN / ROLE</th><th>ACTION</th><th>TARGET</th></>}
                   </tr>
@@ -2240,9 +2240,11 @@ function AdminModulePage({ module, bookings, flash }: { module: string; bookings
                       </tr>
                     ) : module === 'payments' ? (
                       <tr key={r.id || i}>
-                        <td><b>{r.id || 'Payment'}</b></td>
+                        <td><b>{r.provider === 'cash' ? (r.action || 'Cash event').replaceAll('_', ' ') : r.provider || 'Payment'}</b><small>{r.id || '—'}</small></td>
                         <td>{r.bookingId || r.booking_id || '—'}</td>
                         <td>{money(r.amount || r.total || 0)}</td>
+                        <td>{r.actorName || r.actorRole || r.method || '—'}<small>{r.actorRole || ''}</small></td>
+                        <td>{r.createdAt ? new Date(r.createdAt).toLocaleString('en-IN') : r.paidAt ? new Date(r.paidAt).toLocaleString('en-IN') : '—'}</td>
                         <td><span className="status-pill">{r.status || r.payment_status || 'Pending'}</span></td>
                       </tr>
                     ) : module === 'disputes' ? (
