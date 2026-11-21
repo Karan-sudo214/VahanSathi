@@ -142,6 +142,21 @@ async function seedDefaultAccounts() {
       createdAt: now
     },
     {
+      id: 'usr-driver-2',
+      name: 'Priya Sharma',
+      email: 'priya@vaahansathi.demo',
+      password: pwHash,
+      role: 'driver',
+      phone: '+91 98765 43213',
+      city: 'Delhi',
+      vehicle: 'Sedan',
+      rating: 4.8,
+      trips: 312,
+      verificationStatus: 'verified',
+      available: true,
+      createdAt: now
+    },
+    {
       id: 'usr-admin-1',
       name: 'Ops Admin',
       email: 'admin@vaahansathi.demo',
@@ -258,6 +273,7 @@ async function ensureDemoAccounts() {
   const accounts = [
     { id: 'usr-customer-1', name: 'Ananya Sharma', email: 'ananya@vaahansathi.demo', role: 'customer', phone: '+91 98765 43210', city: 'Delhi' },
     { id: 'usr-driver-1', name: 'Ramesh Kumar', email: 'ramesh@vaahansathi.demo', role: 'driver', phone: '+91 98765 43211', city: 'Gurugram', vehicle: 'Sedan', adminRole: undefined, rating: 4.9, trips: 684, verificationStatus: 'verified', available: true },
+    { id: 'usr-driver-2', name: 'Priya Sharma', email: 'priya@vaahansathi.demo', role: 'driver', phone: '+91 98765 43213', city: 'Delhi', vehicle: 'Sedan', rating: 4.8, trips: 312, verificationStatus: 'verified', available: true },
     { id: 'usr-admin-1', name: 'Ops Admin', email: 'admin@vaahansathi.demo', role: 'admin', adminRole: 'super_admin', phone: '+91 98765 43212', city: 'Delhi' }
   ];
 

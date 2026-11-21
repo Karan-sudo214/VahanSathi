@@ -1051,3 +1051,26 @@ img{max-width:100%}
   .city-pill{max-width:100px}
   .content{padding:16px 12px calc(var(--bnav) + 16px)}
 }
+
+/* Searching timer — live second counter on trip card */
+.searching-timer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--blue);
+  padding: 2px 0;
+}
+.searching-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--blue);
+  flex-shrink: 0;
+  animation: dotPulse 1s ease-in-out infinite;
+}
+@keyframes dotPulse {
+  0%,100% { opacity: 1; transform: scale(1); }
+  50%     { opacity: .4; transform: scale(.7); }
+}
