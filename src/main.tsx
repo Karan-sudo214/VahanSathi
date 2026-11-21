@@ -1281,34 +1281,38 @@ function TripsPage({ bookings, filter, setFilter, update, onRate, onPay, onTrack
                   </div>
                 </div>
 
-                <div className="trip-actions-row">
+                <div className="trip-actions-row single">
                   {['Driver assigned', 'Driver arriving', 'Trip started'].includes(b.status) && (
                     <button className="action-btn track" onClick={() => onTrack(b)}>
-                      <Navigation size={15} /> Track Route
+                      <Navigation size={16} /> Track Driver Route
                     </button>
                   )}
-                  {b.status === 'Trip completed' && (
-                    <>
-                      <button className="action-btn" onClick={() => onRate(b)}>
-                        <Star size={15} /> Rate Driver
+                </div>
+                {b.status === 'Trip completed' && (
+                  <>
+                    <div className="trip-actions-row">
+                      <button className="action-btn rate" onClick={() => onRate(b)}>
+                        <Star size={16} /> Rate Driver
                       </button>
                       <button className="action-btn pay" onClick={() => onPay(b)}>
-                        <CreditCard size={15} /> Pay {money(b.total)}
+                        <CreditCard size={16} /> Pay {money(b.total)}
                       </button>
+                    </div>
+                    <div className="trip-actions-row">
                       <button className="action-btn" onClick={() => downloadInvoice(b)}>
-                        Invoice
+                        <FileText size={15} /> Download Invoice
                       </button>
                       {receipts.some((r: Receipt) => r.bookingId === b.id) && (
                         <button
                           className="action-btn"
                           onClick={() => downloadReceipt(b, receipts.find((r: Receipt) => r.bookingId === b.id)!)}
                         >
-                          Receipt
+                          <Check size={15} /> View Receipt
                         </button>
                       )}
-                    </>
-                  )}
-                </div>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           ))}
@@ -1366,9 +1370,9 @@ function DriverPage({ bookings, update, user, onDutyChange, flash }: any) {
       </div>
 
       {/* Real duty toggle — wired to backend */}
-      <div className="duty-toggle-row">
+      <div className={`duty-toggle-row ${available ? 'online' : 'offline'}`}>
         <div>
-          <b>{available ? '● Online — Accepting Requests' : '○ Offline — Not Accepting'}</b>
+          <b>{available ? '🟢 Online — Accepting Requests' : '⚫ Offline — Not Accepting'}</b>
           <small>{available ? 'Customers in your city can assign trips to you.' : 'Go online to receive new ride requests.'}</small>
         </div>
         <label className="toggle-switch">
@@ -1455,38 +1459,39 @@ function DriverPage({ bookings, update, user, onDutyChange, flash }: any) {
 
               <div className="driver-action-footer">
                 <span>Customer: <b>{b.customer || 'Car Owner'}</b></span>
-
                 <div className="action-buttons-group">
                   {b.status === 'Searching' && (
-                    <button className="primary-btn" onClick={() => update(b, 'Driver assigned')}>
-                      Accept Booking <Check size={16} />
+                    <button className="primary-btn success" style={{width:'100%',justifyContent:'center'}} onClick={() => update(b, 'Driver assigned')}>
+                      <Check size={18} /> Accept This Booking
                     </button>
                   )}
                   {b.status === 'Driver assigned' && (
-                    <button className="primary-btn" onClick={() => update(b, 'Driver arriving')}>
-                      Mark On the Way <Navigation size={16} />
+                    <button className="primary-btn" style={{width:'100%',justifyContent:'center',background:'#1d4ed8'}} onClick={() => update(b, 'Driver arriving')}>
+                      <Navigation size={18} /> I Am On My Way
                     </button>
                   )}
                   {b.status === 'Driver arriving' && (
                     <button
                       className="primary-btn"
+                      style={{width:'100%',justifyContent:'center',background:'#0a7a6e'}}
                       onClick={() => {
-                        const code = prompt('Ask the customer for their 4-digit START OTP:');
+                        const code = prompt('Enter the 4-digit START OTP from the customer:');
                         if (code) update(b, 'Trip started', code);
                       }}
                     >
-                      Start Trip (Enter OTP) <ArrowRight size={16} />
+                      <ArrowRight size={18} /> Start Trip — Enter OTP
                     </button>
                   )}
                   {b.status === 'Trip started' && (
                     <button
                       className="primary-btn success"
+                      style={{width:'100%',justifyContent:'center'}}
                       onClick={() => {
-                        const code = prompt('Ask the customer for their 4-digit END OTP:');
+                        const code = prompt('Enter the 4-digit END OTP from the customer:');
                         if (code) update(b, 'Trip completed', code);
                       }}
                     >
-                      Complete Trip (Enter OTP) <Check size={16} />
+                      <Check size={18} /> Complete Trip — Enter OTP
                     </button>
                   )}
                 </div>
