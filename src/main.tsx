@@ -465,19 +465,10 @@ function App() {
     }
   };
 
-  const completePayment = (b: Booking, method: string) => {
-    const receipt: Receipt = {
-      bookingId: b.id,
-      amount: b.total,
-      method,
-      paidAt: new Date().toISOString(),
-      customer: user?.name || 'Customer'
-    };
-    const next = [receipt, ...readReceipts().filter((x) => x.bookingId !== b.id)];
-    localStorage.setItem('vs_receipts', JSON.stringify(next));
-    setReceipts(next);
-    setModal('');
-    flash('Payment received! Receipt generated.');
+  const completePayment = (_b: Booking, _method: string) => {
+    // No payment-creation or payment-verification endpoint is currently configured.
+    // Never generate a receipt or claim that money was collected without a verified provider response.
+    flash('Online payment is not connected yet. No payment was charged. Please contact support.');
   };
 
   const logout = () => {
