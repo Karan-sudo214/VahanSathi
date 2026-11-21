@@ -1,4 +1,4 @@
-import 'dotenv/config';
+﻿import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import bcrypt from 'bcryptjs';
@@ -230,7 +230,7 @@ async function seedDefaultAccounts() {
       status: 'Trip completed',
       start_otp: '1428',
       end_otp: '8613',
-      payment_status: 'Paid · Razorpay',
+      payment_status: 'Paid Â· Razorpay',
       createdAt: new Date(Date.now() - 86400000).toISOString()
     }
   ];
@@ -944,7 +944,7 @@ app.patch(
   })
 );
 
-// ── Driver duty toggle ──────────────────────────────────────────────────────
+// â”€â”€ Driver duty toggle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 app.patch('/api/driver/duty', auth, roles('driver'), asyncRoute(async (req, res) => {
   const u = data.users.find((x) => x.id === req.user.id);
   if (!u) return res.status(404).json({ error: 'User not found.' });
@@ -954,7 +954,7 @@ app.patch('/api/driver/duty', auth, roles('driver'), asyncRoute(async (req, res)
   res.json({ available: u.available });
 }));
 
-// ── Profile update ───────────────────────────────────────────────────────────
+// â”€â”€ Profile update â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 app.patch('/api/me', auth, asyncRoute(async (req, res) => {
   const u = data.users.find((x) => x.id === req.user.id);
   if (!u) return res.status(404).json({ error: 'User not found.' });
@@ -967,7 +967,7 @@ app.patch('/api/me', auth, asyncRoute(async (req, res) => {
   res.json({ user: safe(u) });
 }));
 
-// ── Customer dispute filing ───────────────────────────────────────────────────
+// â”€â”€ Customer dispute filing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 app.post('/api/disputes', auth, roles('customer', 'admin'), asyncRoute(async (req, res) => {
   const { bookingId, subject, description } = req.body || {};
   if (!subject || !description) return res.status(400).json({ error: 'Subject and description are required.' });
@@ -981,7 +981,7 @@ app.post('/api/disputes', auth, roles('customer', 'admin'), asyncRoute(async (re
     description: String(description).slice(0, 1000),
     status: 'open',
     createdAt: new Date().toISOString(),
-    route: booking ? `${booking.pickup} → ${booking.destination}` : null,
+    route: booking ? `${booking.pickup} â†’ ${booking.destination}` : null,
   };
   data.disputes.push(dispute);
   await persistItem('app_disputes', dispute.id, dispute);
@@ -989,7 +989,7 @@ app.post('/api/disputes', auth, roles('customer', 'admin'), asyncRoute(async (re
   res.status(201).json({ dispute });
 }));
 
-// ── Admin: resolve/close dispute ─────────────────────────────────────────────
+// â”€â”€ Admin: resolve/close dispute â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 app.patch('/api/admin/disputes/:id', auth, adminOnly, asyncRoute(async (req, res) => {
   const d = data.disputes.find((x) => x.id === req.params.id);
   if (!d) return res.status(404).json({ error: 'Dispute not found.' });
@@ -1003,7 +1003,7 @@ app.patch('/api/admin/disputes/:id', auth, adminOnly, asyncRoute(async (req, res
   res.json({ dispute: d });
 }));
 
-// ── Admin: cancel any booking ─────────────────────────────────────────────────
+// â”€â”€ Admin: cancel any booking â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 app.patch('/api/admin/bookings/:id/cancel', auth, adminOnly, asyncRoute(async (req, res) => {
   const b = data.bookings.find((x) => x.id === req.params.id);
   if (!b) return res.status(404).json({ error: 'Booking not found.' });
@@ -1016,7 +1016,7 @@ app.patch('/api/admin/bookings/:id/cancel', auth, adminOnly, asyncRoute(async (r
   res.json({ booking: b });
 }));
 
-// ── Admin: update pricing ────────────────────────────────────────────────────
+// â”€â”€ Admin: update pricing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // (already exists above; keeping alias here for clarity)
 
 // Voice booking intent parser. The browser handles listening; this endpoint normalises
@@ -1025,44 +1025,97 @@ app.post('/api/voice/intent', (req, res) => {
   const raw = String(req.body.text || '').trim();
   const text = raw.toLowerCase();
   const language = String(req.body.language || 'en-IN');
-  const city = text.includes('gurugram') || text.includes('gurgaon') || text.includes('गुरुग्राम') ? 'Gurugram' : 'Delhi';
-  const tripType = /airport|aeropuerto|एयरपोर्ट|विमानतळ|ವಿಮಾನ ನಿಲ್ದಾಣ|விமான நிலையம்|విమానాశ్రయం/.test(text)
-    ? 'Airport'
-    : /outstation|outside city|बाहर|ಔಟ್ ಸ್ಟೇಷನ್|வெளியூர்|అవుట్ స్టేషన్/.test(text)
-    ? 'Outstation'
-    : /night|रात|ರಾತ್ರಿ|இரவு|రాత్రి/.test(text)
-    ? 'Night driver'
-    : /full day|whole day|पूरा दिन|ಪೂರ್ಣ ದಿನ|முழு நாள்|పూర్తి రోజు/.test(text)
-    ? 'Full day'
-    : 'Hourly';
-  const numberWords = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, सात: 7, आठ: 8, चार: 4, पांच: 5 };
-  const hourMatch = text.match(/(\d+)\s*(?:hours?|घंटे|ಗಂಟೆ|மணி|గంట)/i);
-  const wordHour = Object.entries(numberWords).find(([word]) => text.includes(`${word} hour`) || text.includes(`${word} घंटे`));
-  const hours = Math.max(1, Math.min(24, Number(hourMatch?.[1] || wordHour?.[1] || (tripType === 'Full day' ? 8 : 4))));
-  const routeMatch = text.match(/(?:from|pickup|pick me)\s+(.+?)\s+(?:to|destination)\s+(.+?)(?:,|\.|$)/i) || text.match(/(.+?)\s+से\s+(.+?)(?=\s+(?:जाना|तक|कल|आज|सुबह|शाम|रात)|$)/i) || text.match(/से\s+(.+?)\s+(?:तक|जाना है|जाना|जाने)\s+(.+?)(?=\s+(?:कल|आज|सुबह|शाम|रात)|$)/i);
-  const cleanPlace = (value) => value?.replace(/^(?:मुझे|मुझको)\s+.*?(?:के लिए|के वास्ते)\s+/i, '').replace(/^(?:i need|please take me|मुझे)\s+/i, '').replace(/\s+(?:tomorrow|today|कल|आज|सुबह|शाम|रात).*$/i, '').replace(/\s+at\s+\d.*$/i, '').replace(/[,.]+$/, '').trim() || null;
-  const pickup = cleanPlace(routeMatch?.[1]);
-  const destination = cleanPlace(routeMatch?.[2]);
-  const explicitTime = text.match(/(?:at|around|on|बजे|सुबह|शाम|रात)\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm|बजे|सुबह|शाम|रात)?/i);
-  const allTimes = [...text.matchAll(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/gi)];
-  const timeMatch = explicitTime || allTimes[allTimes.length - 1];
-  let time = null;
-  if (timeMatch) {
-    const hourValue = explicitTime ? timeMatch[1] : timeMatch[1];
-    let hour = Number(hourValue);
-    const suffix = String(timeMatch[3] || '').toLowerCase();
-    if ((suffix === 'pm' || suffix === 'शाम' || suffix === 'रात') && hour < 12) hour += 12;
-    if ((suffix === 'am' || suffix === 'सुबह') && hour === 12) hour = 0;
-    time = `${String(hour).padStart(2, '0')}:${timeMatch[2] || '00'}`;
-  }
-  const date = /tomorrow|कल|ನಾಳೆ|நாளை|రేపు/.test(text) ? new Date(Date.now() + 86400000).toISOString().slice(0, 10) : null;
-  const labels = {
-    'hi-IN': `मैंने ${city} में ${hours} घंटे की ${tripType === 'Airport' ? 'एयरपोर्ट' : 'ड्राइवर'} यात्रा समझी है। विवरण जांचकर बुकिंग पूरी करें।`,
-    'kn-IN': `${city} ನಲ್ಲಿ ${hours} ಗಂಟೆಗಳ ಡ್ರೈವರ್ ಸೇವೆಯನ್ನು ಅರ್ಥಮಾಡಿಕೊಂಡಿದ್ದೇನೆ. ವಿವರಗಳನ್ನು ಪರಿಶೀಲಿಸಿ.`,
-    'ta-IN': `${city} நகரில் ${hours} மணி நேர டிரைவர் சேவையைப் புரிந்துகொண்டேன். விவரங்களைச் சரிபார்க்கவும்.`,
-    'te-IN': `${city} లో ${hours} గంటల డ్రైవర్ సేవను అర్థం చేసుకున్నాను. వివరాలను తనిఖీ చేయండి.`
+  const requestedCity = String(req.body.city || 'Delhi');
+
+  // ── City detection ───────────────────────────────────────────────────────
+  const city =
+    /gurugram|gurgaon|साइबर सिटी|गुरुग्राम|cyber city|huda/.test(text) ? 'Gurugram' :
+    /delhi|दिल्ली|connaught|igi airport|indira gandhi|dwarka|rohini|karol bagh|saket/.test(text) ? 'Delhi' :
+    requestedCity;
+
+  // ── Trip type ────────────────────────────────────────────────────────────
+  const tripType =
+    /airport|एयरपोर्ट|हवाई अड्डा|airport drop|airport jaana|igi/.test(text) ? 'Airport' :
+    /outstation|bahar|शहर के बाहर|outstaion|दूसरे शहर/.test(text) ? 'Outstation' :
+    /night|रात|rat ko|raat ko|late night|रात में/.test(text) ? 'Night driver' :
+    /full day|poora din|पूरा दिन|sara din|सारा दिन|whole day/.test(text) ? 'Full day' :
+    'Hourly';
+
+  // ── Hours ────────────────────────────────────────────────────────────────
+  const numberMap = {
+    one:1,ek:1,एक:1, two:2,do:2,दो:2, three:3,teen:3,तीन:3,
+    four:4,chaar:4,char:4,चार:4, five:5,paanch:5,पांच:5,
+    six:6,chhe:6,छः:6, seven:7,saat:7,सात:7, eight:8,aath:8,आठ:8,
+    nine:9,nau:9,नौ:9, ten:10,das:10,दस:10
   };
-  const summary = labels[language] || `I understood a ${hours}-hour ${tripType.toLowerCase()} booking in ${city}. Review the details before confirming.`;
+  const hourMatch = text.match(/(\d+)\s*(?:hours?|ghante|घंटे|घंटा|hr)/i);
+  let hours = 4;
+  if (hourMatch) {
+    hours = Number(hourMatch[1]);
+  } else {
+    for (const [word, val] of Object.entries(numberMap)) {
+      if (new RegExp(`\\b${word}\\b.*(?:hour|ghanta|ghante|घंटे)`).test(text)) { hours = val; break; }
+    }
+  }
+  hours = Math.max(1, Math.min(24, hours || (tripType === 'Full day' ? 8 : 4)));
+
+  // ── Route extraction — English, Hindi, Hinglish ──────────────────────────
+  // English:  from X to Y
+  // Hindi:    X से Y (जाना है / तक)
+  // Hinglish: X se Y jaana / X se Y le jao / mujhe X se Y jaana
+  const routePatterns = [
+    /(?:from|pickup at|pick me up from|pick up from)\s+(.+?)\s+(?:to|drop at|drop me at|going to|towards)\s+(.+?)(?:\s+(?:at|on|tomorrow|today|kal|aaj|abhi)|[,.]|$)/i,
+    /(?:mujhe|mujhko|please|bhai|yaar)\s+(.+?)\s+se\s+(.+?)\s+(?:le jao|jaana hai|jaana|chalna hai|drop karo|chhod do|pahuncha do)/i,
+    /(.+?)\s+se\s+(.+?)\s+(?:jaana hai|jana hai|drop|lena hai|jaana|jana)/i,
+    /(.+?)\s+से\s+(.+?)\s+(?:जाना है|जाना|तक|के लिए|छोड़ दो|पहुँचाओ)/i,
+    /(.+?)\s+से\s+(.+?)(?:\s+(?:कल|आज|सुबह|शाम|रात)|[,.]|$)/i,
+  ];
+  let pickup = null, destination = null;
+  for (const pat of routePatterns) {
+    const m = raw.match(pat);
+    if (m && m[1] && m[2]) {
+      const clean = (s) => s
+        .replace(/^(mujhe|mujhko|please|bhai|yaar|मुझे|मुझको)\s+/i, '')
+        .replace(/\s+(kal|aaj|abhi|tomorrow|today|कल|आज)\s*.*$/i, '')
+        .replace(/\s+(at|around|ko)\s+\d.*/i, '')
+        .replace(/[,.?।]+$/, '').trim();
+      pickup = clean(m[1]);
+      destination = clean(m[2]);
+      if (pickup && destination) break;
+    }
+  }
+
+  // ── Time parsing — English + Hindi + Hinglish ────────────────────────────
+  const timeMap = { subah:'AM', morning:'AM', savere:'AM', dopahar:'PM', dopahar:'PM', shaam:'PM', evening:'PM', raat:'PM', night:'PM', raat_ko:'PM' };
+  let time = null;
+  const tMatch = raw.match(/(?:at|around|ko|baje|बजे|सुबह|शाम|रात)\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm|AM|PM|baje|बजे)?/i)
+    || raw.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm|AM|PM)\b/i);
+  if (tMatch) {
+    let h = Number(tMatch[1]);
+    const min = tMatch[2] || '00';
+    const suf = (tMatch[3] || '').toLowerCase();
+    if ((suf === 'pm' || suf === 'shaam' || suf === 'raat' || suf === 'रात' || suf === 'शाम') && h < 12) h += 12;
+    if ((suf === 'am' || suf === 'subah' || suf === 'morning' || suf === 'सुबह') && h === 12) h = 0;
+    time = `${String(h).padStart(2,'0')}:${min}`;
+  }
+
+  // ── Date ─────────────────────────────────────────────────────────────────
+  const date =
+    /tomorrow|kal|parso.*?nahi|कल/.test(text) ? new Date(Date.now() + 86400000).toISOString().slice(0,10) :
+    /today|aaj|अभी|आज/.test(text) ? new Date().toISOString().slice(0,10) :
+    null;
+
+  // ── Summary in the user's language ───────────────────────────────────────
+  const fromTo = pickup && destination ? `${pickup} से ${destination}` : city;
+  const fromToEn = pickup && destination ? `${pickup} to ${destination}` : `in ${city}`;
+  const typeHi = { Airport:'एयरपोर्ट ड्रॉप', Outstation:'आउटस्टेशन', 'Night driver':'नाइट ड्राइवर', 'Full day':'फुल डे', Hourly:'ड्राइवर सर्विस' };
+  const summaries = {
+    'hi-IN': `ठीक है! ${typeHi[tripType] || 'ड्राइवर'} बुकिंग समझ आई — ${fromTo}, ${hours} घंटे। कन्फर्म करें।`,
+    'hi-hinglish': `Got it! ${tripType} booking — ${fromToEn}, ${hours} hours. Confirm karo.`,
+    'en-IN': `Got it! ${tripType} booking — ${fromToEn}, ${hours} hour${hours>1?'s':''}. Tap confirm to book.`,
+  };
+  const summary = summaries[language] || summaries[language === 'hi-IN' ? 'hi-IN' : 'en-IN'] || summaries['en-IN'];
+
   res.json({ tripType, hours, city, pickup, destination, date, time, language, requiresConfirmation: true, summary });
 });
 
