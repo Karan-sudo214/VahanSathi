@@ -633,7 +633,7 @@ function App() {
               {/* Hero Showcase */}
               <section className="hero-card">
                 <div className="hero-content">
-                  <span className="hero-badge">ðŸš— YOUR CAR · OUR VERIFIED DRIVER</span>
+                  <span className="hero-badge">YOUR CAR · OUR VERIFIED DRIVER</span>
                   <h2>Professional Drivers For Your Own Vehicle</h2>
                   <p>Pay only for the driver's time. Verified, uniformed chauffeurs across Delhi & Gurugram.</p>
                   <div className="hero-cta-row">
@@ -664,19 +664,19 @@ function App() {
 
               <div className="services-grid">
                 {[
-                  { id: 'Hourly',      title: 'Hourly',      desc: 'From ₹599 · 4 hrs', icon: 'ðŸ•' },
-                  { id: 'Airport',     title: 'Airport',     desc: 'Fixed fare drop',    icon: 'âœˆï¸' },
-                  { id: 'Night driver',title: 'Night',        desc: 'Safe late trips',    icon: 'ðŸŒ™' },
-                  { id: 'Full day',    title: 'Full Day',    desc: '8–12 hrs city',      icon: 'â˜€ï¸' },
-                  { id: 'Outstation',  title: 'Outstation',  desc: 'Highway trips',      icon: 'ðŸ›£ï¸' },
-                  { id: 'Custom',      title: 'Custom',      desc: 'Your schedule',      icon: 'âš™ï¸' }
+                  { id: 'Hourly',      title: 'Hourly',      desc: 'From ₹599 · 4 hrs', icon: 'hourly' },
+                  { id: 'Airport',     title: 'Airport',     desc: 'Fixed fare drop',    icon: 'airport' },
+                  { id: 'Night driver',title: 'Night',        desc: 'Safe late trips',    icon: 'night' },
+                  { id: 'Full day',    title: 'Full Day',    desc: '8–12 hrs city',      icon: 'fullday' },
+                  { id: 'Outstation',  title: 'Outstation',  desc: 'Highway trips',      icon: 'outstation' },
+                  { id: 'Custom',      title: 'Custom',      desc: 'Your schedule',      icon: 'custom' }
                 ].map((s) => (
                   <button
                     key={s.id}
                     className={`service-card ${tripType === s.id ? 'active' : ''}`}
                     onClick={() => { setTripType(s.id); setPage('Book a driver'); }}
                   >
-                    <span className="service-emoji">{s.icon}</span>
+                    <span className="service-emoji" aria-hidden="true">{s.icon === 'hourly' && <Clock3 size={25} />}{s.icon === 'airport' && <Navigation size={25} />}{s.icon === 'night' && <Clock3 size={25} />}{s.icon === 'fullday' && <CalendarDays size={25} />}{s.icon === 'outstation' && <CarFront size={25} />}{s.icon === 'custom' && <Edit2 size={25} />}</span>
                     <b className="service-title">{s.title}</b>
                     <small className="service-desc">{s.desc}</small>
                   </button>
@@ -1370,7 +1370,7 @@ function DriverPage({ bookings, update, user, onDutyChange, flash }: any) {
   useEffect(() => {
     const count = newRequests.length;
     if (count > prevSearching.current && prevSearching.current >= 0) {
-      flash?.('ðŸ”” New ride request! Tap Accept to take it.');
+      flash?.('New ride request! Tap Accept to accept it.');
       setTimeout(() => newRequestRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 150);
     }
     prevSearching.current = count;
@@ -1400,7 +1400,7 @@ function DriverPage({ bookings, update, user, onDutyChange, flash }: any) {
       {/* Real duty toggle — wired to backend */}
       <div className={`duty-toggle-row ${available ? 'online' : 'offline'}`}>
         <div>
-          <b>{available ? 'ðŸŸ¢ Online — Accepting Requests' : 'âš« Offline — Not Accepting'}</b>
+          <b>{available ? 'Online — Accepting requests' : 'Offline — Not accepting requests'}</b>
           <small>{available ? 'Customers in your city can assign trips to you.' : 'Go online to receive new ride requests.'}</small>
         </div>
         <label className="toggle-switch">
@@ -1432,7 +1432,7 @@ function DriverPage({ bookings, update, user, onDutyChange, flash }: any) {
         </div>
         <div className="stat-card panel">
           <small>DUTY STATUS</small>
-          <b className={available ? 'status-online' : ''}>{available ? 'â— Online' : 'â—‹ Offline'}</b>
+          <b className={available ? 'status-online' : ''}>{available ? 'Online' : 'Offline'}</b>
           <span>{available ? 'Accepting requests' : 'Duty off'}</span>
         </div>
       </div>
@@ -2131,7 +2131,7 @@ function DriverProfile({ user, onUpdate, flash }: any) {
             <h2 style={{ fontSize: '22px', fontWeight: 800, color: 'var(--navy)' }}>{user?.name || 'Driver Partner'}</h2>
             <p style={{ color: 'var(--slate-500)', fontSize: '14px' }}>{user?.email}</p>
             <span className={`status-pill ${user?.verificationStatus === 'verified' ? 'done' : ''}`} style={{ marginTop: '6px', display: 'inline-block' }}>
-              {user?.verificationStatus === 'verified' ? 'âœ“ Verified Partner' : user?.verificationStatus === 'pending' ? '⏳ Verification Pending' : 'Unverified'} · {user?.city || 'Delhi'}
+              {user?.verificationStatus === 'verified' ? 'Verified Partner' : user?.verificationStatus === 'pending' ? '⏳ Verification Pending' : 'Unverified'} · {user?.city || 'Delhi'}
             </span>
           </div>
         </div>
