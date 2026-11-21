@@ -59,6 +59,7 @@ type User = {
   verificationStatus?: string;
   driverStyleTags?: string[];
   driverBadges?: string[];
+  driverBatch?: { name: string; completedTrips: number; averageRating: number; nextMilestone: number | null };
   cashRewardsPoints?: number;
   available?: boolean;
 };
