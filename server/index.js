@@ -407,6 +407,13 @@ async function loadNeon() {
 }
 
 // ----------------- Helpers & Routes -----------------
+const normalizeServiceCity = (value) => {
+  const city = String(value || '').trim().toLowerCase().replace(/\\s+/g, ' ');
+  if (['gurgaon', 'gurugram', 'gurugram city'].includes(city)) return 'gurugram';
+  if (['delhi', 'new delhi', 'nct of delhi', 'delhi ncr'].includes(city)) return 'delhi';
+  return city;
+};
+
 const safe = (u) => {
   const completedTrips = u.role === 'driver'
     ? data.bookings.filter((booking) => booking.driverId === u.id && ['Trip completed', 'Rated'].includes(booking.status)).length
@@ -423,6 +430,7 @@ const safe = (u) => {
     phone: u.phone,
     city: u.city,
     vehicle: u.vehicle,
+    available: u.role === 'driver' ? u.available === true : undefined,
     rating: averageRating || u.rating,
     trips: completedTrips,
     driverStyleTags: Array.isArray(u.driverStyleTags) ? u.driverStyleTags : ['friendly'],
@@ -1205,7 +1213,7 @@ app.get('/api/bookings', auth, (req, res) => {
   } else if (req.user.role === 'driver') {
     rows = rows.filter(
       (b) => b.driverId === req.user.id || (
-        b.status === 'Searching' && b.city === currentUser?.city &&
+        b.status === 'Searching' && normalizeServiceCity(b.city) === normalizeServiceCity(currentUser?.city) &&
         (!b.requestedDriverStyle || b.requestedDriverStyle === 'any' ||
           (Array.isArray(currentUser?.driverStyleTags) ? currentUser.driverStyleTags : ['friendly']).includes(b.requestedDriverStyle))
       )
@@ -1259,7 +1267,7 @@ app.post(
 
     // Match only verified, online drivers who have declared the customer's requested communication style.
     const eligibleDrivers = data.users.filter((u) =>
-      u.role === 'driver' && u.city === city && u.available === true && u.verificationStatus === 'verified' &&
+      u.role === 'driver' && normalizeServiceCity(u.city) === normalizeServiceCity(city) && u.available === true && u.verificationStatus === 'verified' &&
       (driverStyle === 'any' || (Array.isArray(u.driverStyleTags) ? u.driverStyleTags : ['friendly']).includes(driverStyle))
     );
     const availableDriver = eligibleDrivers.sort((a, b) =>
@@ -1341,7 +1349,7 @@ app.patch(
       }
     } else if (req.user.role === 'driver') {
       if (status === 'Driver assigned' && b.status === 'Searching' && !b.driverId) {
-        if (currentUser?.verificationStatus !== 'verified' || currentUser?.available !== true) {
+        if (currentUser?.verificationStatus !== 'verified' || currentUser?.available !== true || normalizeServiceCity(currentUser?.city) !== normalizeServiceCity(b.city)) {
           return res.status(403).json({ error: 'Your driver account must be verified and on duty to accept rides.' });
         }
         if (b.requestedDriverStyle && b.requestedDriverStyle !== 'any' &&
