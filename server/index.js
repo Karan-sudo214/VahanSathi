@@ -1635,6 +1635,8 @@ app.post('/api/bookings/:id/car-care-passport', auth, asyncRoute(async (req, res
     if (b.userId !== req.user.id) return res.status(403).json({ error: 'Only the car owner can verify this vehicle video.' });
     if (!passport.videoKey || !passport.driverConfirmedAt) return res.status(409).json({ error: 'Wait for the assigned driver to upload the vehicle walkaround video.' });
     if (req.body?.confirm !== true) return res.status(400).json({ error: 'Review the driver’s video and confirm it to continue.' });
+    const storedVideo = await fetch(r2Presign('HEAD', passport.videoKey, 60));
+    if (!storedVideo.ok) return res.status(409).json({ error: 'The vehicle video is not available in secure storage yet. Ask the driver to upload it again.' });
     b.carCarePassport = { ...passport, customerConfirmedAt: new Date().toISOString() };
   } else {
     return res.status(403).json({ error: 'Only the customer and assigned driver can complete this handover.' });
