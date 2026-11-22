@@ -120,9 +120,18 @@ async function persistPricing(pricing) {
   }
 }
 
+const realtimeClients = new Set();
+
+function publishRealtimeRefresh() {
+  for (const client of realtimeClients) {
+    if (!client.writableEnded) client.write('event: refresh\ndata: {}\n\n');
+  }
+}
+
 async function save() {
   try {
     fs.writeFileSync(dataPath, JSON.stringify(data, null, 2));
+    publishRealtimeRefresh();
   } catch (e) {
     console.error('Local JSON save error:', e.message);
   }
@@ -729,6 +738,29 @@ function calculateFare({ tripType = 'Hourly', hours = 4, time = '08:00', vehicle
     distanceSource: distanceSource || 'calculated'
   };
 }
+
+// Authenticated Server-Sent Events: notify dashboards immediately after persisted changes.
+app.get('/api/events', auth, (req, res) => {
+  res.status(200);
+  res.set({
+    'Content-Type': 'text/event-stream; charset=utf-8',
+    'Cache-Control': 'no-cache, no-transform',
+    Connection: 'keep-alive',
+    'X-Accel-Buffering': 'no'
+  });
+  res.flushHeaders?.();
+  realtimeClients.add(res);
+  res.write('event: refresh\ndata: {}\n\n');
+
+  const heartbeat = setInterval(() => {
+    if (!res.writableEnded) res.write(': keep-alive\n\n');
+  }, 20000);
+
+  req.on('close', () => {
+    clearInterval(heartbeat);
+    realtimeClients.delete(res);
+  });
+});
 
 // ----------------- API Endpoints -----------------
 
