@@ -756,7 +756,7 @@ app.get('/api/events', auth, (req, res) => {
     if (!res.writableEnded) res.write(': keep-alive\n\n');
   }, 20000);
 
-  req.on('close', () => {
+  res.on('close', () => {
     clearInterval(heartbeat);
     realtimeClients.delete(res);
   });
