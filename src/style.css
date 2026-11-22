@@ -2027,3 +2027,7 @@ input:focus,select:focus,textarea:focus{border-color:#4d83ad!important;box-shado
 @media(prefers-reduced-motion:reduce){
   *,*::before,*::after{scroll-behavior:auto!important;transition:none!important;animation:none!important}
 }
+
+.customer-smart-match{display:flex;flex-direction:column;gap:4px;margin:10px 0 0;padding:10px 12px;border-radius:12px;background:#f0faf7;border:1px solid #d7ebe5}
+.customer-smart-match>span{display:flex;align-items:center;gap:6px;color:#087f72;font-size:11px;font-weight:800}
+.customer-smart-match small{color:#526c75;font-size:11px;line-height:1.5}

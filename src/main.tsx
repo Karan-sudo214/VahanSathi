@@ -1700,6 +1700,12 @@ function TripsPage({ bookings, filter, setFilter, update, onRate, onPay, onTrack
                     <div><small>ASSIGNED DRIVER</small><b>{b.driver}</b></div>
                   </div>
                 )}
+                {b.driverMatch && (
+                  <div className="customer-smart-match">
+                    <span><BadgeCheck size={14}/> SmartMatch · {b.driverMatch.score}% fit</span>
+                    <small>{b.driverMatch.reasons.join(' · ')}</small>
+                  </div>
+                )}
 
                 <div className="trip-actions-row single">
                   {['Driver assigned', 'Driver arriving', 'Trip started'].includes(b.status) && (
