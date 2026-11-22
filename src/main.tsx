@@ -2234,6 +2234,7 @@ function CarCarePassport({ booking, role, onRefresh }: any) {
   const driverMode = role === 'driver';
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [videoUrl, setVideoUrl] = useState('');
+  const [videoReady, setVideoReady] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -2243,6 +2244,7 @@ function CarCarePassport({ booking, role, onRefresh }: any) {
   useEffect(() => {
     let active = true;
     if (driverUploaded) {
+      setVideoReady(false);
       api(`/bookings/${booking.id}/car-care-passport/video-url`)
         .then((result) => { if (active) setVideoUrl(result.videoUrl); })
         .catch((e) => { if (active) setError(e?.message || 'Could not load the handover video.'); });
@@ -2315,7 +2317,7 @@ function CarCarePassport({ booking, role, onRefresh }: any) {
 
       {driverMode && driverUploaded && (
         <div className="carcare-record">
-          {videoUrl && <video className="carcare-review-video" src={videoUrl} controls playsInline preload="metadata"/>}
+          {videoUrl && <video className="carcare-review-video" src={videoUrl} controls playsInline preload="metadata" onCanPlay={() => setVideoReady(true)} onError={() => { setVideoReady(false); setError("The handover video could not be played. Ask the driver to upload it again."); }}/>}
           <div className="carcare-confirmations"><span><Check size={15}/> Driver video uploaded</span><span>{customerApproved ? <Check size={15}/> : <Clock3 size={15}/>} Customer {customerApproved ? 'approved' : 'review pending'}</span></div>
           {!customerApproved && <div className="carcare-waiting"><Clock3 size={15}/> Waiting for the customer to watch and approve the video. The trip cannot start yet.</div>}
           {customerApproved && <div className="carcare-success"><Check size={16}/> Video approved. Ask the customer for the start OTP.</div>}
@@ -2328,9 +2330,9 @@ function CarCarePassport({ booking, role, onRefresh }: any) {
 
       {!driverMode && driverUploaded && (
         <div className="carcare-record">
-          {videoUrl ? <video className="carcare-review-video" src={videoUrl} controls playsInline preload="metadata"/> : <div className="carcare-waiting">Loading the driver’s vehicle video…</div>}
+          {videoUrl ? <video className="carcare-review-video" src={videoUrl} controls playsInline preload="metadata" onCanPlay={() => setVideoReady(true)} onError={() => { setVideoReady(false); setError("The handover video could not be played. Ask the driver to upload it again."); }}/> : <div className="carcare-waiting">Loading the driver’s vehicle video…</div>}
           <div className="carcare-confirmations"><span><Check size={15}/> Driver video uploaded</span><span>{customerApproved ? <Check size={15}/> : <Clock3 size={15}/>} {customerApproved ? 'You approved this video' : 'Your review required'}</span></div>
-          {!customerApproved && <button className="carcare-action" disabled={busy || !videoUrl} onClick={approveVideo}>{busy ? 'Saving approval…' : 'I reviewed the video — approve & show OTP'} <ShieldCheck size={16}/></button>}
+          {!customerApproved && <button className="carcare-action" disabled={busy || !videoUrl || !videoReady} onClick={approveVideo}>{busy ? 'Saving approval…' : 'I reviewed the video — approve & show OTP'} <ShieldCheck size={16}/></button>}
           {customerApproved && <div className="carcare-success"><Check size={16}/> Approved. Share your start OTP with the driver only when you are ready to depart.</div>}
         </div>
       )}
