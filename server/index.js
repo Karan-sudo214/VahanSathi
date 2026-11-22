@@ -1542,7 +1542,7 @@ app.post('/api/bookings/:id/tripguard/recordings/:recordingId/chunk-url', auth, 
   if (!b || !tripGuardParticipant(req, b)) return res.status(404).json({ error: 'Trip recording not found.' });
   const guard = tripGuardFor(b);
   const session = guard.sessions.find((item) => item.id === req.params.recordingId);
-  if (!session || !['recording','stopped'].includes(session.status) || (session.status === 'stopped' && Date.now() - Date.parse(session.stoppedAt || 0) > 120000)) return res.status(409).json({ error: 'This recording is no longer active.' });
+  if (!session || session.status !== 'recording' || b.status !== 'Trip started') return res.status(409).json({ error: 'This recording is no longer active.' });
   if (!r2Ready()) return res.status(503).json({ error: 'Private video storage is not configured.' });
   const index = Number(req.body?.index);
   if (!Number.isInteger(index) || index < 0 || index > 20000) return res.status(400).json({ error: 'Invalid video segment number.' });
@@ -1558,7 +1558,7 @@ app.post('/api/bookings/:id/tripguard/recordings/:recordingId/chunk-saved', auth
   if (!b || !tripGuardParticipant(req, b)) return res.status(404).json({ error: 'Trip recording not found.' });
   const guard = tripGuardFor(b);
   const session = guard.sessions.find((item) => item.id === req.params.recordingId);
-  if (!session || !['recording','stopped'].includes(session.status) || (session.status === 'stopped' && Date.now() - Date.parse(session.stoppedAt || 0) > 120000)) return res.status(409).json({ error: 'This recording is no longer active.' });
+  if (!session || session.status !== 'recording' || b.status !== 'Trip started') return res.status(409).json({ error: 'This recording is no longer active.' });
   const index = Number(req.body?.index);
   const key = String(req.body?.key || '');
   const expectedPrefix = `tripguard/${b.id}/${session.id}/`;
