@@ -2075,7 +2075,7 @@ function TripGuardPanel({ booking, role, onRefresh }: any) {
       } catch {
         if (recorderRef.current && recorderRef.current.state !== 'inactive') recorderRef.current.stop();
       }
-    }, 3500);
+    }, 1000);
     return () => window.clearInterval(pollId);
   }, [activeSession?.id, booking.id]);
 
