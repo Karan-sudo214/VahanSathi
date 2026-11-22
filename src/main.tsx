@@ -368,7 +368,11 @@ function App() {
     let controller: AbortController | undefined;
 
     const connect = async () => {
-      if (stopped || !navigator.onLine) return;
+      if (stopped) return;
+      if (!navigator.onLine) {
+        retryTimer = window.setTimeout(connect, 3000);
+        return;
+      }
       controller = new AbortController();
       try {
         const token = localStorage.getItem('vs_token');
