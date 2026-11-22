@@ -2052,6 +2052,7 @@ function TripGuardPanel({ booking, role, onRefresh }: any) {
     setBusy(true); setError('');
     try {
       await api(`/bookings/${booking.id}/tripguard/consent`, { method: 'POST', body: JSON.stringify({ consent }) });
+      if (!consent && recorderRef.current && recorderRef.current.state !== 'inactive') recorderRef.current.stop();
       await onRefresh?.();
     } catch (e: any) { setError(e?.message || 'Could not save consent.'); }
     finally { setBusy(false); }
@@ -2099,12 +2100,13 @@ function TripGuardPanel({ booking, role, onRefresh }: any) {
       const candidates = ['video/webm;codecs=vp8,opus', 'video/webm', 'video/mp4'];
       const supportedMime = candidates.find((type) => MediaRecorder.isTypeSupported(type));
       const storageMime = supportedMime?.startsWith('video/mp4') ? 'video/mp4' : 'video/webm';
+      // Request camera access directly from the button gesture for iOS Safari compatibility.
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } }, audio: true });
+      streamRef.current = stream;
       const started = await api(`/bookings/${booking.id}/tripguard/recordings/start`, {
         method: 'POST', body: JSON.stringify({ mimeType: storageMime })
       });
       sessionId = started.session.id;
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } }, audio: true });
-      streamRef.current = stream;
       const recorder = supportedMime ? new MediaRecorder(stream, { mimeType: supportedMime }) : new MediaRecorder(stream);
       recorderRef.current = recorder;
       nextIndexRef.current = 0;
@@ -2201,7 +2203,7 @@ function TripGuardPanel({ booking, role, onRefresh }: any) {
         <div><b>Driver</b><span>{consents.driver?.consent ? '✓ Agreed' : 'Waiting for driver'}</span></div>
       </div>
       {!ownConsent && <button className="tripguard-consent-btn" disabled={busy} onClick={() => setConsent(true)}>I agree to video & audio recording</button>}
-      {ownConsent && !activeSession && <button className="tripguard-withdraw-btn" disabled={busy} onClick={() => setConsent(false)}>Withdraw my consent</button>}
+      {ownConsent && <button className="tripguard-withdraw-btn" disabled={busy} onClick={() => setConsent(false)}>Withdraw my consent</button>}
       {isCustomer && booking.status === 'Trip started' && bothConsented && !activeSession && (
         <button className="tripguard-start-btn" disabled={busy || !r2ReadyPlaceholder()} onClick={startRecording}><Video size={17}/> Start whole-trip recording</button>
       )}
