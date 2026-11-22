@@ -2078,9 +2078,9 @@ function TripGuardPanel({ booking, role, onRefresh }: any) {
     return () => window.clearInterval(pollId);
   }, [activeSession?.id, booking.id]);
 
-  const uploadSegment = async (recordingId: string, blob: Blob, index: number) => {
+  const uploadSegment = async (recordingId: string, blob: Blob, index: number, mimeType: string) => {
     const signed = await api(`/bookings/${booking.id}/tripguard/recordings/${recordingId}/chunk-url`, {
-      method: 'POST', body: JSON.stringify({ index })
+      method: 'POST', body: JSON.stringify({ index, mimeType })
     });
     const uploaded = await fetch(signed.uploadUrl, { method: 'PUT', headers: { 'Content-Type': blob.type || 'video/webm' }, body: blob });
     if (!uploaded.ok) throw new Error('A video segment could not be securely uploaded. Stop and retry when your connection is stable.');
@@ -2091,21 +2091,29 @@ function TripGuardPanel({ booking, role, onRefresh }: any) {
 
   const startRecording = async () => {
     setBusy(true); setError(''); setStatus('');
+    let sessionId: string | null = null;
     try {
       if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
         throw new Error('This browser does not support video recording. Your trip can continue without recording.');
       }
+      const candidates = ['video/webm;codecs=vp8,opus', 'video/webm', 'video/mp4'];
+      const supportedMime = candidates.find((type) => MediaRecorder.isTypeSupported(type));
+      const storageMime = supportedMime?.startsWith('video/mp4') ? 'video/mp4' : 'video/webm';
+      const started = await api(`/bookings/${booking.id}/tripguard/recordings/start`, {
+        method: 'POST', body: JSON.stringify({ mimeType: storageMime })
+      });
+      sessionId = started.session.id;
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } }, audio: true });
       streamRef.current = stream;
-      const started = await api(`/bookings/${booking.id}/tripguard/recordings/start`, { method: 'POST', body: JSON.stringify({}) });
-      const recorder = new MediaRecorder(stream, MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus') ? { mimeType: 'video/webm;codecs=vp8,opus' } : undefined);
+      const recorder = supportedMime ? new MediaRecorder(stream, { mimeType: supportedMime }) : new MediaRecorder(stream);
       recorderRef.current = recorder;
       nextIndexRef.current = 0;
+      uploadQueueRef.current = Promise.resolve();
       recorder.ondataavailable = (event) => {
         if (!event.data || !event.data.size) return;
         const index = nextIndexRef.current++;
-        uploadQueueRef.current = uploadQueueRef.current.then(() => uploadSegment(started.session.id, event.data, index)).catch((e) => {
-          setError(e?.message || 'Recording upload interrupted. Please stop the recording.');
+        uploadQueueRef.current = uploadQueueRef.current.then(() => uploadSegment(started.session.id, event.data, index, storageMime)).catch((e) => {
+          setError(e?.message || 'A video segment could not be uploaded. Stop recording and check your connection.');
           throw e;
         });
       };
@@ -2121,7 +2129,12 @@ function TripGuardPanel({ booking, role, onRefresh }: any) {
       };
       recorder.start(5000);
       setStatus('Recording is live. Keep this screen open and your phone awake for the full trip.');
+      setBusy(false);
+      await onRefresh?.();
     } catch (e: any) {
+      if (sessionId) {
+        try { await api(`/bookings/${booking.id}/tripguard/recordings/${sessionId}/stop`, { method: 'POST', body: JSON.stringify({ reason: 'Recording could not start on this device' }) }); } catch {}
+      }
       streamRef.current?.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
       setError(e?.message || 'Could not start TripGuard recording.');
@@ -2162,7 +2175,7 @@ function TripGuardPanel({ booking, role, onRefresh }: any) {
         if (!response.ok) throw new Error('A saved video segment could not be loaded.');
         blobs.push(await response.blob());
       }
-      const blob = new Blob(blobs, { type: 'video/webm' });
+      const blob = new Blob(blobs, { type: access.session.mimeType || 'video/webm' });
       if (playUrl) URL.revokeObjectURL(playUrl);
       setPlayUrl(URL.createObjectURL(blob));
     } catch (e: any) { setError(e?.message || 'Could not open this trip recording.'); }
