@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
   Activity,
@@ -25,6 +25,8 @@ import {
   Phone,
   Plus,
   ShieldCheck,
+  Video,
+  Square,
   Star,
   Wallet,
   X,
@@ -1679,6 +1681,8 @@ function TripsPage({ bookings, filter, setFilter, update, onRate, onPay, onTrack
                 );
               })()}
 
+              {['Driver arriving', 'Trip started'].includes(b.status) && <TripGuardPanel booking={b} role="customer" onRefresh={onRefresh} />}
+
               {/* OTP Cards for active trips */}
               {['Driver assigned', 'Driver arriving', 'Trip started'].includes(b.status) && (
                 <section className="trip-otp-panel" aria-label="Trip verification codes">
@@ -2022,6 +2026,192 @@ function DriverPage({ bookings, update, user, onDutyChange, flash, onCashConfirm
       )}
     </div>
   );
+}
+
+
+function TripGuardPanel({ booking, role, onRefresh }: any) {
+  const guard = booking.tripGuard || {};
+  const consents = guard.consents || {};
+  const sessions = guard.sessions || [];
+  const activeSession = sessions.find((session: any) => session.status === 'recording');
+  const latestSession = sessions.find((session: any) => session.status !== 'recording');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [note, setNote] = useState('');
+  const [status, setStatus] = useState('');
+  const [playUrl, setPlayUrl] = useState('');
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const uploadQueueRef = useRef<Promise<any>>(Promise.resolve());
+  const nextIndexRef = useRef(0);
+  const isCustomer = role === 'customer';
+  const ownConsent = consents[role]?.consent === true;
+  const bothConsented = consents.customer?.consent === true && consents.driver?.consent === true;
+
+  const setConsent = async (consent: boolean) => {
+    setBusy(true); setError('');
+    try {
+      await api(`/bookings/${booking.id}/tripguard/consent`, { method: 'POST', body: JSON.stringify({ consent }) });
+      await onRefresh?.();
+    } catch (e: any) { setError(e?.message || 'Could not save consent.'); }
+    finally { setBusy(false); }
+  };
+
+
+  useEffect(() => {
+    if (!activeSession?.id || !recorderRef.current) return;
+    const pollId = window.setInterval(async () => {
+      try {
+        const state = await api(`/bookings/${booking.id}/tripguard/state`);
+        const live = state.bookingStatus === 'Trip started' &&
+          state.tripGuard?.consents?.customer?.consent === true &&
+          state.tripGuard?.consents?.driver?.consent === true &&
+          state.tripGuard?.sessions?.some((session: any) => session.id === activeSession.id && session.status === 'recording');
+        if (!live && recorderRef.current && recorderRef.current.state !== 'inactive') {
+          setStatus('Recording stopped because the trip ended or a participant withdrew consent.');
+          recorderRef.current.stop();
+        }
+      } catch {
+        if (recorderRef.current && recorderRef.current.state !== 'inactive') recorderRef.current.stop();
+      }
+    }, 3500);
+    return () => window.clearInterval(pollId);
+  }, [activeSession?.id, booking.id]);
+
+  const uploadSegment = async (recordingId: string, blob: Blob, index: number) => {
+    const signed = await api(`/bookings/${booking.id}/tripguard/recordings/${recordingId}/chunk-url`, {
+      method: 'POST', body: JSON.stringify({ index })
+    });
+    const uploaded = await fetch(signed.uploadUrl, { method: 'PUT', headers: { 'Content-Type': blob.type || 'video/webm' }, body: blob });
+    if (!uploaded.ok) throw new Error('A video segment could not be securely uploaded. Stop and retry when your connection is stable.');
+    await api(`/bookings/${booking.id}/tripguard/recordings/${recordingId}/chunk-saved`, {
+      method: 'POST', body: JSON.stringify({ index, key: signed.key, bytes: blob.size })
+    });
+  };
+
+  const startRecording = async () => {
+    setBusy(true); setError(''); setStatus('');
+    try {
+      if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+        throw new Error('This browser does not support video recording. Your trip can continue without recording.');
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } }, audio: true });
+      streamRef.current = stream;
+      const started = await api(`/bookings/${booking.id}/tripguard/recordings/start`, { method: 'POST', body: JSON.stringify({}) });
+      const recorder = new MediaRecorder(stream, MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus') ? { mimeType: 'video/webm;codecs=vp8,opus' } : undefined);
+      recorderRef.current = recorder;
+      nextIndexRef.current = 0;
+      recorder.ondataavailable = (event) => {
+        if (!event.data || !event.data.size) return;
+        const index = nextIndexRef.current++;
+        uploadQueueRef.current = uploadQueueRef.current.then(() => uploadSegment(started.session.id, event.data, index)).catch((e) => {
+          setError(e?.message || 'Recording upload interrupted. Please stop the recording.');
+          throw e;
+        });
+      };
+      recorder.onerror = () => setError('The browser interrupted video capture. Stop the recording and check camera permissions.');
+      recorder.onstop = async () => {
+        try {
+          await uploadQueueRef.current;
+          await api(`/bookings/${booking.id}/tripguard/recordings/${started.session.id}/stop`, { method: 'POST', body: JSON.stringify({ reason: 'Customer ended recording' }) });
+          setStatus('Recording securely saved for this trip.');
+          await onRefresh?.();
+        } catch (e: any) { setError(e?.message || 'Recording could not be fully saved.'); }
+        finally { stream.getTracks().forEach((track) => track.stop()); streamRef.current = null; recorderRef.current = null; setBusy(false); }
+      };
+      recorder.start(5000);
+      setStatus('Recording is live. Keep this screen open and your phone awake for the full trip.');
+    } catch (e: any) {
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+      setError(e?.message || 'Could not start TripGuard recording.');
+      setBusy(false);
+    }
+  };
+
+  const stopRecording = () => {
+    const recorder = recorderRef.current;
+    if (recorder && recorder.state !== 'inactive') {
+      setBusy(true);
+      recorder.stop();
+    } else if (activeSession && isCustomer) {
+      setBusy(true);
+      api(`/bookings/${booking.id}/tripguard/recordings/${activeSession.id}/stop`, { method: 'POST', body: JSON.stringify({ reason: 'Customer stopped recording from trip dashboard' }) })
+        .then(() => onRefresh?.()).catch((e: any) => setError(e?.message || 'Could not stop recording.')).finally(() => setBusy(false));
+    }
+  };
+
+  const raiseAlert = async () => {
+    if (!note.trim()) { setError('Tell us briefly what feels wrong so it is attached to the trip.'); return; }
+    setBusy(true); setError('');
+    try {
+      await api(`/bookings/${booking.id}/tripguard/alerts`, { method: 'POST', body: JSON.stringify({ category: 'Customer safety concern', note }) });
+      setNote(''); setStatus('Your safety concern has been recorded against this trip.');
+      await onRefresh?.();
+    } catch (e: any) { setError(e?.message || 'Could not submit your concern.'); }
+    finally { setBusy(false); }
+  };
+
+  const viewRecording = async (session: any) => {
+    setBusy(true); setError('');
+    try {
+      const access = await api(`/bookings/${booking.id}/tripguard/recordings/${session.id}/access`);
+      const blobs: Blob[] = [];
+      for (const chunk of access.chunks) {
+        const response = await fetch(chunk.url);
+        if (!response.ok) throw new Error('A saved video segment could not be loaded.');
+        blobs.push(await response.blob());
+      }
+      const blob = new Blob(blobs, { type: 'video/webm' });
+      if (playUrl) URL.revokeObjectURL(playUrl);
+      setPlayUrl(URL.createObjectURL(blob));
+    } catch (e: any) { setError(e?.message || 'Could not open this trip recording.'); }
+    finally { setBusy(false); }
+  };
+
+  useEffect(() => () => {
+    if (recorderRef.current && recorderRef.current.state !== 'inactive') recorderRef.current.stop();
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+  }, []);
+  useEffect(() => () => { if (playUrl) URL.revokeObjectURL(playUrl); }, [playUrl]);
+
+  return (
+    <section className="tripguard-panel" aria-label="TripGuard customer safety controls">
+      <div className="tripguard-heading">
+        <span className="tripguard-shield"><ShieldCheck size={21}/></span>
+        <div><b>TripGuard · Your journey, your control</b><small>Optional, consent-based cabin video and audio recording</small></div>
+        <span className={activeSession ? 'tripguard-live' : 'tripguard-private'}>{activeSession ? '● RECORDING' : 'PRIVATE'}</span>
+      </div>
+      <p className="tripguard-copy">Recording is never hidden. Both you and your assigned driver must agree. You can withdraw consent or stop recording at any time; your trip will continue either way.</p>
+      <div className="tripguard-consents">
+        <div><b>Customer</b><span>{consents.customer?.consent ? '✓ Agreed' : 'Not agreed'}</span></div>
+        <div><b>Driver</b><span>{consents.driver?.consent ? '✓ Agreed' : 'Waiting for driver'}</span></div>
+      </div>
+      {!ownConsent && <button className="tripguard-consent-btn" disabled={busy} onClick={() => setConsent(true)}>I agree to video & audio recording</button>}
+      {ownConsent && !activeSession && <button className="tripguard-withdraw-btn" disabled={busy} onClick={() => setConsent(false)}>Withdraw my consent</button>}
+      {isCustomer && booking.status === 'Trip started' && bothConsented && !activeSession && (
+        <button className="tripguard-start-btn" disabled={busy || !r2ReadyPlaceholder()} onClick={startRecording}><Video size={17}/> Start whole-trip recording</button>
+      )}
+      {isCustomer && activeSession && <button className="tripguard-stop-btn" disabled={busy} onClick={stopRecording}><Square size={15}/> Stop recording now</button>}
+      {role === 'driver' && bothConsented && !activeSession && <p className="tripguard-note">Both parties agreed. The customer can start recording from their trip screen after the start OTP is verified.</p>}
+      {isCustomer && booking.status === 'Trip started' && (
+        <div className="tripguard-alert">
+          <b>Feel unsafe or notice something wrong?</b>
+          <textarea value={note} onChange={(e) => setNote(e.target.value)} maxLength={1000} placeholder="Describe what happened. This note will be attached to your trip record."/>
+          <div><button disabled={busy} onClick={raiseAlert}>Send safety alert</button><a href="tel:112">Call emergency services · 112</a></div>
+        </div>
+      )}
+      {Array.isArray(guard.alerts) && guard.alerts.length > 0 && <div className="tripguard-alert-history"><b>Trip safety notes</b>{guard.alerts.map((alert: any) => <p key={alert.id}>{alert.category}: {alert.note} <small>{new Date(alert.createdAt).toLocaleString()}</small></p>)}</div>}
+      {latestSession && <div className="tripguard-saved"><span>Saved recording · {Math.max(1, Math.round((latestSession.durationSeconds || 0) / 60))} min</span><button disabled={busy} onClick={() => viewRecording(latestSession)}>View recording</button></div>}
+      {playUrl && <video className="tripguard-video" controls playsInline src={playUrl}/>}
+      {status && <p className="tripguard-status" role="status">{status}</p>}
+      {error && <p className="tripguard-error" role="alert">{error}</p>}
+      <small className="tripguard-foot">For uninterrupted capture, keep this page open, keep the phone awake, and allow camera and microphone access. If recording is unavailable, the trip continues normally. For immediate danger, call 112; a TripGuard alert is a trip record, not an emergency dispatch service.</small>
+    </section>
+  );
+}
+function r2ReadyPlaceholder() {
+  return true;
 }
 
 function CarCarePassport({ booking, role, onRefresh }: any) {
