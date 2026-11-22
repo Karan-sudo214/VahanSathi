@@ -526,6 +526,7 @@ function App() {
       flash(`Voice booking confirmed: ${d.booking.id}`);
     } catch (e: any) {
       flash(e.message || 'The booking could not be completed.');
+      throw e;
     } finally {
       setBusy(false);
     }
@@ -2725,7 +2726,7 @@ function VoiceAgentModal({ onClose, onApply, onBook, city }: { onClose: () => vo
     const nextMessages: ChatMessage[] = [...messages, { role: 'user', content: utterance }];
     setMessages(nextMessages);
 
-    if (awaitingConfirmation && /^(yes|yeah|yep|sure|confirm|book it|go ahead|haan|han|जी|हाँ|हां|कर दो|बुक करो)[.! ]*$/i.test(utterance)) {
+    if (awaitingConfirmation && /^(yes|yeah|yep|sure|confirm|book it|go ahead|haan|han|जी|हाँ|हां)(?:[, ]+(?:please|book it|go ahead|कर दो|बुक करो))?[.! ]*$/i.test(utterance)) {
       await confirmBook();
       return;
     }
