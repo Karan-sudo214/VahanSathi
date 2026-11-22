@@ -1421,6 +1421,40 @@ app.post(
   })
 );
 
+app.post('/api/bookings/:id/car-care-passport', auth, asyncRoute(async (req, res) => {
+  const b = data.bookings.find((item) => item.id === req.params.id);
+  if (!b) return res.status(404).json({ error: 'Booking not found.' });
+  if (!['Driver assigned', 'Driver arriving'].includes(b.status)) return res.status(409).json({ error: 'The car handover passport is available only before the trip starts.' });
+  const passport = b.carCarePassport || null;
+  if (req.user.role === 'customer') {
+    if (b.userId !== req.user.id) return res.status(403).json({ error: 'Only the car owner can create this handover record.' });
+    const odometer = Number(req.body?.odometer);
+    const fuelLevel = String(req.body?.fuelLevel || '');
+    const conditionNotes = String(req.body?.conditionNotes || '').trim().slice(0, 500);
+    const checks = req.body?.checks || {};
+    const requiredChecks = ['front', 'rear', 'left', 'right'];
+    if (!Number.isFinite(odometer) || odometer < 0 || odometer > 9999999 || !['Empty', '¼', '½', '¾', 'Full'].includes(fuelLevel) || !requiredChecks.every((key) => checks[key] === true)) {
+      return res.status(400).json({ error: 'Complete the odometer, fuel level and all four exterior walkaround checks.' });
+    }
+    b.carCarePassport = {
+      odometer, fuelLevel, conditionNotes,
+      checks: Object.fromEntries(requiredChecks.map((key) => [key, true])),
+      createdAt: passport?.createdAt || new Date().toISOString(),
+      customerConfirmedAt: new Date().toISOString(),
+      driverConfirmedAt: null
+    };
+  } else if (req.user.role === 'driver') {
+    if (b.driverId !== req.user.id) return res.status(403).json({ error: 'Only the assigned driver can confirm this handover.' });
+    if (!passport?.customerConfirmedAt) return res.status(409).json({ error: 'Wait for the car owner to complete the handover record first.' });
+    b.carCarePassport = { ...passport, driverConfirmedAt: new Date().toISOString() };
+  } else {
+    return res.status(403).json({ error: 'Only the customer and assigned driver can confirm the handover.' });
+  }
+  await persistItem('app_bookings', b.id, b);
+  await save();
+  res.json({ success: true, carCarePassport: b.carCarePassport });
+}));
+
 app.patch(
   '/api/bookings/:id/status',
   auth,
@@ -1476,6 +1510,9 @@ app.patch(
 
     // OTPs are required for driver trip start/completion. Admin corrections are audited separately.
     if (req.user.role === 'driver' && status === 'Trip started') {
+      if (!b.carCarePassport?.customerConfirmedAt || !b.carCarePassport?.driverConfirmedAt) {
+        return res.status(409).json({ error: 'Complete the CarCare Passport with the customer and confirm the vehicle handover before starting the trip.' });
+      }
       if (String(otp || '').trim() !== String(b.start_otp)) {
         return res.status(400).json({ error: 'Start OTP is invalid. Ask the car owner for their 4-digit start OTP.' });
       }
