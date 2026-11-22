@@ -1673,22 +1673,22 @@ function TripsPage({ bookings, filter, setFilter, update, onRate, onPay, onTrack
 
               {/* OTP Cards for active trips */}
               {['Driver assigned', 'Driver arriving', 'Trip started'].includes(b.status) && (
-                <div className="otp-banner">
-                  <div className="otp-box">
-                    <small>START OTP</small>
-                    <b>{b.start_otp || '----'}</b>
+                <section className="trip-otp-panel" aria-label="Trip verification codes">
+                  <div className="trip-otp-heading">
+                    <span className="trip-otp-shield"><ShieldCheck size={19}/></span>
+                    <div><b>Your trip security codes</b><small>Only share the code for the stage you are completing</small></div>
+                    <span className="trip-otp-secure">SECURE</span>
                   </div>
-                  {b.status === 'Trip started' && (
-                    <div className="otp-box end">
-                      <small>END OTP</small>
-                      <b>{b.end_otp || '----'}</b>
+                  <div className="trip-otp-grid">
+                    <div className="trip-otp-card start">
+                      <div className="trip-otp-card-top"><span className="trip-otp-step">01</span><small>START TRIP</small><span className={b.status === 'Trip started' ? 'trip-otp-state used' : 'trip-otp-state'}>{b.status === 'Trip started' ? 'VERIFIED' : 'PENDING'}</span></div>
+                      <strong>{b.status === 'Trip started' ? '••••' : (b.start_otp || '----')}</strong>
+                      <p>{b.status === 'Trip started' ? 'Your trip has started successfully' : 'Share when your assigned driver is with you and ready to begin'}</p>
                     </div>
-                  )}
-                  <div className="otp-hint">
-                    <ShieldCheck size={16} />
-                    <span>Share OTP with driver only when you are in your car.</span>
+                    {b.status === 'Trip started' && <div className="trip-otp-card end"><div className="trip-otp-card-top"><span className="trip-otp-step">02</span><small>END TRIP</small><span className="trip-otp-state">PENDING</span></div><strong>{b.end_otp || '----'}</strong><p>Share only after you have reached your destination and the trip is finished</p></div>}
                   </div>
-                </div>
+                  <div className="trip-otp-safety"><LockKeyhole size={15}/><span>Never share an OTP over a call or before the correct trip stage. VaahanSathi will never ask you to disclose it for support.</span></div>
+                </section>
               )}
 
               <div className="trip-card-footer">
@@ -1755,6 +1755,7 @@ function TripsPage({ bookings, filter, setFilter, update, onRate, onPay, onTrack
 // ----------------- Driver Partner Page -----------------
 function DriverPage({ bookings, update, user, onDutyChange, flash, onCashConfirm }: any) {
   const [available, setAvailable] = useState<boolean>(user?.available === true);
+  const [otpTarget, setOtpTarget] = useState<{ booking: Booking; status: 'Trip started' | 'Trip completed' } | null>(null);
   const [dutyBusy, setDutyBusy] = useState(false);
   const prevSearching = useRef(0);
 
@@ -1968,12 +1969,9 @@ function DriverPage({ bookings, update, user, onDutyChange, flash, onCashConfirm
                     <button
                       className="primary-btn"
                       style={{width:'100%',justifyContent:'center',background:'#0a7a6e'}}
-                      onClick={() => {
-                        const code = prompt('Enter the 4-digit START OTP from the customer:');
-                        if (code) update(b, 'Trip started', code);
-                      }}
+                      onClick={() => setOtpTarget({ booking: b, status: 'Trip started' })}
                     >
-                      <ArrowRight size={18} /> Start Trip — Enter OTP
+                      <ArrowRight size={18} /> Verify start OTP
                     </button>
                   )}
                   {b.status === 'Awaiting cash confirmation' && b.payment_method === 'cash' && b.payment_status !== 'Paid · Cash' && (
@@ -1987,12 +1985,9 @@ function DriverPage({ bookings, update, user, onDutyChange, flash, onCashConfirm
                     <button
                       className="primary-btn success"
                       style={{width:'100%',justifyContent:'center'}}
-                      onClick={() => {
-                        const code = prompt('Enter the 4-digit END OTP from the customer:');
-                        if (code) update(b, 'Trip completed', code);
-                      }}
+                      onClick={() => setOtpTarget({ booking: b, status: 'Trip completed' })}
                     >
-                      <Check size={18} /> Complete Trip — Enter OTP
+                      <Check size={18} /> Verify end OTP & complete
                     </button>
                   )}
                 </div>
@@ -2001,6 +1996,60 @@ function DriverPage({ bookings, update, user, onDutyChange, flash, onCashConfirm
           ))}
         </div>
       )}
+      {otpTarget && (
+        <OTPVerificationModal
+          booking={otpTarget.booking}
+          stage={otpTarget.status === 'Trip started' ? 'start' : 'end'}
+          onClose={() => setOtpTarget(null)}
+          onSubmit={async (code: string) => {
+            await update(otpTarget.booking, otpTarget.status, code);
+            setOtpTarget(null);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function OTPVerificationModal({ booking, stage, onClose, onSubmit }: any) {
+  const [code, setCode] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+  const isStart = stage === 'start';
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!/^\\d{4}$/.test(code)) {
+      setError('Enter all 4 digits to continue.');
+      return;
+    }
+    setSubmitting(true);
+    setError('');
+    try {
+      await onSubmit(code);
+    } catch (e: any) {
+      setError(e?.message || 'Verification failed. Check the code and try again.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+  return (
+    <div className="otp-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !submitting) onClose(); }}>
+      <section className="otp-verification-modal" role="dialog" aria-modal="true" aria-labelledby="otp-modal-title">
+        <button className="otp-modal-close" type="button" onClick={onClose} disabled={submitting} aria-label="Close verification"><X size={19}/></button>
+        <div className={`otp-modal-icon ${isStart ? 'start' : 'end'}`}>{isStart ? <Navigation size={25}/> : <ShieldCheck size={25}/>}</div>
+        <span className="otp-modal-eyebrow">{isStart ? 'PICKUP VERIFICATION' : 'TRIP COMPLETION'}</span>
+        <h2 id="otp-modal-title">{isStart ? 'Verify before starting' : 'Confirm trip completion'}</h2>
+        <p className="otp-modal-copy">{isStart ? 'Ask the customer for their start OTP only after you are physically with them and ready to begin the trip.' : 'Ask the customer for their end OTP only after the trip has genuinely finished.'}</p>
+        <div className="otp-modal-trip"><span>BOOKING REFERENCE</span><b>{booking.id}</b><small>{booking.pickup} <ArrowRight size={12}/> {booking.destination}</small></div>
+        <form onSubmit={submit}>
+          <label className="otp-entry-label" htmlFor="driver-trip-otp">CUSTOMER’S 4-DIGIT {isStart ? 'START' : 'END'} OTP</label>
+          <input id="driver-trip-otp" className="otp-entry-input" type="text" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{4}" maxLength={4} value={code} onChange={(event) => { setCode(event.target.value.replace(/\\D/g, '').slice(0,4)); setError(''); }} placeholder="• • • •" autoFocus aria-describedby="otp-entry-hint" />
+          <div className="otp-entry-hint" id="otp-entry-hint"><LockKeyhole size={14}/> Enter the code shared by the customer in person</div>
+          {error && <p className="otp-entry-error" role="alert"><AlertCircle size={15}/>{error}</p>}
+          <button className="otp-verify-submit" type="submit" disabled={submitting || code.length !== 4}>{submitting ? 'Verifying securely…' : isStart ? 'Verify & start trip' : 'Verify & complete trip'} <ArrowRight size={17}/></button>
+        </form>
+        <p className="otp-modal-foot"><ShieldCheck size={14}/> The trip status changes only after the server accepts the OTP.</p>
+      </section>
     </div>
   );
 }
