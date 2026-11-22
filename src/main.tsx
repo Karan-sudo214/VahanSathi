@@ -85,6 +85,8 @@ type Booking = {
   payment_status: string;
   payment_method?: string;
   requestedDriverStyle?: string;
+  smartMatch?: { score: number; tier: string; reasons: string[]; distanceKm: number | null; rank: number; poolSize: number } | null;
+  driverMatch?: { score: number; tier: string; reasons: string[] } | null;
   driverLocation?: { lat: number; lng: number; accuracy?: number; heading?: number | null; speed?: number | null; updatedAt?: string };
   pickupCoordinates?: [number, number];
   destinationCoordinates?: [number, number];
@@ -473,7 +475,7 @@ function App() {
       await refresh();
       setPage('Your trips');
       setModal('');
-      flash(`Booking confirmed! Reference: ${d.booking.id}`);
+      flash(`Request sent! We're matching verified drivers. Reference: ${d.booking.id}`);
     } catch (e: any) {
       flash(e.message);
     } finally {
@@ -1433,7 +1435,7 @@ function BookingPage(p: any) {
 
           <section className="booking-preferences-panel">
             <h3>3. Your Driver, Your Comfort</h3>
-            <p>Choose the communication style you prefer. We'll match verified, online drivers who have selected the same style.</p>
+            <p>Your preference is prioritised, then SmartMatch ranks verified, online partners by reliability, ratings, pickup proximity, experience and your past feedback. Availability and verification always come first.</p>
             <div className="driver-style-options">
               {[
                 { value: 'any', title: 'Best available', desc: 'Any communication style' },
@@ -1926,6 +1928,21 @@ function DriverPage({ bookings, update, user, onDutyChange, flash, onCashConfirm
                   </div>
                 </div>
               </div>
+
+              {b.status === 'Searching' && b.smartMatch && (
+                <div className="smart-match-card">
+                  <div className="smart-match-topline">
+                    <span className="smart-match-kicker"><Zap size={13}/> SMARTMATCH</span>
+                    <b>{b.smartMatch.score}% · {b.smartMatch.tier}</b>
+                  </div>
+                  <div className="smart-match-progress"><span style={{ width: b.smartMatch.score + '%' }} /></div>
+                  <div className="smart-match-meta">
+                    <span>{b.smartMatch.rank === 1 ? 'Top recommended match' : 'Match priority #' + b.smartMatch.rank + ' of ' + b.smartMatch.poolSize}</span>
+                    {b.smartMatch.distanceKm !== null && <span>{b.smartMatch.distanceKm} km from pickup (last shared GPS)</span>}
+                  </div>
+                  <div className="smart-match-reasons">{b.smartMatch.reasons.map((reason: string) => <span key={reason}><Check size={12}/>{reason}</span>)}</div>
+                </div>
+              )}
 
               <div className="driver-action-footer">
                 <span>Customer: <b>{b.customer || 'Car Owner'}</b></span>

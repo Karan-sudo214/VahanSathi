@@ -1204,6 +1204,97 @@ app.get('/api/bookings/:id/location', auth, asyncRoute(async (req, res) => {
   });
 }));
 
+
+const distanceBetweenKm = (a, b) => {
+  if (!a || !b || !Number.isFinite(Number(a.lat)) || !Number.isFinite(Number(a.lng)) || !Number.isFinite(Number(b.lat)) || !Number.isFinite(Number(b.lng))) return null;
+  const rad = (value) => Number(value) * Math.PI / 180;
+  const dLat = rad(Number(b.lat) - Number(a.lat));
+  const dLng = rad(Number(b.lng) - Number(a.lng));
+  const lat1 = rad(Number(a.lat));
+  const lat2 = rad(Number(b.lat));
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  return 6371 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+};
+
+// Explainable SmartMatch: hard safety/availability gates, then weighted fit.
+// Customer history is used only through the customer's own prior ratings of this driver.
+const getSmartDriverMatch = (booking, driver, customer, requireAvailable = true) => {
+  if (!driver || driver.role !== 'driver' || driver.verificationStatus !== 'verified') return null;
+  if (requireAvailable && driver.available !== true) return null;
+  if (normalizeServiceCity(driver.city) !== normalizeServiceCity(booking.city)) return null;
+
+  const driverBookings = data.bookings.filter((item) => item.driverId === driver.id && item.id !== booking.id);
+  const completed = driverBookings.filter((item) => ['Trip completed', 'Rated'].includes(item.status));
+  const cancelled = driverBookings.filter((item) => item.status === 'Cancelled');
+  const resolvedCount = completed.length + cancelled.length;
+  const reliability = resolvedCount >= 3
+    ? Math.round((completed.length / resolvedCount) * 100)
+    : 78;
+  const ratings = data.ratings.filter((item) => item.driverId === driver.id);
+  const averageRating = ratings.length
+    ? ratings.reduce((sum, item) => sum + Number(item.stars || 0), 0) / ratings.length
+    : Number(driver.rating || 4.2);
+  const ratingScore = Math.max(0, Math.min(100, averageRating * 20));
+
+  const styleTags = Array.isArray(driver.driverStyleTags) ? driver.driverStyleTags : ['friendly'];
+  const requestedStyle = booking.requestedDriverStyle || 'any';
+  const styleMatch = requestedStyle === 'any' ? 76 : styleTags.includes(requestedStyle) ? 100 : 35;
+
+  const pickup = Array.isArray(booking.pickupCoordinates)
+    ? { lat: booking.pickupCoordinates[0], lng: booking.pickupCoordinates[1] }
+    : null;
+  const lastPositionBooking = data.bookings
+    .filter((item) => item.driverId === driver.id && item.driverLocation?.updatedAt)
+    .sort((a, b) => String(b.driverLocation.updatedAt).localeCompare(String(a.driverLocation.updatedAt)))[0];
+  const driverPosition = lastPositionBooking?.driverLocation || driver.lastLocation || null;
+  const distanceKm = distanceBetweenKm(pickup, driverPosition);
+  const proximityScore = distanceKm === null ? 60
+    : distanceKm <= 2 ? 100
+    : distanceKm <= 5 ? 90
+    : distanceKm <= 10 ? 78
+    : distanceKm <= 20 ? 62 : 40;
+
+  const priorTrips = data.bookings.filter((item) => item.userId === customer?.id && item.driverId === driver.id && item.id !== booking.id);
+  const priorRatings = data.ratings.filter((item) => item.userId === customer?.id && item.driverId === driver.id);
+  const latestPriorRating = priorRatings.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))[0];
+  const repeatScore = latestPriorRating
+    ? Number(latestPriorRating.stars) >= 4 ? 100
+      : Number(latestPriorRating.stars) <= 2 ? 20 : 55
+    : priorTrips.length ? 65 : 65;
+
+  const experienceScore = Math.min(100, 45 + completed.length / 5);
+  const score = Math.round(
+    styleMatch * 0.20 +
+    ratingScore * 0.20 +
+    reliability * 0.25 +
+    proximityScore * 0.15 +
+    repeatScore * 0.10 +
+    experienceScore * 0.10
+  );
+
+  const reasons = [];
+  if (requestedStyle !== 'any' && styleTags.includes(requestedStyle)) reasons.push('Matches your communication preference');
+  if (averageRating >= 4.7 && ratings.length >= 3) reasons.push('Consistently high customer ratings');
+  if (resolvedCount >= 3 && reliability >= 90) reasons.push('Strong trip completion record');
+  if (distanceKm !== null && distanceKm <= 10) reasons.push('Currently near your pickup');
+  if (latestPriorRating && Number(latestPriorRating.stars) >= 4) reasons.push('You rated this driver highly before');
+  if (completed.length >= 50) reasons.push('Experienced driver partner');
+  if (!reasons.length) reasons.push('Verified and eligible for your service area');
+
+  return {
+    score,
+    tier: score >= 90 ? 'Excellent fit' : score >= 80 ? 'Great fit' : score >= 70 ? 'Good fit' : 'Available match',
+    reasons: reasons.slice(0, 3),
+    distanceKm: distanceKm === null ? null : Number(distanceKm.toFixed(1))
+  };
+};
+
+const getRankedSmartMatches = (booking, customer) => data.users
+  .filter((driver) => driver.role === 'driver')
+  .map((driver) => ({ driver, match: getSmartDriverMatch(booking, driver, customer, true) }))
+  .filter((entry) => entry.match)
+  .sort((a, b) => b.match.score - a.match.score || Number(b.driver.rating || 0) - Number(a.driver.rating || 0));
+
 app.get('/api/bookings', auth, (req, res) => {
   let rows = [...data.bookings];
   const currentUser = data.users.find((u) => u.id === req.user.id);
@@ -1233,11 +1324,27 @@ app.get('/api/bookings', auth, (req, res) => {
       cashCustomerAmount: req.user.role === 'customer' ? b.cashCustomerAmount : undefined,
       cashDriverAmount: req.user.role === 'driver' ? b.cashDriverAmount : undefined,
       driver: driverUser ? driverUser.name : b.driver || null,
-      customer: customerUser ? customerUser.name : b.customer || null
+      customer: customerUser ? customerUser.name : b.customer || null,
+      ...(req.user.role === 'driver' && b.status === 'Searching' ? (() => {
+        const ranked = getRankedSmartMatches(b, customerUser);
+        const rank = ranked.findIndex((entry) => entry.driver.id === req.user.id);
+        const match = rank >= 0 ? ranked[rank].match : null;
+        return { smartMatch: match ? { ...match, rank: rank + 1, poolSize: ranked.length } : null };
+      })() : {}),
+      ...(req.user.role === 'customer' && driverUser ? (() => {
+        const match = getSmartDriverMatch(b, driverUser, customerUser, false);
+        return { driverMatch: match ? { score: match.score, tier: match.tier, reasons: match.reasons } : null };
+      })() : {})
     };
   });
 
-  res.json({ bookings: enriched.sort((a, b) => b.createdAt.localeCompare(a.createdAt)) });
+  const sorted = enriched.sort((a, b) => {
+    if (req.user.role === 'driver' && a.status === 'Searching' && b.status === 'Searching') {
+      return Number(b.smartMatch?.score || 0) - Number(a.smartMatch?.score || 0) || String(b.createdAt || '').localeCompare(String(a.createdAt || ''));
+    }
+    return String(b.createdAt || '').localeCompare(String(a.createdAt || ''));
+  });
+  res.json({ bookings: sorted });
 });
 
 app.post(

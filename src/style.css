@@ -1949,3 +1949,81 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .cash-modal-intro{margin-bottom:12px}
 .cash-submit-btn{font-weight:800}
 @media(max-width:560px){.detailed-feedback-modal{max-height:92dvh;padding:22px 18px}.feedback-select-grid{grid-template-columns:1fr}.feedback-chip-list button{font-size:10px;padding:8px 9px}}
+
+
+/* --------------------------------------------------------------------------
+   VAAHANSATHI PREMIUM EXPERIENCE LAYER
+   Trust-first Indian mobility palette, calmer hierarchy and responsive cards.
+---------------------------------------------------------------------------- */
+:root{
+  --ink:#102b46;
+  --ink-2:#1b3b58;
+  --blue:#1f4e79;
+  --blue-lt:#2d6b9f;
+  --teal:#087f72;
+  --canvas:#f4f7fb;
+  --card:#fff;
+  --border:#dfe7f0;
+  --border2:#edf2f7;
+  --r:14px;
+  --r-l:18px;
+  --r-xl:24px;
+  --s1:0 2px 8px rgba(16,43,70,.045);
+  --s2:0 8px 24px rgba(16,43,70,.075);
+  --s3:0 16px 42px rgba(16,43,70,.11);
+}
+body{background:var(--canvas);color:#24384c}
+.sidebar{background:linear-gradient(180deg,#102b46 0%,#0c243b 100%);box-shadow:8px 0 30px rgba(16,43,70,.08)}
+.brandmark{box-shadow:0 8px 20px rgba(8,127,114,.22)}
+.topbar{background:rgba(255,255,255,.92);border-bottom-color:#e4ebf3}
+.content{padding:26px 22px 150px;max-width:1440px}
+.section-head{margin-bottom:20px;align-items:center}
+.section-head h1{font-size:clamp(23px,2.4vw,30px);letter-spacing:-.035em}
+.section-head h3{font-size:18px}
+.section-head p{font-size:13px;line-height:1.65}
+.panel{border-radius:18px;border-color:#e3eaf2;box-shadow:var(--s1);padding:20px;transition:box-shadow .2s ease,border-color .2s ease,transform .2s ease}
+.panel:hover{box-shadow:var(--s2);border-color:#d4e0ec}
+.primary-btn,.secondary-btn,.action-btn{border-radius:11px;min-height:42px;font-weight:700;letter-spacing:-.01em;transition:transform .18s ease,box-shadow .18s ease,background .18s ease}
+.primary-btn{box-shadow:0 5px 14px rgba(31,78,121,.14)}
+.primary-btn:hover,.secondary-btn:hover,.action-btn:hover{transform:translateY(-1px)}
+.primary-btn:focus-visible,.secondary-btn:focus-visible,.action-btn:focus-visible,.driver-style-option:focus-visible{outline:3px solid rgba(8,127,114,.24);outline-offset:2px}
+input,select,textarea{border-radius:10px;border-color:#d8e2ec;min-height:42px}
+input:focus,select:focus,textarea:focus{border-color:#4d83ad!important;box-shadow:0 0 0 3px rgba(31,78,121,.10)}
+.hero-card{border-radius:24px;box-shadow:var(--s3);overflow:hidden}
+.booking-form-card,.booking-preferences-panel,.fare-card{border-radius:18px}
+.driver-style-option,.payment-choice{border-radius:13px;border-color:#e1e9f1;transition:all .18s ease}
+.driver-style-option:hover,.payment-choice:hover{border-color:#9db8cf;transform:translateY(-1px);box-shadow:var(--s1)}
+.driver-style-option.selected,.payment-choice.selected{border-color:var(--teal);background:linear-gradient(145deg,#f0fbf8,#fff);box-shadow:0 0 0 1px rgba(8,127,114,.12)}
+.trip-card{border-radius:18px;padding:20px}
+.new-request-card{border-color:#b9d8d2;box-shadow:0 8px 24px rgba(8,127,114,.07)}
+.trip-route-display{gap:13px}
+.driver-action-footer{border-top:1px solid #edf1f6;padding-top:14px;margin-top:16px}
+.smart-match-card{margin:14px 0 4px;padding:15px 16px;border:1px solid #cfe4df;border-radius:15px;background:linear-gradient(135deg,#f1faf8 0%,#f8fbff 100%)}
+.smart-match-topline{display:flex;align-items:center;justify-content:space-between;gap:12px;color:#163b53}
+.smart-match-topline>b{font-size:13px;color:#087f72}
+.smart-match-kicker{display:inline-flex;align-items:center;gap:6px;font-size:10px;font-weight:800;letter-spacing:.1em;color:#087f72}
+.smart-match-progress{height:6px;border-radius:20px;background:#dcebe7;overflow:hidden;margin:10px 0 8px}
+.smart-match-progress span{display:block;height:100%;border-radius:20px;background:linear-gradient(90deg,#087f72,#39a99a);transition:width .35s ease}
+.smart-match-meta{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:11px;color:#5c7182}
+.smart-match-reasons{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}
+.smart-match-reasons span{display:inline-flex;align-items:center;gap:5px;padding:5px 8px;border-radius:20px;background:#fff;border:1px solid #e0ebe8;color:#355b60;font-size:10px;font-weight:600}
+.driver-badges-panel{background:linear-gradient(145deg,#fff 0%,#f7fafc 100%)}
+.stat-card{border-radius:15px}
+.status-pill,.driver-achievement-badge,.requested-style-pill{border-radius:30px}
+@media(min-width:900px){
+  .content{padding:30px 30px 80px}
+  .booking-layout{gap:22px}
+}
+@media(max-width:640px){
+  .content{padding:17px 13px 112px}
+  .section-head{align-items:flex-start;margin-bottom:15px}
+  .panel{padding:15px;border-radius:15px}
+  .trip-card{padding:15px}
+  .smart-match-card{padding:13px}
+  .smart-match-meta{flex-direction:column;gap:4px}
+  .smart-match-reasons{gap:5px}
+  .smart-match-reasons span{font-size:9px}
+}
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{scroll-behavior:auto!important;transition:none!important;animation:none!important}
+}
