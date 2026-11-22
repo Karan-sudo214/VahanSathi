@@ -358,21 +358,64 @@ function App() {
     if (user) refresh();
   }, [user?.id]);
 
-  // Fast near-real-time refresh with overlap protection. Pause background tabs and
-  // refresh immediately when a customer/driver returns to the app or reconnects.
+  // Push-first live updates with a lightweight polling fallback for restricted networks.
+  // Fetch is used instead of EventSource so the authenticated bearer token stays in a header,
+  // never in a URL or browser history.
   useEffect(() => {
     if (!user) return;
-    const interval = user.role === 'driver' ? 1500 : user.role === 'customer' ? 1800 : 4000;
-    const tick = () => {
+    let stopped = false;
+    let retryTimer: number | undefined;
+    let controller: AbortController | undefined;
+
+    const connect = async () => {
+      if (stopped || !navigator.onLine) return;
+      controller = new AbortController();
+      try {
+        const token = localStorage.getItem('vs_token');
+        const response = await fetch('/api/events', {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          signal: controller.signal
+        });
+        if (response.status === 401) {
+          window.dispatchEvent(new Event('vs-auth-expired'));
+          stopped = true;
+          return;
+        }
+        if (!response.ok || !response.body) throw new Error('Live updates are temporarily unavailable.');
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        while (!stopped) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const frames = buffer.split(/\\r?\\n\\r?\\n/);
+          buffer = frames.pop() || '';
+          for (const frame of frames) {
+            if (frame.includes('event: refresh') && document.visibilityState === 'visible') refresh();
+          }
+        }
+      } catch (error: any) {
+        if (!stopped && error?.name !== 'AbortError') console.warn('Live updates reconnecting:', error?.message || error);
+      } finally {
+        if (!stopped) retryTimer = window.setTimeout(connect, 2500);
+      }
+    };
+
+    const fallbackTick = () => {
       if (document.visibilityState === 'visible' && navigator.onLine) refresh();
     };
     const onVisibility = () => { if (document.visibilityState === 'visible') refresh(); };
-    const onOnline = () => refresh();
-    const timer = window.setInterval(tick, interval);
+    const onOnline = () => { refresh(); if (!controller || controller.signal.aborted) connect(); };
+    connect();
+    const fallback = window.setInterval(fallbackTick, 10000);
     document.addEventListener('visibilitychange', onVisibility);
     window.addEventListener('online', onOnline);
     return () => {
-      window.clearInterval(timer);
+      stopped = true;
+      controller?.abort();
+      if (retryTimer) window.clearTimeout(retryTimer);
+      window.clearInterval(fallback);
       document.removeEventListener('visibilitychange', onVisibility);
       window.removeEventListener('online', onOnline);
     };
