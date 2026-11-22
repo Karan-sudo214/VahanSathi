@@ -2677,11 +2677,18 @@ function VoiceAgentModal({ onClose, onApply, onBook, city }: { onClose: () => vo
       : { label: 'English', code: 'en-IN', srv: 'en-IN' };
   });
   const recognitionRef = useRef<any>(null);
+  const mediaRecorderRef = useRef<any>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
   const speechTextRef = useRef('');
 
   useEffect(() => () => {
     try { recognitionRef.current?.abort(); } catch {}
+    try { if (mediaRecorderRef.current?.state === 'recording') mediaRecorderRef.current.stop(); } catch {}
+    mediaStreamRef.current?.getTracks().forEach(track => track.stop());
     recognitionRef.current = null;
+    mediaRecorderRef.current = null;
+    mediaStreamRef.current = null;
     if ('speechSynthesis' in window) window.speechSynthesis.cancel();
   }, []);
 
@@ -2788,7 +2795,11 @@ function VoiceAgentModal({ onClose, onApply, onBook, city }: { onClose: () => vo
       return;
     }
     if (!SpeechRecognition) {
-      setErr('Live speech recognition is not available in this browser. You can continue the same conversation by typing.');
+      if (navigator.mediaDevices?.getUserMedia && typeof MediaRecorder !== 'undefined') {
+        void startMediaRecording();
+        return;
+      }
+      setErr('This browser does not support voice capture. You can continue the same conversation by typing.');
       return;
     }
     if (recognitionRef.current) {
@@ -2851,7 +2862,64 @@ function VoiceAgentModal({ onClose, onApply, onBook, city }: { onClose: () => vo
     }
   }
 
+  async function startMediaRecording() {
+    try {
+      setErr('');
+      speechTextRef.current = '';
+      setDraft('');
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+      mediaStreamRef.current = stream;
+      const preferred = ['audio/webm;codecs=opus', 'audio/mp4', 'audio/webm', 'audio/ogg'];
+      const mimeType = preferred.find(type => typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(type));
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      mediaRecorderRef.current = recorder;
+      audioChunksRef.current = [];
+      recorder.ondataavailable = (event: any) => {
+        if (event.data && event.data.size > 0) audioChunksRef.current.push(event.data);
+      };
+      recorder.onerror = () => {
+        setErr('The microphone recording failed. Please try again or type your reply.');
+        setStage('idle');
+      };
+      recorder.onstop = async () => {
+        stream.getTracks().forEach(track => track.stop());
+        mediaStreamRef.current = null;
+        mediaRecorderRef.current = null;
+        const blob = new Blob(audioChunksRef.current, { type: recorder.mimeType || 'audio/webm' });
+        audioChunksRef.current = [];
+        try {
+          if (blob.size < 1000) throw new Error('I did not get enough audio. Please speak for a little longer.');
+          const response = await fetch('/api/voice/transcribe?language=' + encodeURIComponent(lang.srv), {
+            method: 'POST',
+            headers: { 'Content-Type': blob.type || 'audio/webm' },
+            body: blob
+          });
+          const result = await response.json();
+          if (!response.ok) throw new Error(result.error || 'Voice transcription is not available. Please type your reply.');
+          if (!result.text) throw new Error('I could not hear clear words. Please try again.');
+          await sendTurn(result.text);
+        } catch (error: any) {
+          setErr(error?.message || 'Voice transcription failed. Please type your reply.');
+          setStage('idle');
+        }
+      };
+      recorder.start();
+      setStage('listening');
+    } catch (error: any) {
+      mediaStreamRef.current?.getTracks().forEach(track => track.stop());
+      mediaStreamRef.current = null;
+      setStage('idle');
+      setErr(error?.name === 'NotAllowedError'
+        ? 'Microphone permission is blocked. Allow microphone access for this site, then try again.'
+        : 'Could not access the microphone. You can type your reply instead.');
+    }
+  }
+
   function stopListening() {
+    if (mediaRecorderRef.current?.state === 'recording') {
+      try { mediaRecorderRef.current.stop(); } catch { setStage('idle'); }
+      return;
+    }
     try { recognitionRef.current?.stop(); }
     catch { setStage('idle'); setErr('Could not stop voice recognition. Please try again.'); }
   }
