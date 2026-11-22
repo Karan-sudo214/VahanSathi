@@ -1980,9 +1980,10 @@ function DriverPage({ bookings, update, user, onDutyChange, flash, onCashConfirm
                     <button
                       className="primary-btn"
                       style={{width:'100%',justifyContent:'center',background:'#0a7a6e'}}
+                      disabled={!b.carCarePassport?.customerConfirmedAt || !b.carCarePassport?.driverConfirmedAt}
                       onClick={() => setOtpTarget({ booking: b, status: 'Trip started' })}
                     >
-                      <ArrowRight size={18} /> Verify start OTP
+                      <ArrowRight size={18} /> {b.carCarePassport?.customerConfirmedAt && b.carCarePassport?.driverConfirmedAt ? 'Verify start OTP' : 'Complete CarCare Passport first'}
                     </button>
                   )}
                   {b.status === 'Awaiting cash confirmation' && b.payment_method === 'cash' && b.payment_status !== 'Paid · Cash' && (
