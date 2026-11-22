@@ -87,6 +87,7 @@ type Booking = {
   requestedDriverStyle?: string;
   smartMatch?: { score: number; tier: string; reasons: string[]; distanceKm: number | null; rank: number; poolSize: number } | null;
   driverMatch?: { score: number; tier: string; reasons: string[] } | null;
+  carCarePassport?: { odometer: number; fuelLevel: string; conditionNotes: string; checks: Record<string, boolean>; createdAt: string; customerConfirmedAt: string | null; driverConfirmedAt: string | null } | null;
   driverLocation?: { lat: number; lng: number; accuracy?: number; heading?: number | null; speed?: number | null; updatedAt?: string };
   pickupCoordinates?: [number, number];
   destinationCoordinates?: [number, number];
@@ -978,11 +979,12 @@ function App() {
               receipts={receipts}
               onCashConfirm={openCustomerCashHandover}
               cashRewardsPoints={Number(user?.cashRewardsPoints || 0)}
+              onRefresh={refresh}
             />
           )}
 
-          {page === 'Requests' && <DriverPage bookings={bookings} update={updateStatus} user={user} onDutyChange={(v: boolean) => setUser((u: any) => u ? {...u, available: v} : u)} flash={flash} onCashConfirm={openDriverCashHandover} />}
-          {page === 'My trips' && <TripsPage bookings={bookings} filter={filter} setFilter={setFilter} update={updateStatus} onRate={(b: Booking) => setModal('rate:' + b.id)} onPay={(b: Booking) => setModal('payment:' + b.id)} onTrack={(b: Booking) => setModal('track:' + b.id)} onBook={() => setPage('Book a driver')} receipts={receipts} onCashConfirm={confirmCashAsCustomer} cashRewardsPoints={Number(user?.cashRewardsPoints || 0)} />}
+          {page === 'Requests' && <DriverPage bookings={bookings} update={updateStatus} user={user} onDutyChange={(v: boolean) => setUser((u: any) => u ? {...u, available: v} : u)} flash={flash} onCashConfirm={openDriverCashHandover} onRefresh={refresh} />}
+          {page === 'My trips' && <TripsPage bookings={bookings} filter={filter} setFilter={setFilter} update={updateStatus} onRate={(b: Booking) => setModal('rate:' + b.id)} onPay={(b: Booking) => setModal('payment:' + b.id)} onTrack={(b: Booking) => setModal('track:' + b.id)} onBook={() => setPage('Book a driver')} receipts={receipts} onCashConfirm={confirmCashAsCustomer} cashRewardsPoints={Number(user?.cashRewardsPoints || 0)} onRefresh={refresh} />}
           {page === 'Earnings' && <EarningsPage bookings={bookings} />}
           {page === 'Wallet' && <WalletPage receipts={receipts} bookings={bookings} onReceipt={downloadReceipt} />}
           {page === 'Help' && <HelpPage flash={flash} onDispute={() => setModal('dispute')} />}
@@ -1563,7 +1565,7 @@ function BookingRow({ booking: b, onClick }: any) {
 }
 
 // ----------------- Trips Page -----------------
-function TripsPage({ bookings, filter, setFilter, update, onRate, onPay, onTrack, onBook, receipts, onCashConfirm, cashRewardsPoints = 0 }: any) {
+function TripsPage({ bookings, filter, setFilter, update, onRate, onPay, onTrack, onBook, receipts, onCashConfirm, onRefresh, cashRewardsPoints = 0 }: any) {
   const filters = ['Upcoming', 'Completed', 'Cancelled'];
   const list = bookings.filter((b: Booking) =>
     filter === 'Upcoming'
@@ -1649,6 +1651,10 @@ function TripsPage({ bookings, filter, setFilter, update, onRate, onPay, onTrack
                   </div>
                 </div>
               </div>
+
+              {['Driver assigned', 'Driver arriving'].includes(b.status) && (
+                <CarCarePassport booking={b} role="customer" onRefresh={onRefresh} />
+              )}
 
               {/* Live, transparent trip progress */}
               {b.status !== 'Cancelled' && (() => {
@@ -1755,7 +1761,7 @@ function TripsPage({ bookings, filter, setFilter, update, onRate, onPay, onTrack
 }
 
 // ----------------- Driver Partner Page -----------------
-function DriverPage({ bookings, update, user, onDutyChange, flash, onCashConfirm }: any) {
+function DriverPage({ bookings, update, user, onDutyChange, flash, onCashConfirm, onRefresh }: any) {
   const [available, setAvailable] = useState<boolean>(user?.available === true);
   const [otpTarget, setOtpTarget] = useState<{ booking: Booking; status: 'Trip started' | 'Trip completed' } | null>(null);
   const [dutyBusy, setDutyBusy] = useState(false);
@@ -1967,6 +1973,9 @@ function DriverPage({ bookings, update, user, onDutyChange, flash, onCashConfirm
                       <Navigation size={18} /> I Am On My Way
                     </button>
                   )}
+                  {['Driver assigned', 'Driver arriving'].includes(b.status) && b.driverId === user?.id && (
+                    <CarCarePassport booking={b} role="driver" onRefresh={onRefresh} />
+                  )}
                   {b.status === 'Driver arriving' && (
                     <button
                       className="primary-btn"
@@ -2011,6 +2020,74 @@ function DriverPage({ bookings, update, user, onDutyChange, flash, onCashConfirm
         />
       )}
     </div>
+  );
+}
+
+function CarCarePassport({ booking, role, onRefresh }: any) {
+  const passport = booking.carCarePassport;
+  const [odometer, setOdometer] = useState(passport?.odometer ? String(passport.odometer) : '');
+  const [fuelLevel, setFuelLevel] = useState(passport?.fuelLevel || '½');
+  const [conditionNotes, setConditionNotes] = useState(passport?.conditionNotes || '');
+  const [checks, setChecks] = useState({ front: false, rear: false, left: false, right: false });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const driverMode = role === 'driver';
+  const customerDone = Boolean(passport?.customerConfirmedAt);
+  const driverDone = Boolean(passport?.driverConfirmedAt);
+  const save = async () => {
+    setBusy(true); setError('');
+    try {
+      await api(`/bookings/${booking.id}/car-care-passport`, {
+        method: 'POST',
+        body: JSON.stringify({ odometer: Number(odometer), fuelLevel, conditionNotes, checks })
+      });
+      await onRefresh?.();
+    } catch (e: any) { setError(e?.message || 'Could not save the handover record.'); }
+    finally { setBusy(false); }
+  };
+  const confirm = async () => {
+    setBusy(true); setError('');
+    try {
+      await api(`/bookings/${booking.id}/car-care-passport`, { method: 'POST', body: JSON.stringify({ confirm: true }) });
+      await onRefresh?.();
+    } catch (e: any) { setError(e?.message || 'Could not confirm the handover.'); }
+    finally { setBusy(false); }
+  };
+  return (
+    <section className="carcare-passport">
+      <div className="carcare-head">
+        <span className="carcare-mark"><ShieldCheck size={20}/></span>
+        <div><b>CarCare Passport</b><small>60-second shared vehicle handover</small></div>
+        <span className="carcare-tag">TRIP PROTECTION</span>
+      </div>
+      <p className="carcare-intro">Create a shared snapshot of the car before departure. It helps the owner and driver agree on the vehicle’s condition and starting details.</p>
+      {!driverMode && !customerDone && (
+        <div className="carcare-form">
+          <label>Odometer reading (km)<input type="number" min="0" max="9999999" inputMode="numeric" value={odometer} onChange={e => setOdometer(e.target.value)} placeholder="e.g. 42850"/></label>
+          <label>Fuel level<select value={fuelLevel} onChange={e => setFuelLevel(e.target.value)}><option>Empty</option><option>¼</option><option>½</option><option>¾</option><option>Full</option></select></label>
+          <label className="carcare-notes">Existing marks, scratches or observations (optional)<textarea value={conditionNotes} maxLength={500} onChange={e => setConditionNotes(e.target.value)} placeholder="Mention any existing damage or anything the driver should know…"/></label>
+          <div className="carcare-checks-title">Exterior walkaround checklist</div>
+          <div className="carcare-checks">
+            {(['front','rear','left','right'] as const).map((side) => <label key={side}><input type="checkbox" checked={checks[side]} onChange={e => setChecks(old => ({...old,[side]:e.target.checked}))}/><span>{side[0].toUpperCase()+side.slice(1)} side checked</span></label>)}
+          </div>
+          <small className="carcare-help">Walk around the vehicle together and check all four sides before confirming.</small>
+          <button className="carcare-action" disabled={busy || !odometer || !Object.values(checks).every(Boolean)} onClick={save}>{busy ? 'Saving handover…' : 'Save & share vehicle snapshot'} <ArrowRight size={16}/></button>
+        </div>
+      )}
+      {customerDone && (
+        <div className="carcare-record">
+          <div className="carcare-record-grid"><div><small>ODOMETER</small><b>{Number(passport.odometer).toLocaleString('en-IN')} km</b></div><div><small>FUEL LEVEL</small><b>{passport.fuelLevel}</b></div></div>
+          <p><b>Condition notes:</b> {passport.conditionNotes || 'No additional marks or observations reported.'}</p>
+          <div className="carcare-confirmations"><span><CheckCircle2 size={15}/> Owner confirmed</span><span>{driverDone ? <CheckCircle2 size={15}/> : <Clock3 size={15}/>} Driver {driverDone ? 'confirmed' : 'review pending'}</span></div>
+          {driverMode && !driverDone && <button className="carcare-action" disabled={busy} onClick={confirm}>{busy ? 'Confirming…' : 'I reviewed the vehicle with the owner'} <ShieldCheck size={16}/></button>}
+          {driverMode && driverDone && <div className="carcare-success"><CheckCircle2 size={16}/> Handover verified by both parties. Start OTP is now enabled.</div>}
+          {!driverMode && !driverDone && <div className="carcare-waiting"><Clock3 size={15}/> Waiting for your driver to review and confirm this same record.</div>}
+          {!driverMode && driverDone && <div className="carcare-success"><CheckCircle2 size={16}/> Both parties confirmed. You can now share your start OTP.</div>}
+        </div>
+      )}
+      {driverMode && !customerDone && <div className="carcare-waiting"><Clock3 size={15}/> Waiting for the car owner to complete the vehicle walkaround and save the shared record.</div>}
+      {error && <p className="carcare-error" role="alert">{error}</p>}
+    </section>
   );
 }
 
