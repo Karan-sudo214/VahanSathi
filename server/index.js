@@ -745,6 +745,7 @@ app.get('/api/health', (_, res) => {
     integrations: {
       database: databaseReady,
       databaseConfigured: !!neonPool,
+      videoStorageConfigured: r2Ready(),
       razorpay: !!(process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET),
       voice: true,
       voiceMode: 'browser-native'
@@ -1239,7 +1240,8 @@ app.post('/api/bookings/:id/location', auth, roles('driver'), asyncRoute(async (
     updatedAt: new Date().toISOString()
   };
   await persistItem('app_bookings', booking.id, booking);
-  await save();
+  // Neon is the production source of truth; avoid a synchronous full-file write for every GPS ping.
+  if (!databaseReady) await save();
   res.json({ ok: true, updatedAt: booking.driverLocation.updatedAt });
 }));
 
