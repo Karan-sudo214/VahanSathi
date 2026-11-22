@@ -2078,11 +2078,11 @@ function CarCarePassport({ booking, role, onRefresh }: any) {
         <div className="carcare-record">
           <div className="carcare-record-grid"><div><small>ODOMETER</small><b>{Number(passport.odometer).toLocaleString('en-IN')} km</b></div><div><small>FUEL LEVEL</small><b>{passport.fuelLevel}</b></div></div>
           <p><b>Condition notes:</b> {passport.conditionNotes || 'No additional marks or observations reported.'}</p>
-          <div className="carcare-confirmations"><span><CheckCircle2 size={15}/> Owner confirmed</span><span>{driverDone ? <CheckCircle2 size={15}/> : <Clock3 size={15}/>} Driver {driverDone ? 'confirmed' : 'review pending'}</span></div>
+          <div className="carcare-confirmations"><span><Check size={15}/> Owner confirmed</span><span>{driverDone ? <Check size={15}/> : <Clock3 size={15}/>} Driver {driverDone ? 'confirmed' : 'review pending'}</span></div>
           {driverMode && !driverDone && <button className="carcare-action" disabled={busy} onClick={confirm}>{busy ? 'Confirming…' : 'I reviewed the vehicle with the owner'} <ShieldCheck size={16}/></button>}
-          {driverMode && driverDone && <div className="carcare-success"><CheckCircle2 size={16}/> Handover verified by both parties. Start OTP is now enabled.</div>}
+          {driverMode && driverDone && <div className="carcare-success"><Check size={16}/> Handover verified by both parties. Start OTP is now enabled.</div>}
           {!driverMode && !driverDone && <div className="carcare-waiting"><Clock3 size={15}/> Waiting for your driver to review and confirm this same record.</div>}
-          {!driverMode && driverDone && <div className="carcare-success"><CheckCircle2 size={16}/> Both parties confirmed. You can now share your start OTP.</div>}
+          {!driverMode && driverDone && <div className="carcare-success"><Check size={16}/> Both parties confirmed. You can now share your start OTP.</div>}
         </div>
       )}
       {driverMode && !customerDone && <div className="carcare-waiting"><Clock3 size={15}/> Waiting for the car owner to complete the vehicle walkaround and save the shared record.</div>}
