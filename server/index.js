@@ -1529,7 +1529,9 @@ app.post('/api/bookings/:id/tripguard/recordings/start', auth, asyncRoute(async 
   if (guard.consents.customer?.consent !== true || guard.consents.driver?.consent !== true) return res.status(409).json({ error: 'Both the customer and assigned driver must explicitly consent before recording.' });
   if (!r2Ready()) return res.status(503).json({ error: 'Private video storage is not configured yet. Ask the VaahanSathi administrator to finish the Cloudflare R2 setup.' });
   if (guard.sessions.some((session) => session.status === 'recording')) return res.status(409).json({ error: 'A TripGuard recording is already active for this trip.' });
-  const session = { id: randomUUID(), status: 'recording', startedAt: new Date().toISOString(), startedBy: req.user.id, chunks: [], durationSeconds: 0 };
+  const mimeType = String(req.body?.mimeType || 'video/webm').split(';')[0];
+  if (!['video/webm', 'video/mp4'].includes(mimeType)) return res.status(400).json({ error: 'This browser video format is not supported for secure storage.' });
+  const session = { id: randomUUID(), status: 'recording', startedAt: new Date().toISOString(), startedBy: req.user.id, mimeType, chunks: [], durationSeconds: 0 };
   guard.sessions.unshift(session);
   await persistItem('app_bookings', b.id, b); await save();
   res.status(201).json({ session });
@@ -1544,7 +1546,10 @@ app.post('/api/bookings/:id/tripguard/recordings/:recordingId/chunk-url', auth, 
   if (!r2Ready()) return res.status(503).json({ error: 'Private video storage is not configured.' });
   const index = Number(req.body?.index);
   if (!Number.isInteger(index) || index < 0 || index > 20000) return res.status(400).json({ error: 'Invalid video segment number.' });
-  const key = `tripguard/${b.id}/${session.id}/${String(index).padStart(6,'0')}.webm`;
+  const mimeType = String(req.body?.mimeType || session.mimeType || 'video/webm').split(';')[0];
+  if (mimeType !== session.mimeType) return res.status(400).json({ error: 'Video segment format does not match this recording.' });
+  const extension = mimeType === 'video/mp4' ? 'mp4' : 'webm';
+  const key = `tripguard/${b.id}/${session.id}/${String(index).padStart(6,'0')}.${extension}`;
   res.json({ uploadUrl: r2Presign('PUT', key, 900), key, expiresIn: 900 });
 }));
 
@@ -1557,7 +1562,8 @@ app.post('/api/bookings/:id/tripguard/recordings/:recordingId/chunk-saved', auth
   const index = Number(req.body?.index);
   const key = String(req.body?.key || '');
   const expectedPrefix = `tripguard/${b.id}/${session.id}/`;
-  if (!Number.isInteger(index) || index < 0 || !key.startsWith(expectedPrefix) || !key.endsWith('.webm')) return res.status(400).json({ error: 'Invalid uploaded segment.' });
+  const extension = session.mimeType === 'video/mp4' ? '.mp4' : '.webm';
+  if (!Number.isInteger(index) || index < 0 || !key.startsWith(expectedPrefix) || !key.endsWith(extension)) return res.status(400).json({ error: 'Invalid uploaded segment.' });
   if (!session.chunks.some((chunk) => chunk.index === index)) session.chunks.push({ index, key, bytes: Math.max(0, Number(req.body?.bytes || 0)), uploadedAt: new Date().toISOString() });
   session.chunks.sort((a, z) => a.index - z.index);
   await persistItem('app_bookings', b.id, b); await save();
@@ -1587,7 +1593,7 @@ app.get('/api/bookings/:id/tripguard/recordings/:recordingId/access', auth, asyn
   if (!session) return res.status(404).json({ error: 'Trip recording not found.' });
   if (!r2Ready()) return res.status(503).json({ error: 'Private video storage is not configured.' });
   const chunks = session.chunks.map((chunk) => ({ index: chunk.index, url: r2Presign('GET', chunk.key, 300) }));
-  res.json({ session: { id: session.id, status: session.status, startedAt: session.startedAt, stoppedAt: session.stoppedAt, durationSeconds: session.durationSeconds }, chunks });
+  res.json({ session: { id: session.id, status: session.status, mimeType: session.mimeType || 'video/webm', startedAt: session.startedAt, stoppedAt: session.stoppedAt, durationSeconds: session.durationSeconds }, chunks });
 }));
 
 app.post('/api/bookings/:id/car-care-passport', auth, asyncRoute(async (req, res) => {
