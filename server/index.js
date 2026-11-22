@@ -1317,7 +1317,7 @@ app.get('/api/bookings', auth, (req, res) => {
     const canSeeCashPin = req.user.role === 'customer' && b.userId === req.user.id && b.payment_method === 'cash' && ['Awaiting cash confirmation', 'Trip completed', 'Rated'].includes(b.status) && !b.cashPinLockedAt;
     return {
       ...safeBooking,
-      start_otp: req.user.role === 'customer' || req.user.role === 'admin' ? b.start_otp : undefined,
+      start_otp: req.user.role === 'admin' || (req.user.role === 'customer' && b.carCarePassport?.customerConfirmedAt && b.carCarePassport?.driverConfirmedAt) ? b.start_otp : undefined,
       end_otp: (req.user.role === 'customer' && b.status === 'Trip started') || req.user.role === 'admin' ? b.end_otp : undefined,
       cashPin: canSeeCashPin ? (cashPinEncrypted ? decryptCashPin(cashPinEncrypted) : cashPin) : undefined,
       cashEvents: req.user.role === 'admin' ? (b.cashEvents || []) : undefined,
