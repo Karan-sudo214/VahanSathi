@@ -1373,8 +1373,9 @@ app.get('/api/bookings', auth, (req, res) => {
     const canSeeCashPin = req.user.role === 'customer' && b.userId === req.user.id && b.payment_method === 'cash' && ['Awaiting cash confirmation', 'Trip completed', 'Rated'].includes(b.status) && !b.cashPinLockedAt;
     return {
       ...safeBooking,
-      start_otp: req.user.role === 'admin' || (req.user.role === 'customer' && b.carCarePassport?.videoKey && b.carCarePassport?.customerConfirmedAt && b.carCarePassport?.driverConfirmedAt) ? b.start_otp : undefined,
-      end_otp: (req.user.role === 'customer' && b.status === 'Trip started') || req.user.role === 'admin' ? b.end_otp : undefined,
+      // OTPs are customer-only secrets and are visible only at their exact trip stage.
+      start_otp: req.user.role === 'customer' && b.userId === req.user.id && b.status === 'Driver arriving' && b.carCarePassport?.videoKey && b.carCarePassport?.customerConfirmedAt && b.carCarePassport?.driverConfirmedAt ? b.start_otp : undefined,
+      end_otp: req.user.role === 'customer' && b.userId === req.user.id && b.status === 'Trip started' ? b.end_otp : undefined,
       cashPin: canSeeCashPin ? (cashPinEncrypted ? decryptCashPin(cashPinEncrypted) : cashPin) : undefined,
       cashEvents: req.user.role === 'admin' ? (b.cashEvents || []) : undefined,
       cashCustomerAmount: req.user.role === 'customer' ? b.cashCustomerAmount : undefined,
@@ -1456,8 +1457,13 @@ app.post(
       cashPinHash: cashPin ? hashCashPin(cashPin) : null,
       cashPinAttempts: 0,
       status: 'Searching',
-      start_otp: String(randomInt(1000, 9999)),
-      end_otp: String(randomInt(1000, 9999)),
+      // Codes are issued just-in-time: start after customer handover approval,
+      // end only after the driver has successfully verified the start code.
+      start_otp: null,
+      startOtpGeneratedAt: null,
+      startOtpVerifiedAt: null,
+      end_otp: null,
+      endOtpGeneratedAt: null,
       createdAt: new Date().toISOString()
     };
 
@@ -1469,7 +1475,14 @@ app.post(
     await persistItem('app_history', historyItem.id, historyItem);
     await save();
 
-    const customerBooking = { ...b, cashPin: undefined, cashPinEncrypted: undefined, cashPinHash: undefined };
+    const customerBooking = {
+      ...b,
+      start_otp: undefined,
+      end_otp: undefined,
+      cashPin: undefined,
+      cashPinEncrypted: undefined,
+      cashPinHash: undefined
+    };
     res.status(201).json({
       booking: customerBooking,
       message: 'Your request is now available to verified, online drivers in your city. A driver must accept it before assignment.'
@@ -1639,7 +1652,18 @@ app.post('/api/bookings/:id/car-care-passport', auth, asyncRoute(async (req, res
     if (req.body?.confirm !== true) return res.status(400).json({ error: 'Review the driver’s video and confirm it to continue.' });
     const storedVideo = await fetch(r2Presign('HEAD', passport.videoKey, 60));
     if (!storedVideo.ok) return res.status(409).json({ error: 'The vehicle video is not available in secure storage yet. Ask the driver to upload it again.' });
-    b.carCarePassport = { ...passport, customerConfirmedAt: new Date().toISOString() };
+    const approvedAt = new Date().toISOString();
+    // Issue the start code at the moment the customer approves the uploaded video.
+    // The generatedAt marker makes retries idempotent and repairs legacy bookings
+    // that were created before just-in-time OTP issuance.
+    if (!passport.customerConfirmedAt || !b.startOtpGeneratedAt || !b.start_otp) {
+      b.start_otp = String(randomInt(1000, 9999));
+      b.startOtpGeneratedAt = approvedAt;
+      b.startOtpVerifiedAt = null;
+    }
+    b.end_otp = null;
+    b.endOtpGeneratedAt = null;
+    b.carCarePassport = { ...passport, customerConfirmedAt: passport.customerConfirmedAt || approvedAt };
   } else {
     return res.status(403).json({ error: 'Only the customer and assigned driver can complete this handover.' });
   }
@@ -1706,14 +1730,22 @@ app.patch(
       if (!b.carCarePassport?.videoKey || !b.carCarePassport?.customerConfirmedAt || !b.carCarePassport?.driverConfirmedAt) {
         return res.status(409).json({ error: 'Wait until the driver’s vehicle video has been uploaded and approved by the customer before starting the trip.' });
       }
-      if (String(otp || '').trim() !== String(b.start_otp)) {
-        return res.status(400).json({ error: 'Start OTP is invalid. Ask the car owner for their 4-digit start OTP.' });
+      if (!b.start_otp || !b.startOtpGeneratedAt || String(otp || '').trim() !== String(b.start_otp)) {
+        return res.status(400).json({ error: 'Start OTP is invalid or has not been issued yet. Ask the customer to approve the vehicle video and show the latest 4-digit code.' });
       }
+      // Consume the start code exactly once and issue the end code only after
+      // the server accepts the start transition.
+      b.startOtpVerifiedAt = new Date().toISOString();
+      b.start_otp = null;
+      b.end_otp = String(randomInt(1000, 9999));
+      b.endOtpGeneratedAt = new Date().toISOString();
     }
     if (req.user.role === 'driver' && status === 'Trip completed') {
-      if (String(otp || '').trim() !== String(b.end_otp)) {
-        return res.status(400).json({ error: 'End OTP is invalid. Ask the car owner for their 4-digit end OTP.' });
+      if (!b.end_otp || !b.endOtpGeneratedAt || String(otp || '').trim() !== String(b.end_otp)) {
+        return res.status(400).json({ error: 'End OTP is invalid or has not been issued yet. Ask the customer for the current 4-digit end code.' });
       }
+      b.endOtpVerifiedAt = new Date().toISOString();
+      b.end_otp = null;
       b.payment_status = b.payment_method === 'cash' ? 'Cash confirmation pending' : 'Payment due';
     }
     if (req.user.role === 'admin' && status === 'Trip completed' && b.payment_method === 'cash' && b.payment_status !== 'Paid · Cash') {
@@ -1736,7 +1768,8 @@ app.patch(
     await persistItem('app_history', historyItem.id, historyItem);
     await save();
 
-    res.json({ booking: b });
+    // Never echo OTPs or private payment credentials back to the driver/admin action caller.
+    res.json({ booking: { id: b.id, status: b.status, payment_status: b.payment_status, updatedAt: new Date().toISOString() } });
   })
 );
 
