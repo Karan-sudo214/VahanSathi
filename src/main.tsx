@@ -233,6 +233,8 @@ function App() {
   const [user, setUser] = useState<User | null>(savedUser);
   const [page, setPage] = useState<string>(savedUser ? (savedUser.role === 'admin' ? 'Overview' : savedUser.role === 'driver' ? 'Requests' : 'Home') : 'Home');
   const [bookings, setBookings] = useState<Booking[]>([]);
+  const refreshInFlightRef = useRef(false);
+  const lastBookingsPayloadRef = useRef('');
   const [toast, setToast] = useState('');
   const [modal, setModal] = useState('');
   const [cashHandover, setCashHandover] = useState<{ booking: Booking; mode: 'customer' | 'driver' } | null>(null);
@@ -334,28 +336,47 @@ function App() {
   };
 
   const refresh = async () => {
-    if (!user) return;
+    if (!user || refreshInFlightRef.current) return;
+    refreshInFlightRef.current = true;
     try {
       const d = await api('/bookings');
-      setBookings(d.bookings || []);
+      const nextBookings = d.bookings || [];
+      const payload = JSON.stringify(nextBookings);
+      if (payload !== lastBookingsPayloadRef.current) {
+        lastBookingsPayloadRef.current = payload;
+        setBookings(nextBookings);
+      }
     } catch (e: any) {
       console.warn('Booking refresh:', e.message);
+    } finally {
+      refreshInFlightRef.current = false;
     }
   };
 
   useEffect(() => {
+    lastBookingsPayloadRef.current = '';
     if (user) refresh();
-  }, [user]);
+  }, [user?.id]);
 
-  // Drivers poll every 2s for near-realtime incoming requests.
-  // Customers poll every 5s to see driver accepted/status updates.
-  // Admins poll every 10s.
+  // Fast near-real-time refresh with overlap protection. Pause background tabs and
+  // refresh immediately when a customer/driver returns to the app or reconnects.
   useEffect(() => {
     if (!user) return;
-    const interval = user.role === 'driver' ? 2000 : user.role === 'customer' ? 5000 : 10000;
-    const timer = window.setInterval(() => refresh(), interval);
-    return () => window.clearInterval(timer);
-  }, [user]);
+    const interval = user.role === 'driver' ? 1500 : user.role === 'customer' ? 1800 : 4000;
+    const tick = () => {
+      if (document.visibilityState === 'visible' && navigator.onLine) refresh();
+    };
+    const onVisibility = () => { if (document.visibilityState === 'visible') refresh(); };
+    const onOnline = () => refresh();
+    const timer = window.setInterval(tick, interval);
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('online', onOnline);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('online', onOnline);
+    };
+  }, [user?.id, user?.role]);
 
   const login = async (email: string, password: string) => {
     setBusy(true);
@@ -1812,20 +1833,40 @@ function DriverPage({ bookings, update, user, onDutyChange, flash, onCashConfirm
   const completed = bookings.filter((b: Booking) => b.driverId === user?.id && b.status === 'Trip completed');
   const totalEarnings = completed.reduce((s: number, b: Booking) => s + b.payout, 0);
 
-  // Share precise GPS only for assigned active trips. The browser asks the driver for location permission.
+  // One GPS watcher per driver. Send meaningful movement at a controlled cadence
+  // instead of opening a separate high-accuracy watcher for every active booking.
+  const gpsLastSentRef = useRef<{ at: number; lat: number; lng: number } | null>(null);
   useEffect(() => {
     if (!navigator.geolocation) return;
     const active = bookings.filter((b: Booking) => b.driverId === user?.id && ['Driver assigned', 'Driver arriving', 'Trip started'].includes(b.status));
     if (!active.length) return;
-    const watchers = active.map((booking: Booking) => navigator.geolocation.watchPosition(
-      (position) => api(`/bookings/${booking.id}/location`, {
-        method: 'POST',
-        body: JSON.stringify({ lat: position.coords.latitude, lng: position.coords.longitude, accuracy: position.coords.accuracy, heading: position.coords.heading, speed: position.coords.speed })
-      }).catch((error: any) => console.warn('GPS update:', error.message)),
+    let sending = false;
+    const watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        if (document.visibilityState !== 'visible' || !navigator.onLine || sending) return;
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
+        const now = Date.now();
+        const previous = gpsLastSentRef.current;
+        const distanceMeters = previous
+          ? Math.hypot((lat - previous.lat) * 111000, (lng - previous.lng) * 111000 * Math.cos(lat * Math.PI / 180))
+          : Infinity;
+        if (previous && now - previous.at < 4000 && distanceMeters < 10) return;
+        gpsLastSentRef.current = { at: now, lat, lng };
+        sending = true;
+        const payload = {
+          lat, lng, accuracy: position.coords.accuracy,
+          heading: position.coords.heading, speed: position.coords.speed
+        };
+        Promise.all(active.map((booking: Booking) => api(`/bookings/${booking.id}/location`, {
+          method: 'POST', body: JSON.stringify(payload)
+        }))).catch((error: any) => console.warn('GPS update:', error.message))
+          .finally(() => { sending = false; });
+      },
       (error) => console.warn('Driver GPS permission or signal:', error.message),
-      { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 }
-    ));
-    return () => watchers.forEach((watchId) => navigator.geolocation.clearWatch(watchId));
+      { enableHighAccuracy: true, maximumAge: 3000, timeout: 12000 }
+    );
+    return () => navigator.geolocation.clearWatch(watchId);
   }, [bookings.map((b: Booking) => `${b.id}:${b.status}:${b.driverId}`).join('|'), user?.id]);
 
   return (
