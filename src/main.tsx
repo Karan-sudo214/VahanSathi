@@ -550,8 +550,10 @@ function App() {
           ? 'Trip completed! Invoice & receipt ready.'
           : `Booking updated: ${status}`
       );
+      return true;
     } catch (e: any) {
       flash(e.message);
+      return false;
     }
   };
 
@@ -2002,8 +2004,9 @@ function DriverPage({ bookings, update, user, onDutyChange, flash, onCashConfirm
           stage={otpTarget.status === 'Trip started' ? 'start' : 'end'}
           onClose={() => setOtpTarget(null)}
           onSubmit={async (code: string) => {
-            await update(otpTarget.booking, otpTarget.status, code);
-            setOtpTarget(null);
+            const verified = await update(otpTarget.booking, otpTarget.status, code);
+            if (verified !== false) setOtpTarget(null);
+            else throw new Error('The code could not be verified. Please check it and try again.');
           }}
         />
       )}
