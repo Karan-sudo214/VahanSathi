@@ -1371,7 +1371,7 @@ app.get('/api/bookings', auth, (req, res) => {
     const canSeeCashPin = req.user.role === 'customer' && b.userId === req.user.id && b.payment_method === 'cash' && ['Awaiting cash confirmation', 'Trip completed', 'Rated'].includes(b.status) && !b.cashPinLockedAt;
     return {
       ...safeBooking,
-      start_otp: req.user.role === 'admin' || (req.user.role === 'customer' && b.carCarePassport?.customerConfirmedAt && b.carCarePassport?.driverConfirmedAt) ? b.start_otp : undefined,
+      start_otp: req.user.role === 'admin' || (req.user.role === 'customer' && b.carCarePassport?.videoKey && b.carCarePassport?.customerConfirmedAt && b.carCarePassport?.driverConfirmedAt) ? b.start_otp : undefined,
       end_otp: (req.user.role === 'customer' && b.status === 'Trip started') || req.user.role === 'admin' ? b.end_otp : undefined,
       cashPin: canSeeCashPin ? (cashPinEncrypted ? decryptCashPin(cashPinEncrypted) : cashPin) : undefined,
       cashEvents: req.user.role === 'admin' ? (b.cashEvents || []) : undefined,
@@ -1596,35 +1596,48 @@ app.get('/api/bookings/:id/tripguard/recordings/:recordingId/access', auth, asyn
   res.json({ session: { id: session.id, status: session.status, mimeType: session.mimeType || 'video/webm', startedAt: session.startedAt, stoppedAt: session.stoppedAt, durationSeconds: session.durationSeconds }, chunks });
 }));
 
+app.post('/api/bookings/:id/car-care-passport/video-upload-url', auth, asyncRoute(async (req, res) => {
+  const b = data.bookings.find((item) => item.id === req.params.id);
+  if (!b || req.user.role !== 'driver' || b.driverId !== req.user.id) return res.status(403).json({ error: 'Only the assigned driver can upload the vehicle walkaround video.' });
+  if (b.status !== 'Driver arriving') return res.status(409).json({ error: 'The vehicle video can only be uploaded at pickup before the trip starts.' });
+  if (!r2Ready()) return res.status(503).json({ error: 'Secure video storage is not configured yet. Please contact support; do not start the trip without the customer’s approval.' });
+  const mimeType = String(req.body?.mimeType || '');
+  const extensions = { 'video/mp4': 'mp4', 'video/webm': 'webm', 'video/quicktime': 'mov' };
+  if (!extensions[mimeType]) return res.status(400).json({ error: 'Please select an MP4, WebM or iPhone video file.' });
+  const key = `carcare/${b.id}/${randomUUID()}.${extensions[mimeType]}`;
+  res.json({ uploadUrl: r2Presign('PUT', key, 600), videoKey: key });
+}));
+
+app.get('/api/bookings/:id/car-care-passport/video-url', auth, asyncRoute(async (req, res) => {
+  const b = data.bookings.find((item) => item.id === req.params.id);
+  if (!b || !tripGuardParticipant(req, b)) return res.status(404).json({ error: 'Vehicle handover video not found.' });
+  const passport = b.carCarePassport;
+  if (!passport?.videoKey || !passport?.driverConfirmedAt || !r2Ready()) return res.status(404).json({ error: 'The driver has not uploaded a vehicle video yet.' });
+  res.json({ videoUrl: r2Presign('GET', passport.videoKey, 600), mimeType: passport.videoMimeType || 'video/mp4' });
+}));
+
 app.post('/api/bookings/:id/car-care-passport', auth, asyncRoute(async (req, res) => {
   const b = data.bookings.find((item) => item.id === req.params.id);
   if (!b) return res.status(404).json({ error: 'Booking not found.' });
-  if (b.status !== 'Driver arriving') return res.status(409).json({ error: 'The car handover passport is available once the assigned driver has arrived at pickup.' });
-  const passport = b.carCarePassport || null;
-  if (req.user.role === 'customer') {
-    if (b.userId !== req.user.id) return res.status(403).json({ error: 'Only the car owner can create this handover record.' });
-    if (passport?.driverConfirmedAt) return res.status(409).json({ error: 'This handover has already been confirmed by both parties and cannot be edited.' });
-    const odometer = Number(req.body?.odometer);
-    const fuelLevel = String(req.body?.fuelLevel || '');
-    const conditionNotes = String(req.body?.conditionNotes || '').trim().slice(0, 500);
-    const checks = req.body?.checks || {};
-    const requiredChecks = ['front', 'rear', 'left', 'right'];
-    if (!Number.isFinite(odometer) || odometer < 0 || odometer > 9999999 || !['Empty', '¼', '½', '¾', 'Full'].includes(fuelLevel) || !requiredChecks.every((key) => checks[key] === true)) {
-      return res.status(400).json({ error: 'Complete the odometer, fuel level and all four exterior walkaround checks.' });
+  if (b.status !== 'Driver arriving') return res.status(409).json({ error: 'Vehicle handover verification is available only at pickup before the trip starts.' });
+  const passport = b.carCarePassport || {};
+  if (req.user.role === 'driver') {
+    if (b.driverId !== req.user.id) return res.status(403).json({ error: 'Only the assigned driver can upload this vehicle video.' });
+    const videoKey = String(req.body?.videoKey || '');
+    const mimeType = String(req.body?.mimeType || '');
+    const sizeBytes = Number(req.body?.sizeBytes || 0);
+    if (!r2Ready()) return res.status(503).json({ error: 'Secure video storage is not configured.' });
+    if (!videoKey.startsWith(`carcare/${b.id}/`) || !/\.(mp4|webm|mov)$/.test(videoKey) || !['video/mp4','video/webm','video/quicktime'].includes(mimeType) || !Number.isFinite(sizeBytes) || sizeBytes < 1 || sizeBytes > 100 * 1024 * 1024) {
+      return res.status(400).json({ error: 'The uploaded handover video is invalid or exceeds 100 MB.' });
     }
-    b.carCarePassport = {
-      odometer, fuelLevel, conditionNotes,
-      checks: Object.fromEntries(requiredChecks.map((key) => [key, true])),
-      createdAt: passport?.createdAt || new Date().toISOString(),
-      customerConfirmedAt: new Date().toISOString(),
-      driverConfirmedAt: null
-    };
-  } else if (req.user.role === 'driver') {
-    if (b.driverId !== req.user.id) return res.status(403).json({ error: 'Only the assigned driver can confirm this handover.' });
-    if (!passport?.customerConfirmedAt) return res.status(409).json({ error: 'Wait for the car owner to complete the handover record first.' });
-    b.carCarePassport = { ...passport, driverConfirmedAt: new Date().toISOString() };
+    b.carCarePassport = { ...passport, videoKey, videoMimeType: mimeType, videoSizeBytes: sizeBytes, videoUploadedAt: new Date().toISOString(), driverConfirmedAt: new Date().toISOString(), customerConfirmedAt: null };
+  } else if (req.user.role === 'customer') {
+    if (b.userId !== req.user.id) return res.status(403).json({ error: 'Only the car owner can verify this vehicle video.' });
+    if (!passport.videoKey || !passport.driverConfirmedAt) return res.status(409).json({ error: 'Wait for the assigned driver to upload the vehicle walkaround video.' });
+    if (req.body?.confirm !== true) return res.status(400).json({ error: 'Review the driver’s video and confirm it to continue.' });
+    b.carCarePassport = { ...passport, customerConfirmedAt: new Date().toISOString() };
   } else {
-    return res.status(403).json({ error: 'Only the customer and assigned driver can confirm the handover.' });
+    return res.status(403).json({ error: 'Only the customer and assigned driver can complete this handover.' });
   }
   await persistItem('app_bookings', b.id, b);
   await save();
@@ -1686,8 +1699,8 @@ app.patch(
 
     // OTPs are required for driver trip start/completion. Admin corrections are audited separately.
     if (req.user.role === 'driver' && status === 'Trip started') {
-      if (!b.carCarePassport?.customerConfirmedAt || !b.carCarePassport?.driverConfirmedAt) {
-        return res.status(409).json({ error: 'Complete the CarCare Passport with the customer and confirm the vehicle handover before starting the trip.' });
+      if (!b.carCarePassport?.videoKey || !b.carCarePassport?.customerConfirmedAt || !b.carCarePassport?.driverConfirmedAt) {
+        return res.status(409).json({ error: 'Wait until the driver’s vehicle video has been uploaded and approved by the customer before starting the trip.' });
       }
       if (String(otp || '').trim() !== String(b.start_otp)) {
         return res.status(400).json({ error: 'Start OTP is invalid. Ask the car owner for their 4-digit start OTP.' });
