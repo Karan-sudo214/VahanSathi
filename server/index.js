@@ -1424,10 +1424,11 @@ app.post(
 app.post('/api/bookings/:id/car-care-passport', auth, asyncRoute(async (req, res) => {
   const b = data.bookings.find((item) => item.id === req.params.id);
   if (!b) return res.status(404).json({ error: 'Booking not found.' });
-  if (!['Driver assigned', 'Driver arriving'].includes(b.status)) return res.status(409).json({ error: 'The car handover passport is available only before the trip starts.' });
+  if (b.status !== 'Driver arriving') return res.status(409).json({ error: 'The car handover passport is available once the assigned driver has arrived at pickup.' });
   const passport = b.carCarePassport || null;
   if (req.user.role === 'customer') {
     if (b.userId !== req.user.id) return res.status(403).json({ error: 'Only the car owner can create this handover record.' });
+    if (passport?.driverConfirmedAt) return res.status(409).json({ error: 'This handover has already been confirmed by both parties and cannot be edited.' });
     const odometer = Number(req.body?.odometer);
     const fuelLevel = String(req.body?.fuelLevel || '');
     const conditionNotes = String(req.body?.conditionNotes || '').trim().slice(0, 500);
