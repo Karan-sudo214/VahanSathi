@@ -1274,6 +1274,7 @@ app.post('/api/bookings/:id/location', auth, roles('driver'), asyncRoute(async (
   await persistItem('app_bookings', booking.id, booking);
   // Neon is the production source of truth; avoid a synchronous full-file write for every GPS ping.
   if (!databaseReady) await save();
+  else publishRealtimeRefresh();
   res.json({ ok: true, updatedAt: booking.driverLocation.updatedAt });
 }));
 
