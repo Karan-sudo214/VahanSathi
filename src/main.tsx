@@ -2391,7 +2391,7 @@ function OTPVerificationModal({ booking, stage, onClose, onSubmit }: any) {
   const isStart = stage === 'start';
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!/^\\d{4}$/.test(code)) {
+    if (!/^\d{4}$/.test(code)) {
       setError('Enter all 4 digits to continue.');
       return;
     }
@@ -2416,7 +2416,7 @@ function OTPVerificationModal({ booking, stage, onClose, onSubmit }: any) {
         <div className="otp-modal-trip"><span>BOOKING REFERENCE</span><b>{booking.id}</b><small>{booking.pickup} <ArrowRight size={12}/> {booking.destination}</small></div>
         <form onSubmit={submit}>
           <label className="otp-entry-label" htmlFor="driver-trip-otp">CUSTOMER’S 4-DIGIT {isStart ? 'START' : 'END'} OTP</label>
-          <input id="driver-trip-otp" className="otp-entry-input" type="text" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{4}" maxLength={4} value={code} onChange={(event) => { setCode(event.target.value.replace(/\\D/g, '').slice(0,4)); setError(''); }} placeholder="• • • •" autoFocus aria-describedby="otp-entry-hint" />
+          <input id="driver-trip-otp" className="otp-entry-input" type="text" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{4}" maxLength={4} value={code} onChange={(event) => { setCode(event.target.value.replace(/\D/g, '').slice(0,4)); setError(''); }} placeholder="• • • •" autoFocus aria-describedby="otp-entry-hint" />
           <div className="otp-entry-hint" id="otp-entry-hint"><LockKeyhole size={14}/> Enter the code shared by the customer in person</div>
           {error && <p className="otp-entry-error" role="alert"><AlertCircle size={15}/>{error}</p>}
           <button className="otp-verify-submit" type="submit" disabled={submitting || code.length !== 4}>{submitting ? 'Verifying securely…' : isStart ? 'Verify & start trip' : 'Verify & complete trip'} <ArrowRight size={17}/></button>
