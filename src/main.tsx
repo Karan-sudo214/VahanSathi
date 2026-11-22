@@ -389,7 +389,7 @@ function App() {
           const { done, value } = await reader.read();
           if (done) break;
           buffer += decoder.decode(value, { stream: true });
-          const frames = buffer.split(/\\r?\\n\\r?\\n/);
+          const frames = buffer.split(/\r?\n\r?\n/);
           buffer = frames.pop() || '';
           for (const frame of frames) {
             if (frame.includes('event: refresh') && document.visibilityState === 'visible') refresh();
