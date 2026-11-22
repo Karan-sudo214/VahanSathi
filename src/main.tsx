@@ -1652,7 +1652,7 @@ function TripsPage({ bookings, filter, setFilter, update, onRate, onPay, onTrack
                 </div>
               </div>
 
-              {['Driver assigned', 'Driver arriving'].includes(b.status) && (
+              {b.status === 'Driver arriving' && (
                 <CarCarePassport booking={b} role="customer" onRefresh={onRefresh} />
               )}
 
@@ -1973,7 +1973,7 @@ function DriverPage({ bookings, update, user, onDutyChange, flash, onCashConfirm
                       <Navigation size={18} /> I Am On My Way
                     </button>
                   )}
-                  {['Driver assigned', 'Driver arriving'].includes(b.status) && b.driverId === user?.id && (
+                  {b.status === 'Driver arriving' && b.driverId === user?.id && (
                     <CarCarePassport booking={b} role="driver" onRefresh={onRefresh} />
                   )}
                   {b.status === 'Driver arriving' && (
