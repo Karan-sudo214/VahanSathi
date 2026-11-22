@@ -89,7 +89,7 @@ type Booking = {
   requestedDriverStyle?: string;
   smartMatch?: { score: number; tier: string; reasons: string[]; distanceKm: number | null; rank: number; poolSize: number } | null;
   driverMatch?: { score: number; tier: string; reasons: string[] } | null;
-  carCarePassport?: { odometer: number; fuelLevel: string; conditionNotes: string; checks: Record<string, boolean>; createdAt: string; customerConfirmedAt: string | null; driverConfirmedAt: string | null } | null;
+  carCarePassport?: { videoKey?: string; videoMimeType?: string; videoSizeBytes?: number; videoUploadedAt?: string; customerConfirmedAt?: string | null; driverConfirmedAt?: string | null } | null;
   driverLocation?: { lat: number; lng: number; accuracy?: number; heading?: number | null; speed?: number | null; updatedAt?: string };
   pickupCoordinates?: [number, number];
   destinationCoordinates?: [number, number];
@@ -2230,68 +2230,112 @@ function r2ReadyPlaceholder() {
 }
 
 function CarCarePassport({ booking, role, onRefresh }: any) {
-  const passport = booking.carCarePassport;
-  const [odometer, setOdometer] = useState(passport?.odometer ? String(passport.odometer) : '');
-  const [fuelLevel, setFuelLevel] = useState(passport?.fuelLevel || '½');
-  const [conditionNotes, setConditionNotes] = useState(passport?.conditionNotes || '');
-  const [checks, setChecks] = useState({ front: false, rear: false, left: false, right: false });
+  const passport = booking.carCarePassport || {};
+  const driverMode = role === 'driver';
+  const [videoFile, setVideoFile] = useState<File | null>(null);
+  const [videoUrl, setVideoUrl] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const driverMode = role === 'driver';
-  const customerDone = Boolean(passport?.customerConfirmedAt);
-  const driverDone = Boolean(passport?.driverConfirmedAt);
-  const save = async () => {
-    setBusy(true); setError('');
+  const [notice, setNotice] = useState('');
+  const driverUploaded = Boolean(passport.videoKey && passport.driverConfirmedAt);
+  const customerApproved = Boolean(passport.customerConfirmedAt);
+
+  useEffect(() => {
+    let active = true;
+    if (driverUploaded) {
+      api(`/bookings/${booking.id}/car-care-passport/video-url`)
+        .then((result) => { if (active) setVideoUrl(result.videoUrl); })
+        .catch((e) => { if (active) setError(e?.message || 'Could not load the handover video.'); });
+    } else setVideoUrl('');
+    return () => { active = false; };
+  }, [booking.id, passport.videoKey, driverUploaded]);
+
+  const uploadVideo = async () => {
+    if (!videoFile) { setError('Record or choose a short walkaround video first.'); return; }
+    if (videoFile.size > 100 * 1024 * 1024) { setError('The video must be smaller than 100 MB.'); return; }
+    const mimeType = videoFile.type || 'video/mp4';
+    if (!['video/mp4', 'video/webm', 'video/quicktime'].includes(mimeType)) {
+      setError('Please use an MP4, WebM or iPhone video.'); return;
+    }
+    setBusy(true); setError(''); setNotice('');
     try {
+      const signed = await api(`/bookings/${booking.id}/car-care-passport/video-upload-url`, {
+        method: 'POST', body: JSON.stringify({ mimeType })
+      });
+      const uploaded = await fetch(signed.uploadUrl, {
+        method: 'PUT', headers: { 'Content-Type': mimeType }, body: videoFile
+      });
+      if (!uploaded.ok) throw new Error('Video upload failed. Check your connection and try again.');
       await api(`/bookings/${booking.id}/car-care-passport`, {
         method: 'POST',
-        body: JSON.stringify({ odometer: Number(odometer), fuelLevel, conditionNotes, checks })
+        body: JSON.stringify({ videoKey: signed.videoKey, mimeType, sizeBytes: videoFile.size })
       });
+      setVideoFile(null);
+      setNotice('Video uploaded securely. The customer can now review it.');
       await onRefresh?.();
-    } catch (e: any) { setError(e?.message || 'Could not save the handover record.'); }
+    } catch (e: any) { setError(e?.message || 'Could not upload the vehicle video.'); }
     finally { setBusy(false); }
   };
-  const confirm = async () => {
-    setBusy(true); setError('');
+
+  const approveVideo = async () => {
+    setBusy(true); setError(''); setNotice('');
     try {
-      await api(`/bookings/${booking.id}/car-care-passport`, { method: 'POST', body: JSON.stringify({ confirm: true }) });
+      await api(`/bookings/${booking.id}/car-care-passport`, {
+        method: 'POST', body: JSON.stringify({ confirm: true })
+      });
+      setNotice('Vehicle video approved. The customer’s start OTP is now available.');
       await onRefresh?.();
-    } catch (e: any) { setError(e?.message || 'Could not confirm the handover.'); }
+    } catch (e: any) { setError(e?.message || 'Could not approve the vehicle video.'); }
     finally { setBusy(false); }
   };
+
   return (
     <section className="carcare-passport">
       <div className="carcare-head">
         <span className="carcare-mark"><ShieldCheck size={20}/></span>
-        <div><b>CarCare Passport</b><small>60-second shared vehicle handover</small></div>
+        <div><b>CarCare Video Check</b><small>One short video. Customer approval. Then start OTP.</small></div>
         <span className="carcare-tag">TRIP PROTECTION</span>
       </div>
-      <p className="carcare-intro">Create a shared snapshot of the car before departure. It helps the owner and driver agree on the vehicle’s condition and starting details.</p>
-      {!driverMode && !customerDone && (
+      <p className="carcare-intro">Before the trip starts, the driver records a quick walkaround showing the car’s current condition. The customer reviews that same video and approves it.</p>
+
+      {driverMode && !driverUploaded && (
         <div className="carcare-form">
-          <label>Odometer reading (km)<input type="number" min="0" max="9999999" inputMode="numeric" value={odometer} onChange={e => setOdometer(e.target.value)} placeholder="e.g. 42850"/></label>
-          <label>Fuel level<select value={fuelLevel} onChange={e => setFuelLevel(e.target.value)}><option>Empty</option><option>¼</option><option>½</option><option>¾</option><option>Full</option></select></label>
-          <label className="carcare-notes">Existing marks, scratches or observations (optional)<textarea value={conditionNotes} maxLength={500} onChange={e => setConditionNotes(e.target.value)} placeholder="Mention any existing damage or anything the driver should know…"/></label>
-          <div className="carcare-checks-title">Exterior walkaround checklist</div>
-          <div className="carcare-checks">
-            {(['front','rear','left','right'] as const).map((side) => <label key={side}><input type="checkbox" checked={checks[side]} onChange={e => setChecks(old => ({...old,[side]:e.target.checked}))}/><span>{side[0].toUpperCase()+side.slice(1)} side checked</span></label>)}
-          </div>
-          <small className="carcare-help">Walk around the vehicle together and check all four sides before confirming.</small>
-          <button className="carcare-action" disabled={busy || !odometer || !Object.values(checks).every(Boolean)} onClick={save}>{busy ? 'Saving handover…' : 'Save & share vehicle snapshot'} <ArrowRight size={16}/></button>
+          <label className="carcare-video-label">
+            Record vehicle walkaround video
+            <input type="file" accept="video/mp4,video/webm,video/quicktime,video/*" capture="environment"
+              onChange={(event) => { setVideoFile(event.target.files?.[0] || null); setError(''); }} />
+          </label>
+          <small className="carcare-help">Show the front, rear, both sides and any existing scratches or damage in one clear video. Keep it under 100 MB.</small>
+          {videoFile && <div className="carcare-file-selected"><Video size={16}/><span>{videoFile.name}</span><small>{(videoFile.size / (1024 * 1024)).toFixed(1)} MB</small></div>}
+          <button className="carcare-action" disabled={busy || !videoFile} onClick={uploadVideo}>
+            {busy ? 'Uploading secure video…' : 'Upload vehicle video'} <ArrowRight size={16}/>
+          </button>
         </div>
       )}
-      {customerDone && (
+
+      {driverMode && driverUploaded && (
         <div className="carcare-record">
-          <div className="carcare-record-grid"><div><small>ODOMETER</small><b>{Number(passport.odometer).toLocaleString('en-IN')} km</b></div><div><small>FUEL LEVEL</small><b>{passport.fuelLevel}</b></div></div>
-          <p><b>Condition notes:</b> {passport.conditionNotes || 'No additional marks or observations reported.'}</p>
-          <div className="carcare-confirmations"><span><Check size={15}/> Owner confirmed</span><span>{driverDone ? <Check size={15}/> : <Clock3 size={15}/>} Driver {driverDone ? 'confirmed' : 'review pending'}</span></div>
-          {driverMode && !driverDone && <button className="carcare-action" disabled={busy} onClick={confirm}>{busy ? 'Confirming…' : 'I reviewed the vehicle with the owner'} <ShieldCheck size={16}/></button>}
-          {driverMode && driverDone && <div className="carcare-success"><Check size={16}/> Handover verified by both parties. Start OTP is now enabled.</div>}
-          {!driverMode && !driverDone && <div className="carcare-waiting"><Clock3 size={15}/> Waiting for your driver to review and confirm this same record.</div>}
-          {!driverMode && driverDone && <div className="carcare-success"><Check size={16}/> Both parties confirmed. You can now share your start OTP.</div>}
+          {videoUrl && <video className="carcare-review-video" src={videoUrl} controls playsInline preload="metadata"/>}
+          <div className="carcare-confirmations"><span><Check size={15}/> Driver video uploaded</span><span>{customerApproved ? <Check size={15}/> : <Clock3 size={15}/>} Customer {customerApproved ? 'approved' : 'review pending'}</span></div>
+          {!customerApproved && <div className="carcare-waiting"><Clock3 size={15}/> Waiting for the customer to watch and approve the video. The trip cannot start yet.</div>}
+          {customerApproved && <div className="carcare-success"><Check size={16}/> Video approved. Ask the customer for the start OTP.</div>}
         </div>
       )}
-      {driverMode && !customerDone && <div className="carcare-waiting"><Clock3 size={15}/> Waiting for the car owner to complete the vehicle walkaround and save the shared record.</div>}
+
+      {!driverMode && !driverUploaded && (
+        <div className="carcare-waiting"><Clock3 size={15}/> Waiting for your driver to upload a short vehicle walkaround video. You will review it here.</div>
+      )}
+
+      {!driverMode && driverUploaded && (
+        <div className="carcare-record">
+          {videoUrl ? <video className="carcare-review-video" src={videoUrl} controls playsInline preload="metadata"/> : <div className="carcare-waiting">Loading the driver’s vehicle video…</div>}
+          <div className="carcare-confirmations"><span><Check size={15}/> Driver video uploaded</span><span>{customerApproved ? <Check size={15}/> : <Clock3 size={15}/>} {customerApproved ? 'You approved this video' : 'Your review required'}</span></div>
+          {!customerApproved && <button className="carcare-action" disabled={busy || !videoUrl} onClick={approveVideo}>{busy ? 'Saving approval…' : 'I reviewed the video — approve & show OTP'} <ShieldCheck size={16}/></button>}
+          {customerApproved && <div className="carcare-success"><Check size={16}/> Approved. Share your start OTP with the driver only when you are ready to depart.</div>}
+        </div>
+      )}
+
+      {notice && <p className="carcare-success" role="status">{notice}</p>}
       {error && <p className="carcare-error" role="alert">{error}</p>}
     </section>
   );
