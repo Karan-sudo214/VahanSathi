@@ -2657,22 +2657,26 @@ function DriverProfile({ user, onUpdate, flash }: any) {
 
 // ----------------- Interactive Modals -----------------
 function VoiceAgentModal({ onClose, onApply, onBook, city }: { onClose: () => void; onApply: (intent: any) => void; onBook: (intent: any) => void; city: string }) {
-  type Stage = 'idle' | 'listening' | 'processing' | 'confirm';
+  type ChatMessage = { role: 'assistant' | 'user'; content: string };
+  type Stage = 'idle' | 'listening' | 'processing';
   const [stage, setStage] = useState<Stage>('idle');
-  const [final, setFinal] = useState('');
-  const [intent, setIntent] = useState<any>(null);
-  const [err, setErr] = useState('');
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    { role: 'assistant', content: 'Hi! Welcome to VaahanSathi. I can help you book a driver. Where should I pick you up, and where are you headed?' }
+  ]);
+  const [draft, setDraft] = useState('');
+  const [intent, setIntent] = useState<any>({ city, tripType: 'Hourly', hours: 4 });
+  const [lastQuestion, setLastQuestion] = useState('route');
+  const [awaitingConfirmation, setAwaitingConfirmation] = useState(false);
   const [booking, setBooking] = useState(false);
-  const recognitionRef = useRef<any>(null);
-  const LANGS = [
-    { label: 'English', code: 'en-IN', srv: 'en-IN', ph: 'Example: Take me from Connaught Place to IGI Airport tomorrow at 6 AM' },
-    { label: 'हिन्दी', code: 'hi-IN', srv: 'hi-IN', ph: 'उदाहरण: कल सुबह कनॉट प्लेस से एयरपोर्ट जाना है' },
-    { label: 'Hinglish', code: 'en-IN', srv: 'hi-hinglish', ph: 'Example: Kal subah Connaught Place se airport jaana hai' },
-  ];
+  const [err, setErr] = useState('');
   const [lang, setLang] = useState(() => {
     const saved = localStorage.getItem('vs_language');
-    return LANGS[saved === 'hi' ? 1 : saved === 'hinglish' ? 2 : 0];
+    return saved === 'hi' ? { label: 'हिन्दी', code: 'hi-IN', srv: 'hi-IN' }
+      : saved === 'hinglish' ? { label: 'Hinglish', code: 'en-IN', srv: 'hi-hinglish' }
+      : { label: 'English', code: 'en-IN', srv: 'en-IN' };
   });
+  const recognitionRef = useRef<any>(null);
+  const speechTextRef = useRef('');
 
   useEffect(() => () => {
     try { recognitionRef.current?.abort(); } catch {}
@@ -2680,25 +2684,110 @@ function VoiceAgentModal({ onClose, onApply, onBook, city }: { onClose: () => vo
     if ('speechSynthesis' in window) window.speechSynthesis.cancel();
   }, []);
 
-  function stopListening() {
-    try { recognitionRef.current?.stop(); }
-    catch {
-      recognitionRef.current = null;
+  function speak(text: string) {
+    if (!('speechSynthesis' in window) || !text) return;
+    try {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = lang.code;
+      utterance.rate = 0.96;
+      utterance.pitch = 1;
+      window.speechSynthesis.speak(utterance);
+    } catch {}
+  }
+
+  function addAssistantMessage(content: string) {
+    setMessages(current => [...current, { role: 'assistant', content }]);
+    speak(content);
+  }
+
+  async function confirmBook() {
+    if (!intent || booking) return;
+    setBooking(true);
+    setStage('processing');
+    setErr('');
+    if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+    try {
+      await onBook(intent);
+    } catch (error: any) {
+      setErr(error?.message || 'I could not place the booking. Please try again.');
       setStage('idle');
-      setErr('Could not stop voice recognition. Please type your trip instead.');
+    } finally {
+      setBooking(false);
+    }
+  }
+
+  async function sendTurn(value: string) {
+    const utterance = value.trim();
+    if (!utterance || stage === 'processing' || booking) return;
+    setErr('');
+    setDraft('');
+    const nextMessages: ChatMessage[] = [...messages, { role: 'user', content: utterance }];
+    setMessages(nextMessages);
+
+    if (awaitingConfirmation && /^(yes|yeah|yep|sure|confirm|book it|go ahead|haan|han|जी|हाँ|हां|कर दो|बुक करो)[.! ]*$/i.test(utterance)) {
+      await confirmBook();
+      return;
+    }
+    if (awaitingConfirmation && /^(no|nope|not yet|change|edit|नहीं|नही|मत करो)[.! ]*$/i.test(utterance)) {
+      setAwaitingConfirmation(false);
+      setLastQuestion('correction');
+      addAssistantMessage(lang.srv === 'hi-IN'
+        ? 'कोई बात नहीं। बताइए, किस जानकारी को बदलना है?'
+        : 'No problem. Tell me what you would like to change, and I will update it.');
+      return;
+    }
+
+    setStage('processing');
+    try {
+      const result = await api('/voice/conversation', {
+        method: 'POST',
+        body: JSON.stringify({
+          messages: nextMessages,
+          previousIntent: intent,
+          lastQuestion,
+          city,
+          language: lang.srv
+        })
+      });
+      const nextIntent = {
+        ...intent,
+        ...result,
+        pickup: result.pickup || intent.pickup || '',
+        destination: result.destination || intent.destination || '',
+        date: result.date || intent.date || '',
+        time: result.time || intent.time || '',
+        city: result.city || intent.city || city,
+        tripType: result.tripType || intent.tripType || 'Hourly',
+        hours: result.hours || intent.hours || 4
+      };
+      setIntent(nextIntent);
+      if (result.readyToConfirm) {
+        setAwaitingConfirmation(true);
+        onApply(nextIntent);
+        const summary = result.summary || ('I have your trip from ' + nextIntent.pickup + ' to ' + nextIntent.destination + ' on ' + nextIntent.date + ' at ' + nextIntent.time + '.');
+        addAssistantMessage(summary + ' Is everything correct? Say “yes, book it” to place the ride, or tell me what needs changing.');
+      } else {
+        setAwaitingConfirmation(false);
+        setLastQuestion(result.nextQuestionKey || 'route');
+        addAssistantMessage(result.nextQuestion || 'Could you tell me a little more about your pickup, destination, date, or time?');
+      }
+    } catch (error: any) {
+      setErr(error?.message || 'I had trouble understanding that. Please say it another way.');
+      addAssistantMessage('Sorry, I missed that. Could you repeat that detail?');
+    } finally {
+      setStage('idle');
     }
   }
 
   function startListening() {
-    // SpeechRecognition is optional: Safari/iOS and some embedded browsers do not expose it.
-    // Keep the typed route path available in every browser rather than blocking booking.
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!window.isSecureContext && location.hostname !== 'localhost') {
-      setErr('Microphone features require the secure HTTPS website. You can still type your trip below.');
+      setErr('Microphone access needs the secure HTTPS website. You can still type your reply.');
       return;
     }
     if (!SpeechRecognition) {
-      setErr('Voice dictation is not available in this browser version. Type your trip below to continue booking.');
+      setErr('Live speech recognition is not available in this browser. You can continue the same conversation by typing.');
       return;
     }
     if (recognitionRef.current) {
@@ -2707,108 +2796,70 @@ function VoiceAgentModal({ onClose, onApply, onBook, city }: { onClose: () => vo
     }
     try {
       setErr('');
-      setFinal('');
-      setIntent(null);
+      speechTextRef.current = '';
+      setDraft('');
       const recognition = new SpeechRecognition();
       recognitionRef.current = recognition;
       recognition.lang = lang.code;
       recognition.continuous = false;
       recognition.interimResults = true;
-      recognition.maxAlternatives = 1;
+      recognition.maxAlternatives = 3;
       recognition.onstart = () => setStage('listening');
       recognition.onresult = (event: any) => {
-        const parts: string[] = [];
+        let spoken = '';
         for (let i = 0; i < event.results.length; i++) {
           const result = event.results[i];
           const transcript = result?.[0]?.transcript;
-          if (transcript) parts.push(transcript);
+          if (transcript && result.isFinal) spoken += ' ' + transcript;
         }
-        if (parts.length) setFinal(parts.join(' ').replace(/\s+/g, ' ').trim());
+        if (spoken.trim()) {
+          speechTextRef.current = spoken.trim();
+          setDraft(spoken.trim());
+        } else {
+          const interim = event.results?.[event.results.length - 1]?.[0]?.transcript;
+          if (interim) setDraft(interim);
+        }
       };
       recognition.onerror = (event: any) => {
         if (recognitionRef.current === recognition) recognitionRef.current = null;
-        if (event.error === 'aborted') {
-          setStage('idle');
-          return;
-        }
-        const messages: Record<string, string> = {
-          'not-allowed': 'Microphone permission is blocked. Allow microphone access for this site in your browser settings, then try again.',
-          'service-not-allowed': 'Your browser or device does not allow its speech service. Type your trip below to continue.',
-          'no-speech': 'No speech was detected. Tap the microphone and speak clearly, or type your trip.',
-          'audio-capture': 'No microphone is available. Check your device microphone or type your trip.',
-          network: 'The browser speech service could not connect. Check your internet connection or type your trip.',
-          'language-not-supported': 'This browser does not support the selected recognition language. Choose English or type your trip.'
+        if (event.error === 'aborted') return;
+        const errorMessages: Record<string, string> = {
+          'not-allowed': 'Microphone permission is blocked. Allow microphone access for this site in your browser settings.',
+          'service-not-allowed': 'This browser does not allow its speech service. You can type your reply instead.',
+          'no-speech': 'I did not hear anything. Please try again or type your reply.',
+          'audio-capture': 'No microphone was detected. Check your device microphone or type your reply.',
+          network: 'The speech service could not connect. Check your internet connection or type your reply.',
+          'language-not-supported': 'This browser does not support that speech language. Choose another language or type your reply.'
         };
-        setErr(messages[event.error] || 'Voice dictation stopped. You can try again or type your trip below.');
+        setErr(errorMessages[event.error] || 'Voice recognition stopped. Please try again or type your reply.');
         setStage('idle');
       };
       recognition.onend = () => {
         if (recognitionRef.current === recognition) recognitionRef.current = null;
-        setStage(current => current === 'listening' ? 'idle' : current);
+        const spoken = speechTextRef.current.trim();
+        if (spoken) void sendTurn(spoken);
+        else setStage(current => current === 'listening' ? 'idle' : current);
       };
-      // start() must run directly from the user's tap for mobile browser permission policies.
       recognition.start();
-      setStage('listening');
     } catch (error: any) {
-      if (recognitionRef.current) recognitionRef.current = null;
+      recognitionRef.current = null;
       setStage('idle');
       setErr(error?.name === 'NotAllowedError' || error?.name === 'SecurityError'
-        ? 'Microphone permission is blocked. Allow microphone access for this site, then try again.'
-        : 'Could not start voice dictation on this device. Type your trip below to continue.');
+        ? 'Microphone permission is blocked. Allow microphone access for this site.'
+        : 'Could not start the microphone. Please type your reply instead.');
     }
   }
 
-  async function interpretTrip() {
-    if (!final.trim()) {
-      setErr('Please speak or type your pickup and destination first.');
-      return;
-    }
-    setErr('');
-    setStage('processing');
-    try {
-      const result = await api('/voice/intent', {
-        method: 'POST',
-        body: JSON.stringify({ text: final.trim(), language: lang.srv, city })
-      });
-      if (!result || typeof result !== 'object') throw new Error('The trip could not be understood. Please try again.');
-      if (!result.pickup || !result.destination) {
-        setErr('I could not identify both locations. Please edit your trip text to include where you are starting and where you are going.');
-        setStage('idle');
-        return;
-      }
-      setIntent(result);
-      onApply(result);
-      setStage('confirm');
-    } catch (error: any) {
-      setErr(error?.message || 'Could not understand your trip. Please try again.');
-      setStage('idle');
-    }
+  function stopListening() {
+    try { recognitionRef.current?.stop(); }
+    catch { setStage('idle'); setErr('Could not stop voice recognition. Please try again.'); }
   }
 
-  function speakSummary() {
-    if (!intent || !('speechSynthesis' in window)) {
-      setErr('Spoken playback is not supported on this browser. The trip details are shown below.');
-      return;
-    }
-    try {
-      window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(intent.summary || ('Trip understood. From ' + intent.pickup + ' to ' + intent.destination + '.'));
-      utterance.lang = lang.code;
-      utterance.rate = 0.95;
-      utterance.onerror = () => setErr('Audio playback is unavailable on this device. Please review the trip details shown on screen.');
-      window.speechSynthesis.speak(utterance);
-    } catch {
-      setErr('Audio playback is unavailable on this device. Please review the trip details shown on screen.');
-    }
-  }
-
-  async function confirmBook() {
-    if (!intent || booking) return;
-    setBooking(true);
-    if ('speechSynthesis' in window) window.speechSynthesis.cancel();
-    try { await onBook(intent); }
-    finally { setBooking(false); }
-  }
+  const languageOptions = [
+    { label: 'English', code: 'en-IN', srv: 'en-IN' },
+    { label: 'हिन्दी', code: 'hi-IN', srv: 'hi-IN' },
+    { label: 'Hinglish', code: 'en-IN', srv: 'hi-hinglish' }
+  ];
 
   return (
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
@@ -2817,74 +2868,75 @@ function VoiceAgentModal({ onClose, onApply, onBook, city }: { onClose: () => vo
         <div className="va-header">
           <div className={'va-orb ' + (stage === 'listening' ? 'va-orb-pulse' : stage === 'processing' ? 'va-orb-spin' : '')}><Mic size={22} /></div>
           <div>
-            <span className="eyebrow">VOICE BOOKING</span>
+            <span className="eyebrow">VAAHANSATHI VOICE CONCIERGE</span>
             <h2 id="voice-agent-title" style={{fontSize:'18px',fontWeight:800,color:'var(--ink)',marginBottom:2}}>
-              {stage === 'idle' && 'Speak or type your trip'}
-              {stage === 'listening' && 'Listening…'}
-              {stage === 'processing' && 'Understanding your trip…'}
-              {stage === 'confirm' && 'Review your trip'}
+              {stage === 'listening' ? 'I’m listening…' : stage === 'processing' ? 'One moment…' : awaitingConfirmation ? 'Ready to book?' : 'Let’s plan your ride'}
             </h2>
-            <p style={{fontSize:'12px',color:'var(--t5)',lineHeight:1.4}}>If your browser supports voice dictation, tap the microphone. Otherwise, type your trip below — booking works either way.</p>
+            <p style={{fontSize:'12px',color:'var(--t5)',lineHeight:1.4}}>Talk naturally. I’ll ask only for details I still need.</p>
           </div>
         </div>
         <div className="va-lang-row">
-          {LANGS.map(option => (
+          {languageOptions.map(option => (
             <button key={option.label} type="button" className={'va-lang-btn' + (lang.label === option.label ? ' active' : '')}
               onClick={() => {
                 if (recognitionRef.current) stopListening();
-                setLang(option); setErr(''); setFinal(''); setIntent(null);
+                setLang(option);
+                setErr('');
               }}>{option.label}</button>
           ))}
         </div>
-        <div className="va-transcript" aria-live="polite">
-          {!final && <span className="va-placeholder">{lang.ph}</span>}
-          {final && <span>{final}</span>}
+        <div style={{display:'flex',flexDirection:'column',gap:10,maxHeight:300,overflowY:'auto',padding:'12px 2px'}} aria-live="polite">
+          {messages.map((message, index) => (
+            <div key={index} style={{
+              alignSelf: message.role === 'user' ? 'flex-end' : 'flex-start',
+              maxWidth:'88%',
+              padding:'10px 13px',
+              borderRadius: message.role === 'user' ? '15px 15px 4px 15px' : '15px 15px 15px 4px',
+              background: message.role === 'user' ? 'var(--brand, #0f766e)' : 'var(--surface-2, #f1f5f9)',
+              color: message.role === 'user' ? '#fff' : 'var(--ink)',
+              fontSize:13,
+              lineHeight:1.5,
+              whiteSpace:'pre-wrap'
+            }}>{message.content}</div>
+          ))}
+          {stage === 'listening' && <div className="va-placeholder" style={{fontSize:12}}>Listening for your answer…</div>}
+          {stage === 'processing' && <div className="va-processing" role="status"><div className="va-spinner" /><span>Understanding your answer…</span></div>}
         </div>
+        {intent?.pickup && intent?.destination && (
+          <div className="va-confirm-card" style={{marginBottom:10}}>
+            <div className="va-confirm-row"><span>Pickup</span><b>{intent.pickup}</b></div>
+            <div className="va-confirm-row"><span>Destination</span><b>{intent.destination}</b></div>
+            <div className="va-confirm-row"><span>Date & time</span><b>{intent.date || 'Not set'} · {intent.time || 'Not set'}</b></div>
+          </div>
+        )}
         {err && <p className="va-err" role="alert">{err}</p>}
-        {(stage === 'idle' || stage === 'listening') && (
-          <div style={{display:'flex',flexDirection:'column',gap:10,marginTop:8}}>
-            <button type="button" className={'va-mic-btn ' + (stage === 'listening' ? 'va-mic-active' : '')}
-              onClick={stage === 'listening' ? stopListening : startListening}>
-              <Mic size={20} /> {stage === 'listening' ? 'Stop recording' : 'Tap to speak'}
+        <div style={{display:'flex',flexDirection:'column',gap:10,marginTop:8}}>
+          <button type="button" className={'va-mic-btn ' + (stage === 'listening' ? 'va-mic-active' : '')}
+            disabled={stage === 'processing' || booking}
+            onClick={stage === 'listening' ? stopListening : startListening}>
+            <Mic size={20} /> {stage === 'listening' ? 'Finish speaking' : 'Talk to VaahanSathi'}
+          </button>
+          <textarea className="va-text-input" value={draft}
+            onChange={(e) => { setDraft(e.target.value); setErr(''); }}
+            placeholder="Or type your reply here…"
+            rows={2} aria-label="Reply to the VaahanSathi voice assistant" />
+          <button type="button" className="primary-btn-wide" style={{marginTop:0}}
+            disabled={!draft.trim() || stage === 'processing' || booking}
+            onClick={() => void sendTurn(draft)}>
+            Send reply <ArrowRight size={16} />
+          </button>
+          {awaitingConfirmation && (
+            <button type="button" className="primary-btn-wide" style={{marginTop:0,background:'#15803d'}}
+              onClick={() => void confirmBook()} disabled={booking || stage === 'processing'}>
+              {booking ? 'Booking…' : 'Yes, confirm and book'} <Check size={17} />
             </button>
-            <textarea className="va-text-input" value={final}
-              onChange={(e) => { setFinal(e.target.value); setErr(''); }}
-              placeholder="Or type: From Connaught Place to IGI Airport tomorrow at 6 AM"
-              rows={3} aria-label="Enter your pickup and destination" />
-            {final.trim() && stage !== 'listening' && (
-              <button type="button" className="primary-btn-wide" style={{marginTop:0}} onClick={interpretTrip}>
-                Understand my trip <ArrowRight size={16} />
-              </button>
-            )}
-          </div>
-        )}
-        {stage === 'processing' && (
-          <div className="va-processing" role="status"><div className="va-spinner" /><span>Transcribing and checking your trip…</span></div>
-        )}
-        {stage === 'confirm' && intent && (
-          <div style={{display:'flex',flexDirection:'column',gap:12,marginTop:4}}>
-            <div className="va-confirm-card">
-              <div className="va-confirm-row"><span>Service</span><b>{intent.tripType || 'Hourly'} · {intent.hours || 4} hrs</b></div>
-              <div className="va-confirm-row"><span>From</span><b>{intent.pickup}</b></div>
-              <div className="va-confirm-row"><span>To</span><b>{intent.destination}</b></div>
-              <div className="va-confirm-row"><span>Date</span><b>{intent.date || 'Please select date'}</b></div>
-              <div className="va-confirm-row"><span>Time</span><b>{intent.time || 'Please select time'}</b></div>
-              <div className="va-confirm-row"><span>City</span><b>{intent.city || city}</b></div>
-            </div>
-            <button type="button" className="secondary-btn" style={{width:'100%',justifyContent:'center'}} onClick={speakSummary}>
-              <Headphones size={17} /> Read trip aloud
-            </button>
-            <button type="button" className="primary-btn-wide" style={{marginTop:0,background:'#15803d'}} onClick={confirmBook} disabled={booking}>
-              {booking ? 'Booking…' : 'Confirm and Book Now'} <ArrowRight size={17} />
-            </button>
-            <button type="button" className="secondary-btn" style={{width:'100%',justifyContent:'center'}}
-              onClick={() => { setStage('idle'); setIntent(null); setErr(''); setFinal(''); }}>Edit trip details</button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );
 }
+
 function AuthModal({ onClose, onLogin, onRegister, onCustomerLogin, onCustomerRegister, onGoogleLogin, busy, storageReady }: any) {
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [loginRole, setLoginRole] = useState<'customer' | 'partner'>('customer');

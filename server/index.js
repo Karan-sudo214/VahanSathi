@@ -1885,6 +1885,179 @@ app.post('/api/voice/intent', (req, res) => {
   res.json({ tripType, hours, city, pickup, destination, date, time, language, requiresConfirmation: true, summary });
 });
 
+
+// Multi-turn voice concierge. OpenAI is used when OPENAI_API_KEY is configured;
+// a deterministic multilingual parser remains available as a no-key fallback.
+app.post('/api/voice/conversation', asyncRoute(async (req, res) => {
+  const history = Array.isArray(req.body?.messages)
+    ? req.body.messages.filter((m) => m && ['assistant', 'user'].includes(m.role) && typeof m.content === 'string')
+      .slice(-18).map((m) => ({ role: m.role, content: m.content.slice(0, 900) }))
+    : [];
+  const latestUser = [...history].reverse().find((m) => m.role === 'user')?.content?.trim() || '';
+  if (!latestUser) return res.status(400).json({ error: 'Please tell me what you need for your ride.' });
+  const previous = req.body?.previousIntent && typeof req.body.previousIntent === 'object' ? req.body.previousIntent : {};
+  const lastQuestion = String(req.body?.lastQuestion || 'route');
+  const language = String(req.body?.language || 'en-IN');
+  const requestedCity = String(req.body?.city || previous.city || 'Delhi');
+  const todayIndia = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+
+  let ai = null;
+  if (process.env.OPENAI_API_KEY) {
+    try {
+      const systemPrompt = [
+        'You are VaahanSathi, a warm, natural, highly accurate human-like driver-booking concierge for India.',
+        'Understand English, Hindi, and Hinglish, including informal speech, corrections, incomplete phrases, and details spread across multiple turns.',
+        'Use the conversation history and prior extracted fields. Extract only facts the user actually stated. Never invent or guess a pickup, destination, date, or exact time.',
+        'Required before preparing a booking: pickup, destination, date (YYYY-MM-DD), and exact time (HH:mm, 24-hour). Ask one short, natural follow-up question for the most important missing or ambiguous detail. If the user says a vague place such as "home", ask for an area, sector, or landmark instead of pretending it is an address.',
+        'Supported service cities are Delhi and Gurugram only. Infer city from the route when clear; otherwise use the selected city. If the requested city is outside these areas, do not pretend it is supported.',
+        'Resolve relative dates using India local date ' + todayIndia + '. Interpret "kal" as tomorrow unless context clearly says otherwise. Do not infer AM/PM when ambiguous; ask.',
+        'tripType must be one of Hourly, Airport, Outstation, Night driver, Full day. hours is an integer 1-24; default 4 for Hourly and 8 for Full day when the user did not specify.',
+        'Respond in the user language: ' + language + '. Be conversational, concise, and reassuring.',
+        'Return ONLY valid JSON with keys: pickup, destination, city, date, time, tripType, hours, nextQuestionKey, nextQuestion, summary. Use null for unknown pickup/destination/date/time. nextQuestionKey is pickup, destination, date, time, route, or correction.'
+      ].join(' ');
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + process.env.OPENAI_API_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: process.env.OPENAI_VOICE_MODEL || 'gpt-4o-mini',
+          temperature: 0.1,
+          response_format: { type: 'json_object' },
+          messages: [{ role: 'system', content: systemPrompt }, ...history,
+            { role: 'system', content: 'Previously extracted trip fields: ' + JSON.stringify(previous) + '. Last field requested by the assistant: ' + lastQuestion + '. Selected city: ' + requestedCity + '. Return the complete updated field set, retaining earlier confirmed values unless the user corrects them.' }]
+        })
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload?.error?.message || 'Voice understanding service unavailable.');
+      const content = payload?.choices?.[0]?.message?.content;
+      if (content) ai = JSON.parse(content);
+    } catch (error) {
+      console.warn('Voice AI unavailable; using multilingual fallback parser:', error?.message || 'unknown error');
+    }
+  }
+
+  let pickup = ai?.pickup ?? previous.pickup ?? null;
+  let destination = ai?.destination ?? previous.destination ?? null;
+  let city = ['Delhi', 'Gurugram'].includes(ai?.city) ? ai.city : (['Delhi', 'Gurugram'].includes(previous.city) ? previous.city : requestedCity);
+  let date = ai?.date ?? previous.date ?? null;
+  let time = ai?.time ?? previous.time ?? null;
+  let tripType = ['Hourly', 'Airport', 'Outstation', 'Night driver', 'Full day'].includes(ai?.tripType) ? ai.tripType : (previous.tripType || 'Hourly');
+  let hours = Number(ai?.hours || previous.hours || (tripType === 'Full day' ? 8 : 4));
+  const allUserText = history.filter((m) => m.role === 'user').map((m) => m.content).join(' ');
+  const lower = allUserText.toLocaleLowerCase('en-IN');
+  const latestLower = latestUser.toLocaleLowerCase('en-IN');
+
+  if (!ai) {
+    const routePatterns = [
+      /(?:from|pickup(?: point)?(?: is| at)?|pick me up from)\s+(.+?)\s+(?:to|and drop(?: me)?(?: at)?|drop(?: me)? at|destination(?: is)?|going to|towards)\s+(.+?)(?:\s+(?:at|on|tomorrow|today|kal|aaj|abhi|subah|morning|evening|shaam|raat)|[,.]|$)/i,
+      /(?:mujhe|mujhko|please|bhai|yaar)?\s*(.+?)\s+se\s+(.+?)\s+(?:le jao|jaana hai|jana hai|jaana|chalna hai|drop karo|chhod do|pahuncha do)/i,
+      /(.+?)\s+से\s+(.+?)\s+(?:जाना है|जाना|तक|के लिए|छोड़ दो|पहुँचाओ)/i
+    ];
+    for (const pattern of routePatterns) {
+      const match = allUserText.match(pattern);
+      if (match?.[1] && match?.[2]) {
+        const clean = (value) => String(value).replace(/^(mujhe|mujhko|please|bhai|yaar|मुझे|मुझको)\s+/i, '')
+          .replace(/\s+(tomorrow|today|kal|aaj|abhi|कल|आज|सुबह|शाम|रात)\s*.*$/i, '')
+          .replace(/[,.?।]+$/, '').trim();
+        pickup = normaliseVoicePlace(clean(match[1]));
+        destination = normaliseVoicePlace(clean(match[2]));
+        break;
+      }
+    }
+    const simplePlace = (value) => {
+      const cleaned = String(value || '').replace(/^(please|bhai|yaar|at|from|to|it's|it is|mera pickup|pickup|destination|drop)\s+/i, '')
+        .replace(/[,.?।]+$/, '').trim();
+      if (!cleaned || cleaned.length > 180 || /^(yes|no|haan|han|okay|ok|sure|thanks|thank you)$/i.test(cleaned)) return null;
+      return normaliseVoicePlace(cleaned);
+    };
+    if (lastQuestion === 'pickup' && !pickup) pickup = simplePlace(latestUser);
+    if (lastQuestion === 'destination' && !destination) destination = simplePlace(latestUser);
+    if (lastQuestion === 'route' && !pickup && !destination) {
+      const from = latestUser.match(/(?:from|pickup(?: at)?)\s+(.+?)(?:\s+to\s+|$)/i);
+      if (from?.[1] && latestUser.match(/\bto\b/i)) {
+        pickup = simplePlace(from[1]);
+        destination = simplePlace(latestUser.split(/\bto\b/i).slice(1).join(' to ').replace(/\b(tomorrow|today|at|on)\b.*$/i, ''));
+      }
+    }
+    if (!city || !['Delhi', 'Gurugram'].includes(city)) city = requestedCity;
+    if (/gurugram|gurgaon|गुरुग्राम/.test(lower)) city = 'Gurugram';
+    else if (/delhi|दिल्ली/.test(lower)) city = 'Delhi';
+    else {
+      const placeMatch = VOICE_PLACE_ALIASES.find((place) => place.aliases.some((alias) => lower.includes(alias.toLocaleLowerCase('en-IN'))));
+      if (placeMatch) city = placeMatch.city;
+    }
+    if (/airport|एयरपोर्ट|हवाई अड्डा|igi/.test(lower)) tripType = 'Airport';
+    else if (/outstation|out of town|दूसरे शहर/.test(lower)) tripType = 'Outstation';
+    else if (/night driver|raat ko|रात में|late night/.test(lower)) tripType = 'Night driver';
+    else if (/full day|whole day|poora din|पूरा दिन/.test(lower)) tripType = 'Full day';
+    const hourMatch = lower.match(/(\d{1,2})\s*(?:hours?|hrs?|ghante|ghanta|घंटे|घंटा)/i);
+    if (hourMatch) hours = Math.max(1, Math.min(24, Number(hourMatch[1])));
+    else if (tripType === 'Full day' && !previous.hours) hours = 8;
+
+    const dateText = latestLower;
+    if (lastQuestion === 'date' || /today|aaj|आज|tomorrow|kal|कल|day after tomorrow|parso|परसों/.test(dateText)) {
+      if (/day after tomorrow|parso|परसों/.test(dateText)) {
+        const d = new Date(todayIndia + 'T00:00:00+05:30'); d.setDate(d.getDate() + 2); date = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(d);
+      } else if (/tomorrow|kal|कल/.test(dateText)) {
+        const d = new Date(todayIndia + 'T00:00:00+05:30'); d.setDate(d.getDate() + 1); date = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(d);
+      } else if (/today|aaj|आज/.test(dateText)) date = todayIndia;
+      const explicitDate = latestUser.match(/\b(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})\b/);
+      if (explicitDate) {
+        const year = explicitDate[3].length === 2 ? '20' + explicitDate[3] : explicitDate[3];
+        date = year + '-' + String(explicitDate[2]).padStart(2,'0') + '-' + String(explicitDate[1]).padStart(2,'0');
+      }
+    }
+    const timeText = latestLower;
+    const timeMatch = latestUser.match(/(?:at|around|by|ko|subah|savere|morning|afternoon|dopahar|shaam|evening|raat|night)?\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\s*(?:baje|बजे)?/i);
+    if (lastQuestion === 'time' || /\b(am|pm|morning|afternoon|evening|night|subah|shaam|raat|baje)\b|सुबह|शाम|रात|बजे/.test(timeText)) {
+      if (timeMatch) {
+        let h = Number(timeMatch[1]);
+        const minute = Number(timeMatch[2] || 0);
+        const suffix = (timeMatch[3] || '').toLowerCase();
+        const isPm = suffix === 'pm' || /afternoon|evening|shaam|raat|night|dopahar|शाम|रात|दोपहर/.test(timeText);
+        const isAm = suffix === 'am' || /morning|subah|savere|सुबह|सवेरे/.test(timeText);
+        if (h >= 0 && h <= 23 && minute <= 59) {
+          if (h <= 12 && !suffix && !isPm && !isAm) time = null;
+          else {
+            if (h === 12 && isAm) h = 0;
+            else if (h < 12 && isPm) h += 12;
+            time = String(h).padStart(2,'0') + ':' + String(minute).padStart(2,'0');
+          }
+        }
+      }
+    }
+  }
+
+  if (!['Delhi', 'Gurugram'].includes(city)) city = requestedCity;
+  if (pickup && pickup.length > 180) pickup = null;
+  if (destination && destination.length > 180) destination = null;
+  if (date && !/^\d{4}-\d{2}-\d{2}$/.test(String(date))) date = null;
+  if (time && !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(String(time))) time = null;
+  hours = Math.max(1, Math.min(24, Number(hours) || 4));
+
+  const missing = [];
+  if (!pickup) missing.push('pickup');
+  if (!destination) missing.push('destination');
+  if (!date) missing.push('date');
+  if (!time) missing.push('time');
+  const questionMap = {
+    pickup: 'Where should the driver pick you up? Please share an address, sector, or nearby landmark.',
+    destination: 'And where would you like to go? A place name, sector, or landmark is fine.',
+    date: 'What date do you need the driver? You can say today, tomorrow, or a calendar date.',
+    time: 'What exact time should the driver arrive? Please include AM or PM.',
+  };
+  const nextQuestionKey = missing[0] || 'confirmation';
+  const readyToConfirm = missing.length === 0 && pickup.toLowerCase() !== destination.toLowerCase();
+  const summary = 'I have your trip from ' + pickup + ' to ' + destination + ', in ' + city + ', on ' + date + ' at ' + time + '.';
+  const nextQuestion = readyToConfirm
+    ? 'I have all the details. Let me read them back so you can check everything.'
+    : questionMap[nextQuestionKey] || ai?.nextQuestion || 'Could you clarify that detail for me?';
+  res.json({
+    pickup, destination, city, date, time, tripType, hours,
+    readyToConfirm, missing, nextQuestionKey, nextQuestion, summary,
+    understandingMode: ai ? 'ai' : 'multilingual-fallback'
+  });
+}));
+
 app.use((err, req, res, next) => {
   if (res.headersSent) return next(err);
   console.error('Request failed:', err.message);
