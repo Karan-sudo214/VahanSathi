@@ -1754,6 +1754,41 @@ const VOICE_PLACE_ALIASES = [
   { city: 'Gurugram', name: 'Sector 114, Gurugram', aliases: ['sector 114 gurugram'] },
 ];
 
+// Expanded locality gazetteer. This intentionally covers neighbourhoods, colonies,
+// villages, sectors, industrial areas, metro hubs and commonly spoken variants.
+// Unknown user-spoken place names are still preserved as free-form locations below.
+const VOICE_EXTRA_AREAS = {
+  Delhi: [
+    'Adarsh Nagar','Ashok Vihar','Azadpur','Bawana','Begumpur','Burari','Chhatarpur','Chirag Delhi','Civil Lines','Daryaganj','Defence Colony','Delhi Cantt','Derawal Nagar','Dhaula Kuan','Dilshad Colony','East of Kailash','Gandhi Nagar','Govindpuri','Green Park','Hari Nagar','Hastsal','Jaitpur','Jangpura','Jasola Vihar','Jharoda Majra','Kalkaji','Kapashera','Keshav Puram','Kirti Nagar','Kondli','Kotla Mubarakpur','Krishna Nagar','Madangir','Mahipalpur','Malviya Nagar','Mangolpuri','Model Town','Mohan Garden','Moti Nagar','Mukherjee Nagar','Munirka','Najafgarh','Nangloi','Narela','Nirman Vihar','Okhla','Palam','Pandav Nagar','Paschim Vihar','Patel Nagar','Punjabi Bagh','Pushp Vihar','R K Puram','Raja Garden','Rani Bagh','Rithala','Sadar Bazar','Sainik Farm','Sangam Vihar','Sarita Vihar','Shalimar Bagh','Shastri Nagar','Shastri Park','Shivaji Park','Sonia Vihar','Subhash Nagar','Tagore Garden','Tilak Nagar','Timarpur','Tri Nagar','Uttam Nagar','Vikas Puri','Vikaspuri','Vishwas Nagar','Wazirabad','Yamuna Vihar','Zakir Nagar','Zakir Bagh',
+    'Alaknanda','Amar Colony','Anand Parbat','Anand Niketan','Arjun Nagar','Brij Puri','Chander Nagar','Chawri Bazar','Dakshinpuri','Devli','East Patel Nagar','Fateh Nagar','Gagan Vihar','Gokalpuri','Govindpuri Extension','Jagatpuri','Jheel Khurenja','Johripur','Kailash Colony','Kalyan Vihar','Kanjhawala','Karkardooma Extension','Khajuri Khas','Khirki Extension','Lado Sarai','Lal Kuan','Lodhi Colony','Loni Road','Madanpur Khadar','Maujpur','Maya Enclave','Mehrauli','Mithapur','Nehru Nagar','New Ashok Nagar','New Friends Colony','Nizamuddin','Panchsheel Park','Pul Prahladpur','Qutub Vihar','Raghu Nagar','Raj Nagar','Ramesh Nagar','Rana Pratap Bagh','Sadh Nagar','Sarai Rohilla','Shahpur Jat','Shakti Nagar','Sultanpuri','Tughlakabad','Vijay Nagar','West Patel Nagar',
+    'Dwarka Sector 1','Dwarka Sector 2','Dwarka Sector 3','Dwarka Sector 4','Dwarka Sector 5','Dwarka Sector 6','Dwarka Sector 7','Dwarka Sector 8','Dwarka Sector 9','Dwarka Sector 10','Dwarka Sector 11','Dwarka Sector 12','Dwarka Sector 13','Dwarka Sector 14','Dwarka Sector 15','Dwarka Sector 16','Dwarka Sector 17','Dwarka Sector 18','Dwarka Sector 19','Dwarka Sector 20','Dwarka Sector 21','Dwarka Sector 22','Dwarka Sector 23','Dwarka Sector 24','Dwarka Sector 25','Dwarka Sector 26','Dwarka Sector 27','Dwarka Sector 28','Dwarka Sector 29',
+    'Rohini Sector 1','Rohini Sector 2','Rohini Sector 3','Rohini Sector 4','Rohini Sector 5','Rohini Sector 6','Rohini Sector 7','Rohini Sector 8','Rohini Sector 9','Rohini Sector 10','Rohini Sector 11','Rohini Sector 12','Rohini Sector 13','Rohini Sector 14','Rohini Sector 15','Rohini Sector 16','Rohini Sector 17','Rohini Sector 18','Rohini Sector 19','Rohini Sector 20','Rohini Sector 21','Rohini Sector 22','Rohini Sector 23','Rohini Sector 24','Rohini Sector 25','Rohini Sector 26','Rohini Sector 27','Rohini Sector 28','Rohini Sector 29','Rohini Sector 30','Rohini Sector 31','Rohini Sector 32','Rohini Sector 33','Rohini Sector 34','Rohini Sector 35','Rohini Sector 36','Rohini Sector 37'
+  ],
+  Gurugram: [
+    'Ashok Vihar Gurugram','Atul Kataria Chowk','Bajghera','Basai','Basai Enclave','Basai Road','Bhim Nagar','Bhondsi','Carterpuri','Chakkarpur','Damdama','Dharampur','Dundahera','Farrukhnagar','Fazilpur','Garauli Kalan','Garauli Khurd','Ghatta','Ghosi','Gwal Pahari','Haiderpur','Hamirpur','Hayatpur','Kadipur','Kankrola','Kasan','Kherki Daula','Khandsa','Manesar','Maruti Kunj','Moulsari Avenue','Nathupur','Naurangpur','Palam Vihar Extension','Pataudi','Raisina','Sakatpur','Sikanderpur','Sikohpur','Sihi','Sidhrawali','Sikandarpur Ghosi','Tikri','Wazirabad Gurugram',
+    'Sector 1 Gurugram','Sector 2 Gurugram','Sector 3 Gurugram','Sector 4 Gurugram','Sector 6 Gurugram','Sector 8 Gurugram','Sector 9A Gurugram','Sector 10A Gurugram','Sector 12 Gurugram','Sector 12A Gurugram','Sector 13 Gurugram','Sector 15 Part 1 Gurugram','Sector 15 Part 2 Gurugram','Sector 16 Gurugram','Sector 19 Gurugram','Sector 20 Gurugram','Sector 21 Gurugram','Sector 22 Gurugram','Sector 23 Gurugram','Sector 23A Gurugram','Sector 24 Gurugram','Sector 25 Gurugram','Sector 26 Gurugram','Sector 30 Gurugram','Sector 32 Gurugram','Sector 33 Gurugram','Sector 34 Gurugram','Sector 35 Gurugram','Sector 36 Gurugram','Sector 36A Gurugram','Sector 37 Gurugram','Sector 37C Gurugram','Sector 37D Gurugram','Sector 38 Gurugram','Sector 40 Gurugram','Sector 41 Gurugram','Sector 42 Gurugram','Sector 52A Gurugram','Sector 58 Gurugram','Sector 59 Gurugram','Sector 60 Gurugram','Sector 63A Gurugram','Sector 66 Gurugram','Sector 70 Gurugram','Sector 71 Gurugram','Sector 72 Gurugram','Sector 73 Gurugram','Sector 74 Gurugram','Sector 75A Gurugram','Sector 76 Gurugram','Sector 77 Gurugram','Sector 78 Gurugram','Sector 79 Gurugram','Sector 82A Gurugram','Sector 83 Gurugram','Sector 84 Gurugram','Sector 85 Gurugram','Sector 86 Gurugram','Sector 90 Gurugram','Sector 91 Gurugram','Sector 92 Gurugram','Sector 93 Gurugram','Sector 95A Gurugram','Sector 95B Gurugram','Sector 96 Gurugram','Sector 97 Gurugram','Sector 98 Gurugram','Sector 100 Gurugram','Sector 102A Gurugram','Sector 104 Gurugram','Sector 105 Gurugram','Sector 106 Gurugram','Sector 107 Gurugram','Sector 108 Gurugram','Sector 109 Gurugram','Sector 110 Gurugram','Sector 111 Gurugram','Sector 112 Gurugram','Sector 113 Gurugram','Sector 114 Gurugram','Sector 115 Gurugram','Sector 116 Gurugram','Sector 117 Gurugram','Sector 118 Gurugram','Sector 119 Gurugram','Sector 120 Gurugram','Sector 121 Gurugram','Sector 122 Gurugram','Sector 123 Gurugram','Sector 124 Gurugram','Sector 125 Gurugram','Sector 126 Gurugram','Sector 127 Gurugram','Sector 128 Gurugram','Sector 129 Gurugram','Sector 130 Gurugram','Sector 131 Gurugram','Sector 132 Gurugram','Sector 133 Gurugram','Sector 134 Gurugram','Sector 135 Gurugram','Sector 136 Gurugram','Sector 137 Gurugram','Sector 138 Gurugram','Sector 139 Gurugram','Sector 140 Gurugram','Sector 141 Gurugram','Sector 142 Gurugram','Sector 143 Gurugram','Sector 144 Gurugram','Sector 145 Gurugram','Sector 146 Gurugram','Sector 147 Gurugram','Sector 148 Gurugram','Sector 149 Gurugram','Sector 150 Gurugram'
+  ]
+};
+for (const [city, areas] of Object.entries(VOICE_EXTRA_AREAS)) {
+  for (const area of areas) {
+    const name = area + ', ' + city;
+    if (!VOICE_PLACE_ALIASES.some((place) => place.name.toLowerCase() === name.toLowerCase())) {
+      const aliases = [area.toLowerCase()];
+      if (city === 'Gurugram') aliases.push(area.toLowerCase().replace(/\bgurugram\b/g, '').trim());
+      VOICE_PLACE_ALIASES.push({ city, name, aliases });
+    }
+  }
+}
+
+// Add every numbered Gurugram sector as a recognition candidate; the user can
+// still give a more precise block, society, tower, street or landmark in free text.
+for (let sector = 1; sector <= 150; sector++) {
+  const name = 'Sector ' + sector + ', Gurugram';
+  if (!VOICE_PLACE_ALIASES.some((place) => place.name === name)) {
+    VOICE_PLACE_ALIASES.push({ city: 'Gurugram', name, aliases: ['sector ' + sector + ' gurugram', 'sector number ' + sector + ' gurugram'] });
+  }
+}
+
 // Add the commonly used Gurugram sectors to voice place matching.
 for (const sector of [9, 10, 14, 15, 21, 22, 23, 29, 31, 38, 40, 41, 42, 43, 45, 46, 47, 48, 49, 50, 52, 53, 54, 55, 56, 57, 58, 59, 60, 62, 63, 65, 66, 67, 69, 70, 71, 72, 73, 74, 76, 77, 78, 79, 82, 83, 84, 85, 86, 90, 91, 92, 93, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112]) {
   const name = 'Sector ' + sector + ', Gurugram';
@@ -1773,6 +1808,7 @@ function normaliseVoicePlace(value) {
     }
   }
   matches.sort((a, b) => b.length - a.length);
+  // Do not reject or erase unlisted micro-localities: retain the spoken place.
   return matches[0]?.name || String(value).trim();
 }
 
@@ -1908,6 +1944,7 @@ app.post('/api/voice/conversation', asyncRoute(async (req, res) => {
         'You are VaahanSathi, a warm, natural, highly accurate human-like driver-booking concierge for India.',
         'Understand English, Hindi, and Hinglish, including informal speech, corrections, incomplete phrases, and details spread across multiple turns.',
         'Use the conversation history and prior extracted fields. Extract only facts the user actually stated. Never invent or guess a pickup, destination, date, or exact time.',
+        'CRITICAL LOCATION RULE: Delhi and Gurugram contain thousands of named colonies, villages, sectors, blocks, societies, roads, markets, metro stations, gates and local landmarks. The built-in locality list is NOT exhaustive. NEVER tell the user a place is not found, unavailable, invalid, or unsupported merely because its name is absent from that list. Accept and preserve any clearly spoken locality, colony, sector, block, society, street, building, gate or landmark as a free-form pickup/destination exactly as spoken, including Hindi/Hinglish spellings. Do not replace a specific small locality with a nearby famous locality. Ask a short clarification only when the spoken words are genuinely ambiguous (for example, "Sector 5" without a city/area qualifier), or ask for a nearby landmark/house or society name when the user says only "home" or "office".',
         'Required before preparing a booking: pickup, destination, date (YYYY-MM-DD), and exact time (HH:mm, 24-hour). Ask one short, natural follow-up question for the most important missing or ambiguous detail. If the user says a vague place such as "home", ask for an area, sector, or landmark instead of pretending it is an address.',
         'Supported service cities are Delhi and Gurugram only. Infer city from the route when clear; otherwise use the selected city. If the requested city is outside these areas, do not pretend it is supported.',
         'Resolve relative dates using India local date ' + todayIndia + '. Interpret "kal" as tomorrow unless context clearly says otherwise. Do not infer AM/PM when ambiguous; ask.',
