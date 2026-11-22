@@ -1,9 +1,9 @@
-﻿import 'dotenv/config';
+import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { randomUUID, randomInt, randomBytes, createCipheriv, createDecipheriv, createHmac, timingSafeEqual, createPublicKey, verify as verifySignature } from 'node:crypto';
+import { randomUUID, randomInt, randomBytes, createCipheriv, createDecipheriv, createHmac, createHash, timingSafeEqual, createPublicKey, verify as verifySignature } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import pg from 'pg';
@@ -497,6 +497,60 @@ const audit = async (req, action, module, targetId, previousValue = null, newVal
 };
 
 const asyncRoute = (handler) => (req, res, next) => Promise.resolve(handler(req, res, next)).catch(next);
+
+const r2Config = () => ({
+  accountId: process.env.R2_ACCOUNT_ID,
+  accessKeyId: process.env.R2_ACCESS_KEY_ID,
+  secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
+  bucket: process.env.R2_BUCKET_NAME,
+  endpoint: process.env.R2_ENDPOINT || (process.env.R2_ACCOUNT_ID ? `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com` : '')
+});
+const r2Ready = () => {
+  const c = r2Config();
+  return Boolean(c.accountId && c.accessKeyId && c.secretAccessKey && c.bucket && c.endpoint);
+};
+const awsEncode = (value) => encodeURIComponent(value).replace(/[!'()*]/g, (ch) => '%' + ch.charCodeAt(0).toString(16).toUpperCase());
+const awsHash = (value) => createHmac('sha256', Buffer.from(value, 'utf8')).digest('hex');
+const sha256Hex = (value) => createHash('sha256').update(value).digest('hex');
+function r2Presign(method, objectKey, expiresSeconds = 900) {
+  const cfg = r2Config();
+  const endpoint = new URL(cfg.endpoint);
+  const region = 'auto';
+  const now = new Date();
+  const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, '');
+  const dateStamp = amzDate.slice(0, 8);
+  const scope = `${dateStamp}/${region}/s3/aws4_request`;
+  const host = endpoint.host;
+  const canonicalUri = `/${awsEncode(cfg.bucket)}/${objectKey.split('/').map(awsEncode).join('/')}`;
+  const params = [
+    ['X-Amz-Algorithm','AWS4-HMAC-SHA256'],
+    ['X-Amz-Credential',`${cfg.accessKeyId}/${scope}`],
+    ['X-Amz-Date',amzDate],
+    ['X-Amz-Expires',String(expiresSeconds)],
+    ['X-Amz-SignedHeaders','host']
+  ].sort((a,b) => a[0].localeCompare(b[0]));
+  const canonicalQuery = params.map(([k,v]) => `${awsEncode(k)}=${awsEncode(v)}`).join('&');
+  const canonicalRequest = [method, canonicalUri, canonicalQuery, `host:${host}\n`, 'host', 'UNSIGNED-PAYLOAD'].join('\n');
+  const stringToSign = ['AWS4-HMAC-SHA256', amzDate, scope, sha256Hex(canonicalRequest)].join('\n');
+  const kDate = createHmac('sha256', 'AWS4' + cfg.secretAccessKey).update(dateStamp).digest();
+  const kRegion = createHmac('sha256', kDate).update(region).digest();
+  const kService = createHmac('sha256', kRegion).update('s3').digest();
+  const kSigning = createHmac('sha256', kService).update('aws4_request').digest();
+  const signature = createHmac('sha256', kSigning).update(stringToSign).digest('hex');
+  return `${endpoint.origin}${canonicalUri}?${canonicalQuery}&X-Amz-Signature=${signature}`;
+}
+function tripGuardFor(booking) {
+  if (!booking.tripGuard) booking.tripGuard = { consents: {}, sessions: [], alerts: [] };
+  if (!booking.tripGuard.consents) booking.tripGuard.consents = {};
+  if (!Array.isArray(booking.tripGuard.sessions)) booking.tripGuard.sessions = [];
+  if (!Array.isArray(booking.tripGuard.alerts)) booking.tripGuard.alerts = [];
+  return booking.tripGuard;
+}
+function tripGuardParticipant(req, booking) {
+  return (req.user.role === 'customer' && booking.userId === req.user.id) ||
+    (req.user.role === 'driver' && booking.driverId === req.user.id);
+}
+
 const adminOnly = roles('admin', 'super_admin', 'operations_admin');
 
 const cityLandmarks = {
@@ -1421,6 +1475,127 @@ app.post(
   })
 );
 
+
+
+app.get('/api/bookings/:id/tripguard/state', auth, (req, res) => {
+  const b = data.bookings.find((item) => item.id === req.params.id);
+  if (!b || !tripGuardParticipant(req, b)) return res.status(404).json({ error: 'TripGuard session not found.' });
+  res.json({ bookingStatus: b.status, tripGuard: tripGuardFor(b) });
+});
+
+app.post('/api/bookings/:id/tripguard/consent', auth, asyncRoute(async (req, res) => {
+  const b = data.bookings.find((item) => item.id === req.params.id);
+  if (!b) return res.status(404).json({ error: 'Booking not found.' });
+  if (!tripGuardParticipant(req, b)) return res.status(403).json({ error: 'Only this trip’s customer and assigned driver can manage TripGuard consent.' });
+  if (!['Driver assigned', 'Driver arriving', 'Trip started'].includes(b.status)) return res.status(409).json({ error: 'TripGuard consent is available only for an active booking.' });
+  const consent = req.body?.consent === true;
+  const guard = tripGuardFor(b);
+  const role = req.user.role;
+  guard.consents[role] = { consent, at: new Date().toISOString(), userId: req.user.id };
+  if (!consent) {
+    for (const session of guard.sessions) {
+      if (session.status === 'recording') {
+        session.status = 'stopped';
+        session.stoppedAt = new Date().toISOString();
+        session.stopReason = 'A participant withdrew consent';
+      }
+    }
+  }
+  await persistItem('app_bookings', b.id, b); await save();
+  res.json({ success: true, tripGuard: guard });
+}));
+
+app.post('/api/bookings/:id/tripguard/alerts', auth, asyncRoute(async (req, res) => {
+  const b = data.bookings.find((item) => item.id === req.params.id);
+  if (!b) return res.status(404).json({ error: 'Booking not found.' });
+  if (req.user.role !== 'customer' || b.userId !== req.user.id) return res.status(403).json({ error: 'Only the customer can raise a customer safety alert.' });
+  if (b.status !== 'Trip started') return res.status(409).json({ error: 'Safety alerts can be attached once the trip has started.' });
+  const note = String(req.body?.note || '').trim().slice(0, 1000);
+  const category = String(req.body?.category || 'Safety concern').slice(0, 80);
+  if (!note && !category) return res.status(400).json({ error: 'Add a short description of your concern.' });
+  const guard = tripGuardFor(b);
+  const alert = { id: randomUUID(), category, note, createdAt: new Date().toISOString(), userId: req.user.id, status: 'recorded' };
+  guard.alerts.unshift(alert);
+  await persistItem('app_bookings', b.id, b); await save();
+  res.status(201).json({ success: true, alert, message: 'Your safety concern has been attached to this trip.' });
+}));
+
+app.post('/api/bookings/:id/tripguard/recordings/start', auth, asyncRoute(async (req, res) => {
+  const b = data.bookings.find((item) => item.id === req.params.id);
+  if (!b) return res.status(404).json({ error: 'Booking not found.' });
+  if (req.user.role !== 'customer' || b.userId !== req.user.id) return res.status(403).json({ error: 'The customer controls the trip recording.' });
+  if (b.status !== 'Trip started') return res.status(409).json({ error: 'Recording can start only after the start OTP has been verified.' });
+  const guard = tripGuardFor(b);
+  if (guard.consents.customer?.consent !== true || guard.consents.driver?.consent !== true) return res.status(409).json({ error: 'Both the customer and assigned driver must explicitly consent before recording.' });
+  if (!r2Ready()) return res.status(503).json({ error: 'Private video storage is not configured yet. Ask the VaahanSathi administrator to finish the Cloudflare R2 setup.' });
+  if (guard.sessions.some((session) => session.status === 'recording')) return res.status(409).json({ error: 'A TripGuard recording is already active for this trip.' });
+  const mimeType = String(req.body?.mimeType || 'video/webm').split(';')[0];
+  if (!['video/webm', 'video/mp4'].includes(mimeType)) return res.status(400).json({ error: 'This browser video format is not supported for secure storage.' });
+  const session = { id: randomUUID(), status: 'recording', startedAt: new Date().toISOString(), startedBy: req.user.id, mimeType, chunks: [], durationSeconds: 0 };
+  guard.sessions.unshift(session);
+  await persistItem('app_bookings', b.id, b); await save();
+  res.status(201).json({ session });
+}));
+
+app.post('/api/bookings/:id/tripguard/recordings/:recordingId/chunk-url', auth, asyncRoute(async (req, res) => {
+  const b = data.bookings.find((item) => item.id === req.params.id);
+  if (!b || !tripGuardParticipant(req, b)) return res.status(404).json({ error: 'Trip recording not found.' });
+  const guard = tripGuardFor(b);
+  const session = guard.sessions.find((item) => item.id === req.params.recordingId);
+  if (!session || !['recording','stopped'].includes(session.status) || (session.status === 'stopped' && Date.now() - Date.parse(session.stoppedAt || 0) > 120000)) return res.status(409).json({ error: 'This recording is no longer active.' });
+  if (!r2Ready()) return res.status(503).json({ error: 'Private video storage is not configured.' });
+  const index = Number(req.body?.index);
+  if (!Number.isInteger(index) || index < 0 || index > 20000) return res.status(400).json({ error: 'Invalid video segment number.' });
+  const mimeType = String(req.body?.mimeType || session.mimeType || 'video/webm').split(';')[0];
+  if (mimeType !== session.mimeType) return res.status(400).json({ error: 'Video segment format does not match this recording.' });
+  const extension = mimeType === 'video/mp4' ? 'mp4' : 'webm';
+  const key = `tripguard/${b.id}/${session.id}/${String(index).padStart(6,'0')}.${extension}`;
+  res.json({ uploadUrl: r2Presign('PUT', key, 900), key, expiresIn: 900 });
+}));
+
+app.post('/api/bookings/:id/tripguard/recordings/:recordingId/chunk-saved', auth, asyncRoute(async (req, res) => {
+  const b = data.bookings.find((item) => item.id === req.params.id);
+  if (!b || !tripGuardParticipant(req, b)) return res.status(404).json({ error: 'Trip recording not found.' });
+  const guard = tripGuardFor(b);
+  const session = guard.sessions.find((item) => item.id === req.params.recordingId);
+  if (!session || !['recording','stopped'].includes(session.status) || (session.status === 'stopped' && Date.now() - Date.parse(session.stoppedAt || 0) > 120000)) return res.status(409).json({ error: 'This recording is no longer active.' });
+  const index = Number(req.body?.index);
+  const key = String(req.body?.key || '');
+  const expectedPrefix = `tripguard/${b.id}/${session.id}/`;
+  const extension = session.mimeType === 'video/mp4' ? '.mp4' : '.webm';
+  if (!Number.isInteger(index) || index < 0 || !key.startsWith(expectedPrefix) || !key.endsWith(extension)) return res.status(400).json({ error: 'Invalid uploaded segment.' });
+  if (!session.chunks.some((chunk) => chunk.index === index)) session.chunks.push({ index, key, bytes: Math.max(0, Number(req.body?.bytes || 0)), uploadedAt: new Date().toISOString() });
+  session.chunks.sort((a, z) => a.index - z.index);
+  await persistItem('app_bookings', b.id, b); await save();
+  res.json({ success: true, saved: session.chunks.length });
+}));
+
+app.post('/api/bookings/:id/tripguard/recordings/:recordingId/stop', auth, asyncRoute(async (req, res) => {
+  const b = data.bookings.find((item) => item.id === req.params.id);
+  if (!b || !tripGuardParticipant(req, b)) return res.status(404).json({ error: 'Trip recording not found.' });
+  const guard = tripGuardFor(b);
+  const session = guard.sessions.find((item) => item.id === req.params.recordingId);
+  if (!session) return res.status(404).json({ error: 'Trip recording not found.' });
+  if (session.status === 'recording') {
+    session.status = 'stopped';
+    session.stoppedAt = new Date().toISOString();
+    session.durationSeconds = Math.max(0, Math.round((Date.parse(session.stoppedAt) - Date.parse(session.startedAt)) / 1000));
+    session.stopReason = String(req.body?.reason || 'Customer stopped recording').slice(0, 120);
+  }
+  await persistItem('app_bookings', b.id, b); await save();
+  res.json({ success: true, session });
+}));
+
+app.get('/api/bookings/:id/tripguard/recordings/:recordingId/access', auth, asyncRoute(async (req, res) => {
+  const b = data.bookings.find((item) => item.id === req.params.id);
+  if (!b || !tripGuardParticipant(req, b)) return res.status(404).json({ error: 'Trip recording not found.' });
+  const session = tripGuardFor(b).sessions.find((item) => item.id === req.params.recordingId);
+  if (!session) return res.status(404).json({ error: 'Trip recording not found.' });
+  if (!r2Ready()) return res.status(503).json({ error: 'Private video storage is not configured.' });
+  const chunks = session.chunks.map((chunk) => ({ index: chunk.index, url: r2Presign('GET', chunk.key, 300) }));
+  res.json({ session: { id: session.id, status: session.status, mimeType: session.mimeType || 'video/webm', startedAt: session.startedAt, stoppedAt: session.stoppedAt, durationSeconds: session.durationSeconds }, chunks });
+}));
+
 app.post('/api/bookings/:id/car-care-passport', auth, asyncRoute(async (req, res) => {
   const b = data.bookings.find((item) => item.id === req.params.id);
   if (!b) return res.status(404).json({ error: 'Booking not found.' });
@@ -1532,6 +1707,11 @@ app.patch(
       ? 'Awaiting cash confirmation'
       : status;
     b.status = effectiveStatus;
+    if (effectiveStatus !== 'Trip started' && b.tripGuard?.sessions) {
+      for (const session of b.tripGuard.sessions) if (session.status === 'recording') {
+        session.status = 'stopped'; session.stoppedAt = new Date().toISOString(); session.stopReason = 'Trip ended or was cancelled';
+      }
+    }
     const historyItem = { id: randomUUID(), booking_id: b.id, status: effectiveStatus, at: new Date().toISOString() };
     data.history.unshift(historyItem);
 
