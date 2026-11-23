@@ -1601,7 +1601,7 @@ function BookingPage(p: any) {
           {p.fare?.pricingAudit && (
             <div style={{display:'grid',gap:5,margin:'10px 0',padding:'10px 11px',border:'1px solid #cfe8dd',borderRadius:11,background:'#f3fbf7'}}>
               <b style={{display:'flex',alignItems:'center',gap:7,color:'#18734f',fontSize:11}}><ShieldCheck size={14}/> Independently checked fare</b>
-              <small style={{color:'#496b5b'}}>Calculation, GST, driver payout and platform share reconcile. Quote {p.fare.quoteId || ''} · valid until {p.fare.expiresAt ? new Date(p.fare.expiresAt).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'}) : 'refresh required'}</small>
+              <small style={{color:'#496b5b'}}>Fare components, configured GST arithmetic, driver payout and platform share reconcile. Quote {p.fare.quoteId || ''} · valid until {p.fare.expiresAt ? new Date(p.fare.expiresAt).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'}) : 'refresh required'}</small>
               {p.fare.pricingAudit.warnings?.map((warning: string, index: number) => <small key={index} style={{color:'#8a641f'}}>{warning}</small>)}
             </div>
           )}
@@ -3123,6 +3123,7 @@ function LiveAdminPage({ bookings, focus = 'Overview', flash }: any) {
         <section className="panel pricing-panel">
           <h3>Delhi NCR driver-service tariff</h3>
           <p>Smart Fare uses verified trip inputs, a versioned tariff, independent arithmetic checks and market guardrails. It does not add hidden demand surcharges. Fuel, tolls and parking remain separate customer expenses.</p>
+          {!summary.taxConfigurationReviewed && <p className="tripguard-error">Tax review required: the configured GST rate is used for arithmetic only. Confirm the correct GST treatment for the independent-driver / customer-owned-car model with your tax adviser before relying on production invoices.</p>}
           <div style={{display:'flex',gap:8,flexWrap:'wrap',margin:'10px 0'}}>
             <span className="status-pill">Revision {summary.pricingRevision || 1}</span>
             <span className="status-pill">{summary.pricingValidation?.ok ? 'Tariff checks passed' : 'Review tariff settings'}</span>
