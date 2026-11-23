@@ -1988,6 +1988,8 @@ function TripsPage({ bookings, filter, setFilter, update, onRate, onPay, onTrack
                 </div>
               </div>
 
+              <TripExpensePanel booking={b} role="customer" onRefresh={onRefresh} />
+
               {b.status === 'Driver arriving' && (
                 <CarCarePassport booking={b} role="customer" onRefresh={onRefresh} />
               )}
@@ -2453,6 +2455,9 @@ function DriverPage({ bookings, update, user, onDutyChange, flash, onCashConfirm
                   )}
                 </div>
               </div>
+              {(b.status === 'Trip started' || (b.expenses || []).length > 0) && (
+                <TripExpensePanel booking={b} role="driver" onRefresh={onRefresh} />
+              )}
             </div>
           ))}
         </div>
