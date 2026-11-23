@@ -1822,6 +1822,76 @@ function TripsPage({ bookings, filter, setFilter, update, onRate, onPay, onTrack
 }
 
 // ----------------- Driver Partner Page -----------------
+function DriverComplaintsPanel({ user, flash }: any) {
+  const [complaints, setComplaints] = useState<any[]>([]);
+  const [adjustments, setAdjustments] = useState<any[]>([]);
+  const [responses, setResponses] = useState<Record<string, string>>({});
+  const [busyId, setBusyId] = useState('');
+
+  const load = async () => {
+    try {
+      const result = await api('/driver/complaints');
+      setComplaints(result.complaints || []);
+      setAdjustments(result.adjustments || []);
+    } catch (error: any) { console.warn('Driver complaint refresh:', error.message); }
+  };
+  useEffect(() => {
+    load();
+    const timer = window.setInterval(load, 20000);
+    return () => window.clearInterval(timer);
+  }, [user?.id]);
+
+  const submitResponse = async (item: any) => {
+    const response = String(responses[item.id] || '').trim();
+    if (response.length < 5) { flash?.('Please add a little more detail to your response.'); return; }
+    setBusyId(item.id);
+    try {
+      await api(`/driver/complaints/${item.id}`, { method: 'PATCH', body: JSON.stringify({ response }) });
+      setResponses((current) => ({ ...current, [item.id]: '' }));
+      flash?.('Your response has been sent to Customer Care.');
+      await load();
+    } catch (error: any) { flash?.(error.message); }
+    finally { setBusyId(''); }
+  };
+
+  if (!complaints.length && !adjustments.length) return null;
+  return (
+    <section className="panel driver-badges-panel">
+      <div className="panel-header">
+        <div><span className="eyebrow">CUSTOMER CARE</span><h3>Complaints & your responses</h3><p>Review reports linked to your trips and share your side of the story.</p></div>
+        <span className="status-pill">{complaints.filter((c) => !['resolved','closed','unsubstantiated'].includes(c.status)).length} open</span>
+      </div>
+      {complaints.map((item) => (
+        <div key={item.id} className="panel" style={{padding:14,marginBottom:10}}>
+          <div style={{display:'flex',justifyContent:'space-between',gap:10,flexWrap:'wrap'}}>
+            <b>{item.subject || 'Customer report'}</b><span className="status-pill">{String(item.status || 'under_review').replace(/_/g,' ')}</span>
+          </div>
+          <small>{item.bookingId || 'No booking reference'} · {item.createdAt ? new Date(item.createdAt).toLocaleString('en-IN') : 'Recently reported'}</small>
+          {item.route && <p style={{margin:'8px 0'}}>{item.route}</p>}
+          <p style={{margin:'8px 0'}}>{item.description}</p>
+          {Number(item.reportedExtraAmount) > 0 && <p><b>Extra amount reported:</b> {money(item.reportedExtraAmount)}</p>}
+          {item.resolution && <p><b>Customer Care note:</b> {item.resolution}</p>}
+          {item.driverResponse && <p><b>Your last response:</b> {item.driverResponse}</p>}
+          {!['resolved','closed','unsubstantiated'].includes(item.status) && (
+            <div style={{display:'grid',gap:8,marginTop:10}}>
+              <textarea rows={3} value={responses[item.id] || ''} onChange={(e) => setResponses((current) => ({...current,[item.id]:e.target.value.slice(0,1000)}))} placeholder="Share your explanation or supporting context…" style={{width:'100%',padding:10,border:'1px solid var(--slate-200)',borderRadius:8,fontFamily:'inherit'}} />
+              <button className="primary-btn" disabled={busyId === item.id || String(responses[item.id] || '').trim().length < 5} onClick={() => submitResponse(item)}>{busyId === item.id ? 'Sending…' : 'Submit your response'}</button>
+              <small className="muted">A report does not automatically reduce your earnings. Customer Care reviews both sides first.</small>
+            </div>
+          )}
+          {item.earningsAdjustmentAmount > 0 && <p style={{color:'#b45309'}}><b>Reviewed earnings adjustment:</b> {money(item.earningsAdjustmentAmount)}. Contact Customer Care to ask for a review.</p>}
+        </div>
+      ))}
+      {adjustments.length > 0 && (
+        <div style={{marginTop:12}}>
+          <b>Approved earnings adjustments</b>
+          {adjustments.map((adjustment) => <div className="earning-item-row" key={adjustment.id}><span>{adjustment.bookingId || 'Trip'} · {adjustment.description}</span><strong>{money(adjustment.amount)}</strong></div>)}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function DriverPage({ bookings, update, user, onDutyChange, flash, onCashConfirm, onRefresh }: any) {
   const [available, setAvailable] = useState<boolean>(user?.available === true);
   const [otpTarget, setOtpTarget] = useState<{ booking: Booking; status: 'Trip started' | 'Trip completed' } | null>(null);
@@ -1939,6 +2009,8 @@ function DriverPage({ bookings, update, user, onDutyChange, flash, onCashConfirm
           <span className="toggle-track" />
         </label>
       </div>
+
+      <DriverComplaintsPanel user={user} flash={flash} />
 
       <section className="panel driver-badges-panel">
         <div className="panel-header"><div><span className="eyebrow">PARTNER GROWTH</span><h3>Your Driver Performance Batch</h3><p>Transparent levels based on completed rides and verified customer ratings.</p></div><span className="driver-achievement-badge"><BadgeCheck size={14}/>{user?.driverBatch?.name || 'Starter'} Batch</span></div>
