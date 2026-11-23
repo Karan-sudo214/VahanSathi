@@ -1688,8 +1688,12 @@ function TripExpensePanel({ booking, role, onRefresh, flash }: any) {
 
   useEffect(() => () => {
     cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
+    cameraStreamRef.current = null;
+  }, [booking.id]);
+
+  useEffect(() => () => {
     if (nozzlePhotoPreviewUrl) URL.revokeObjectURL(nozzlePhotoPreviewUrl);
-  }, [booking.id, nozzlePhotoPreviewUrl]);
+  }, [nozzlePhotoPreviewUrl]);
 
   const openNozzleCamera = async () => {
     setCameraError('');
@@ -1926,8 +1930,9 @@ function TripExpensePanel({ booking, role, onRefresh, flash }: any) {
           <p style={{ margin: '4px 0' }}><b>Requested:</b> {money(expense.requestedAmount)}{expense.litres ? ` · ${expense.litres} L` : ''}{expense.stationName ? ` · ${expense.stationName}` : ''}</p>
           {expense.proofPhotoUrl && (
             <div style={{ marginTop: 10 }}>
-              <small className="eyebrow">DRIVER PHOTO EVIDENCE</small>
-              <img src={expense.proofPhotoUrl} alt="Driver uploaded fuel nozzle and vehicle evidence" style={{ width: '100%', maxHeight: 250, objectFit: 'contain', background: '#f1f5f9', borderRadius: 10, marginTop: 6 }} />
+              <small className="eyebrow">DRIVER PHOTO EVIDENCE · LIVE CAMERA</small>
+              <img src={expense.proofPhotoUrl} alt="Fresh live camera capture of the petrol nozzle and vehicle" style={{ width: '100%', maxHeight: 250, objectFit: 'contain', background: '#f1f5f9', borderRadius: 10, marginTop: 6 }} />
+              {expense.proofPhotoCapturedAt && <small style={{ display: 'block', color: 'var(--slate-500)' }}>Camera capture time: {new Date(expense.proofPhotoCapturedAt).toLocaleString('en-IN')}</small>}
             </div>
           )}
           {expense.gpsSnapshotDataUri && (
@@ -1944,7 +1949,8 @@ function TripExpensePanel({ booking, role, onRefresh, flash }: any) {
                 />
               )}
               {expense.gpsMapUrl && <a href={expense.gpsMapUrl} target="_blank" rel="noreferrer" className="link-btn-inline">Open captured coordinates in OpenStreetMap</a>}
-              {expense.gps && <small style={{ display: 'block', color: 'var(--slate-500)' }}>GPS accuracy ±{Math.round(expense.gps.accuracy)} m · Server time {new Date(expense.gps.serverReceivedAt).toLocaleString('en-IN')}</small>}
+              {expense.gps && <small style={{ display: 'block', color: 'var(--slate-500)' }}>GPS accuracy ±{Math.round(expense.gps.accuracy)} m · Server time {new Date(expense.gps.serverReceivedAt).toLocaleString('en-IN')} · Server-signed evidence record</small>}
+              <small className="muted">This is an app-generated GPS record, not a driver-uploaded screenshot. Device location can still be affected by weak signals or mock-location settings.</small>
             </div>
           )}
 
