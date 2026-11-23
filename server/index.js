@@ -897,6 +897,8 @@ function calculateFare({ tripType = 'Hourly', hours = 4, time = '08:00', vehicle
   return fare;
 }
 
+const fareQuotesInFlight = new Set();
+
 function signFareQuote(payload) {
   const encoded = Buffer.from(JSON.stringify(payload)).toString('base64url');
   const signature = createHmac('sha256', secret).update(encoded).digest('base64url');
@@ -967,6 +969,8 @@ app.get('/api/health', (_, res) => {
       videoStorageConfigured: r2Ready(),
       razorpay: !!(process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET),
       grievanceContactConfigured: Boolean(process.env.GRIEVANCE_OFFICER_NAME && process.env.GRIEVANCE_OFFICER_DESIGNATION && (process.env.GRIEVANCE_OFFICER_EMAIL || process.env.GRIEVANCE_OFFICER_PHONE)),
+      supportContactConfigured: Boolean(process.env.SUPPORT_EMAIL || process.env.SUPPORT_PHONE),
+      operatorDetailsConfigured: Boolean(process.env.LEGAL_ENTITY_NAME && process.env.LEGAL_ENTITY_ADDRESS && process.env.WEBSITE_DOMAIN),
       voice: true,
       voiceMode: 'browser-native'
     }
@@ -1900,15 +1904,20 @@ app.post(
       tripType: String(tripType), pickup: String(pickup).trim(), destination: String(destination).trim(),
       city: String(city), vehicle: String(vehicle), date: String(date), time: String(time), hours: Number(hours)
     };
+    if (!['Hourly', 'Airport', 'Night driver', 'Full day', 'Outstation'].includes(normalizedInput.tripType)) return res.status(400).json({ error: 'Choose a supported driver service type.' });
+    if (!['Sedan', 'SUV', 'Luxury'].includes(normalizedInput.vehicle)) return res.status(400).json({ error: 'Choose a supported vehicle class.' });
+    if (!Number.isFinite(normalizedInput.hours) || normalizedInput.hours < 1 || normalizedInput.hours > 24) return res.status(400).json({ error: 'Trip duration must be between 1 and 24 hours.' });
+    if (!/^([01]\\d|2[0-3]):[0-5]\\d$/.test(normalizedInput.time)) return res.status(400).json({ error: 'Enter a valid pickup time.' });
     let route, f, quoteId = null, quoteIssuedAt = null, quoteExpiresAt = null;
     if (!req.body?.fareQuoteToken) {
       return res.status(409).json({ error: 'A verified fare quote is required. Please estimate and review the exact fare before booking.' });
     }
     try {
       const quote = verifyFareQuote(req.body.fareQuoteToken, normalizedInput);
-      if (data.bookings.some((existing) => existing.fareQuoteId && existing.fareQuoteId === quote.quoteId)) {
+      if (data.bookings.some((existing) => existing.fareQuoteId && existing.fareQuoteId === quote.quoteId) || fareQuotesInFlight.has(quote.quoteId)) {
         return res.status(409).json({ error: 'This fare quote has already been used for a booking. Please refresh your estimate for another booking.' });
       }
+      fareQuotesInFlight.add(quote.quoteId);
       route = quote.route; f = quote.fare;
       quoteId = quote.quoteId; quoteIssuedAt = quote.issuedAt; quoteExpiresAt = quote.expiresAt;
     } catch (error) {
@@ -1976,6 +1985,7 @@ app.post(
     };
 
     data.bookings.push(b);
+    if (quoteId) fareQuotesInFlight.delete(quoteId);
     const historyItem = { id: randomUUID(), booking_id: b.id, status: b.status, at: b.createdAt };
     data.history.unshift(historyItem);
 
