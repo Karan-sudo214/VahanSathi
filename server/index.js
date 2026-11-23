@@ -1625,7 +1625,7 @@ app.get('/api/bookings', auth, (req, res) => {
   const enriched = rows.map((b) => {
     const driverUser = data.users.find((u) => u.id === b.driverId);
     const customerUser = data.users.find((u) => u.id === b.userId);
-    const { cashPin, cashPinEncrypted, cashPinHash, cashPinAttempts, cashCustomerAmount, cashDriverAmount, ...safeBooking } = b;
+    const { cashPin, cashPinEncrypted, cashPinHash, cashPinAttempts, cashCustomerAmount, cashDriverAmount, expenseUploadTickets, ...safeBooking } = b;
     return {
       ...safeBooking,
       // Legacy cash PIN values are never exposed. Start/end trip OTPs remain stage-gated.
@@ -1636,8 +1636,8 @@ app.get('/api/bookings', auth, (req, res) => {
         const { proofPhotoKey, receiptPhotoKey, ...safeExpense } = expense;
         return {
           ...safeExpense,
-          proofPhotoUrl: proofPhotoKey && r2Ready() ? r2Presign('GET', proofPhotoKey, 300) : null,
-          receiptPhotoUrl: receiptPhotoKey && r2Ready() ? r2Presign('GET', receiptPhotoKey, 300) : null
+          proofPhotoUrl: proofPhotoKey && r2Ready() ? r2Presign('GET', proofPhotoKey, 900) : null,
+          receiptPhotoUrl: receiptPhotoKey && r2Ready() ? r2Presign('GET', receiptPhotoKey, 900) : null
         };
       }),
       expenseTotalDue: confirmedExpenseTotal(b),
