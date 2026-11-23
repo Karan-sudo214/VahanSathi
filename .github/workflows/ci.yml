@@ -8,6 +8,7 @@ on:
       - feature/cash-complaints-pricing-dispatch
       - feature/smart-fare-customer-support
       - fix/application-audit-and-booking-permissions
+      - fix/pickup-time-normalization
   pull_request:
     branches:
       - main
