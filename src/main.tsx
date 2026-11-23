@@ -237,8 +237,8 @@ function App() {
   const lastBookingsPayloadRef = useRef('');
   const [toast, setToast] = useState('');
   const [modal, setModal] = useState('');
-  const [cashHandover, setCashHandover] = useState<{ booking: Booking; mode: 'customer' | 'driver' } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [bookingMode, setBookingMode] = useState<'immediate' | 'scheduled'>('scheduled');
   const [tripType, setTripType] = useState('Hourly');
   const [city, setCity] = useState(localStorage.getItem('vs_city') === 'Gurugram' ? 'Gurugram' : 'Delhi');
   const [pickup, setPickup] = useState('Connaught Place, Delhi');
@@ -540,7 +540,7 @@ function App() {
     try {
       const d = await api('/bookings', {
         method: 'POST',
-        body: JSON.stringify({ tripType, pickup, destination, date, time, hours, vehicle, city, paymentMethod, driverStyle })
+        body: JSON.stringify({ tripType, pickup, destination, date, time, hours, vehicle, city, paymentMethod, driverStyle, bookingMode })
       });
       // Refresh immediately so both customer and driver see the new booking without waiting
       await refresh();
@@ -616,7 +616,7 @@ function App() {
         status === 'Trip started'
           ? 'Trip started! Have a pleasant journey.'
           : status === 'Trip completed' && b.payment_method === 'cash'
-          ? 'Trip ended. Waiting for customer and driver cash confirmations before marking it completed.'
+          ? 'Trip completed. The driver can now mark the cash fare as collected.'
           : status === 'Trip completed'
           ? 'Trip completed! Invoice & receipt ready.'
           : `Booking updated: ${status}`
@@ -686,26 +686,17 @@ function App() {
     }
   };
 
-  const confirmCashAsCustomer = async (booking: Booking, amountGiven: number) => {
+  const markCashCollected = async (booking: Booking) => {
     try {
-      const result = await api('/payments/cash/customer-confirm', { method: 'POST', body: JSON.stringify({ bookingId: booking.id, amountGiven }) });
+      const result = await api('/payments/cash/collect', { method: 'POST', body: JSON.stringify({ bookingId: booking.id }) });
       await refresh();
-      flash(result.payment_status === 'Paid · Cash' ? 'Cash handover verified. Your receipt is ready.' : result.payment_status);
+      flash(result.alreadyCollected ? 'Cash collection was already recorded.' : 'Cash collection marked successfully.');
       return true;
-    } catch (error: any) { flash(error.message || 'Cash confirmation could not be saved.'); return false; }
+    } catch (error: any) {
+      flash(error.message || 'Cash collection could not be recorded.');
+      return false;
+    }
   };
-
-  const confirmCashAsDriver = async (booking: Booking, amountReceived: number, cashPin: string) => {
-    try {
-      const result = await api('/payments/cash/driver-confirm', { method: 'POST', body: JSON.stringify({ bookingId: booking.id, amountReceived, cashPin }) });
-      await refresh();
-      flash(result.payment_status === 'Paid · Cash' ? 'Cash receipt verified and recorded.' : result.payment_status);
-      return true;
-    } catch (error: any) { flash(error.message || 'Cash receipt could not be verified.'); return false; }
-  };
-
-  const openCustomerCashHandover = (booking: Booking) => setCashHandover({ booking, mode: 'customer' });
-  const openDriverCashHandover = (booking: Booking) => setCashHandover({ booking, mode: 'driver' });
 
   const logout = () => {
     if (user?.role === 'customer') {
@@ -1010,6 +1001,17 @@ function App() {
               setDestination={setDestination}
               date={date}
               setDate={setDate}
+              bookingMode={bookingMode}
+              setBookingMode={(mode: 'immediate' | 'scheduled') => {
+                setBookingMode(mode);
+                if (mode === 'immediate') {
+                  const pickupAt = new Date(Date.now() + 15 * 60 * 1000);
+                  const localValue = new Date(pickupAt.getTime() - pickupAt.getTimezoneOffset() * 60000).toISOString();
+                  setDate(localValue.slice(0, 10));
+                  setTime(localValue.slice(11, 16));
+                }
+                clearFareEstimate();
+              }}
               time={time}
               setTime={setTime}
               hours={hours}
@@ -1047,14 +1049,14 @@ function App() {
               onTrack={(b: Booking) => setModal('track:' + b.id)}
               onBook={() => setPage('Book a driver')}
               receipts={receipts}
-              onCashConfirm={openCustomerCashHandover}
+              onReportDriver={(b: Booking) => setModal('dispute:' + b.id)}
               cashRewardsPoints={Number(user?.cashRewardsPoints || 0)}
               onRefresh={refresh}
             />
           )}
 
-          {page === 'Requests' && <DriverPage bookings={bookings} update={updateStatus} user={user} onDutyChange={(v: boolean) => setUser((u: any) => u ? {...u, available: v} : u)} flash={flash} onCashConfirm={openDriverCashHandover} onRefresh={refresh} />}
-          {page === 'My trips' && <TripsPage bookings={bookings} filter={filter} setFilter={setFilter} update={updateStatus} onRate={(b: Booking) => setModal('rate:' + b.id)} onPay={(b: Booking) => setModal('payment:' + b.id)} onTrack={(b: Booking) => setModal('track:' + b.id)} onBook={() => setPage('Book a driver')} receipts={receipts} onCashConfirm={confirmCashAsCustomer} cashRewardsPoints={Number(user?.cashRewardsPoints || 0)} onRefresh={refresh} />}
+          {page === 'Requests' && <DriverPage bookings={bookings} update={updateStatus} user={user} onDutyChange={(v: boolean) => setUser((u: any) => u ? {...u, available: v} : u)} flash={flash} onCashConfirm={markCashCollected} onRefresh={refresh} />}
+          {page === 'My trips' && <TripsPage bookings={bookings} filter={filter} setFilter={setFilter} update={updateStatus} onRate={(b: Booking) => setModal('rate:' + b.id)} onPay={(b: Booking) => setModal('payment:' + b.id)} onTrack={(b: Booking) => setModal('track:' + b.id)} onBook={() => setPage('Book a driver')} receipts={receipts} onReportDriver={(b: Booking) => setModal('dispute:' + b.id)} cashRewardsPoints={Number(user?.cashRewardsPoints || 0)} onRefresh={refresh} />}
           {page === 'Earnings' && <EarningsPage bookings={bookings} />}
           {page === 'Wallet' && <WalletPage receipts={receipts} bookings={bookings} onReceipt={downloadReceipt} />}
           {page === 'Help' && <HelpPage flash={flash} onDispute={() => setModal('dispute')} />}
@@ -1072,21 +1074,6 @@ function App() {
           {page === 'Settings' && <AdminModulePage module="settings" bookings={bookings} flash={flash} />}
         </div>
       </main>
-
-      {cashHandover && (
-        <CashHandoverModal
-          booking={cashHandover.booking}
-          mode={cashHandover.mode}
-          onClose={() => setCashHandover(null)}
-          onSubmit={async (amount: number, pin?: string) => {
-            const ok = cashHandover.mode === 'customer'
-              ? await confirmCashAsCustomer(cashHandover.booking, amount)
-              : await confirmCashAsDriver(cashHandover.booking, amount, pin || '');
-            if (ok) setCashHandover(null);
-            return ok;
-          }}
-        />
-      )}
 
       {/* Modals */}
       {voiceAgentOpen && (
@@ -1144,22 +1131,18 @@ function App() {
         />
       )}
 
-      {/* Dispute filing modal */}
-      {modal === 'dispute' && (
+      {(modal === 'dispute' || modal.startsWith('dispute:')) && (
         <DisputeModal
           bookings={bookings}
+          defaultBookingId={modal.startsWith('dispute:') ? modal.slice(8) : ''}
+          defaultSubject={modal.startsWith('dispute:') ? 'Driver demanded extra money' : ''}
           onClose={() => setModal('')}
-          onSubmit={async (bookingId: string, subject: string, description: string) => {
+          onSubmit={async (bookingId: string, subject: string, description: string, reportedExtraAmount?: number) => {
             try {
-              await api('/disputes', {
-                method: 'POST',
-                body: JSON.stringify({ bookingId, subject, description })
-              });
+              await api('/disputes', { method: 'POST', body: JSON.stringify({ bookingId, subject, description, reportedExtraAmount }) });
               setModal('');
-              flash('Dispute filed. Our team will review and respond within 24 hours.');
-            } catch (e: any) {
-              flash(e.message);
-            }
+              flash('Report submitted. Customer Care will review the trip and the driver can respond before any action is taken.');
+            } catch (e: any) { flash(e.message); throw e; }
           }}
         />
       )}
@@ -1412,7 +1395,14 @@ function BookingPage(p: any) {
             </div>
           </div>
 
-          <h3>2. Route & Schedule</h3>
+          <h3>2. Choose pickup priority</h3>
+          <div className="trip-type-chips">
+            <button type="button" className={`type-chip ${p.bookingMode === 'immediate' ? 'active' : ''}`} onClick={() => p.setBookingMode('immediate')}>Immediate pickup · ASAP</button>
+            <button type="button" className={`type-chip ${p.bookingMode === 'scheduled' ? 'active' : ''}`} onClick={() => p.setBookingMode('scheduled')}>Schedule for later</button>
+          </div>
+          <p className="location-lookup-note">{p.bookingMode === 'immediate' ? 'Your request enters the urgent dispatch queue. Immediate long trips are prioritised over future reservations.' : 'Your selected date and time are saved as a scheduled request. Drivers with overlapping accepted trips are excluded.'}</p>
+
+          <h3>3. Route & Schedule</h3>
           <datalist id="service-locations-delhi">
             {SERVICE_LOCATIONS.Delhi.map((place) => <option key={place} value={place} />)}
           </datalist>
@@ -1526,7 +1516,7 @@ function BookingPage(p: any) {
               <button type="button" className={`payment-choice ${p.paymentMethod === 'cash' ? 'selected' : ''}`} onClick={() => p.setPaymentMethod('cash')}><IndianRupee size={19}/><span><b>Pay by cash</b><small>Pay the driver after your trip and earn CashCircle points</small></span></button>
             </div>
             {p.paymentMethod === 'online' && <button type="button" className="secondary-btn" style={{width:'100%',justifyContent:'center',marginTop:10}} onClick={p.onDemoPayment}><CreditCard size={16}/> Preview online payment demo</button>}
-            {p.paymentMethod === 'cash' && <div className="cash-reward-note"><b>CashCircle rewards</b><span>Earn 1 reward point for every ₹100 paid in cash. Points are added after both you and your driver confirm payment.</span></div>}
+            {p.paymentMethod === 'cash' && <div className="cash-reward-note"><b>CashCircle rewards</b><span>Earn 1 reward point for every ₹100. The driver marks cash collected after receiving the trip fare; no cash PIN or customer confirmation is needed.</span></div>}
           </section>
 
           <div className="booking-policy-box">
@@ -1635,11 +1625,11 @@ function BookingRow({ booking: b, onClick }: any) {
 }
 
 // ----------------- Trips Page -----------------
-function TripsPage({ bookings, filter, setFilter, update, onRate, onPay, onTrack, onBook, receipts, onCashConfirm, onRefresh, cashRewardsPoints = 0 }: any) {
+function TripsPage({ bookings, filter, setFilter, update, onRate, onPay, onTrack, onBook, receipts, onReportDriver, onRefresh, cashRewardsPoints = 0 }: any) {
   const filters = ['Upcoming', 'Completed', 'Cancelled'];
   const list = bookings.filter((b: Booking) =>
     filter === 'Upcoming'
-      ? ['Searching', 'Driver assigned', 'Driver arriving', 'Trip started', 'Awaiting cash confirmation'].includes(b.status)
+      ? ['Searching', 'Driver assigned', 'Driver arriving', 'Trip started'].includes(b.status)
       : filter === 'Completed'
       ? ['Trip completed', 'Rated'].includes(b.status)
       : b.status === 'Cancelled'
@@ -1671,7 +1661,7 @@ function TripsPage({ bookings, filter, setFilter, update, onRate, onPay, onTrack
               {
                 bookings.filter((b: Booking) =>
                   f === 'Upcoming'
-                    ? ['Searching', 'Driver assigned', 'Driver arriving', 'Trip started', 'Awaiting cash confirmation'].includes(b.status)
+                    ? ['Searching', 'Driver assigned', 'Driver arriving', 'Trip started'].includes(b.status)
                     : f === 'Completed'
                     ? ['Trip completed', 'Rated'].includes(b.status)
                     : b.status === 'Cancelled'
@@ -1794,35 +1784,34 @@ function TripsPage({ bookings, filter, setFilter, update, onRate, onPay, onTrack
                     </button>
                   )}
                 </div>
-                {['Trip completed', 'Awaiting cash confirmation'].includes(b.status) && (
+                {['Trip completed', 'Rated'].includes(b.status) && (
                   <>
                     <div className="trip-actions-row">
                       {b.status === 'Trip completed' && <button className="action-btn rate" onClick={() => onRate(b)}><Star size={16} /> Rate Driver</button>}
-                      {b.payment_status === 'Paid' || b.payment_status === 'Paid · Cash' ? <span className="status-pill done">Paid · {b.payment_method === 'cash' ? 'Cash' : 'Online'}</span> :
-                        b.payment_method === 'cash' ? <button className="action-btn pay" onClick={() => onCashConfirm(b)} disabled={b.cashCustomerConfirmed}><IndianRupee size={16}/>{b.cashCustomerConfirmed ? 'Amount confirmation sent' : 'Confirm amount handed over'}</button> :
-                        <button className="action-btn pay" onClick={() => onPay(b)}><CreditCard size={16} /> Pay {money(b.total)}</button>}
-                      {b.payment_method === 'cash' && b.cashPin && b.payment_status !== 'Paid · Cash' && <div className="cash-pin-card">
-                        <div className="cash-pin-heading"><span className="cash-pin-icon"><ShieldCheck size={17}/></span><span><b>Secure cash handover</b><small>Share this code only after the driver has returned any change and you have confirmed the final fare.</small></span><span className="cash-pin-live">ONE-TIME</span></div>
-                        <div className="cash-pin-digits" aria-label={`Cash handover PIN ${b.cashPin}`}>{String(b.cashPin).split('').map((digit, index) => <span key={index}>{digit}</span>)}</div>
-                        <small className="cash-pin-foot"><LockKeyhole size={13}/> Your driver needs this PIN to verify the receipt. Never share it over a call or chat.</small>
-                      </div>}
-                      {b.payment_method === 'cash' && b.cashCustomerConfirmed && <small className="muted">You confirmed {money(Number(b.cashCustomerAmount || 0))}. Waiting for driver verification.</small>}
+                      {b.payment_status === 'Paid' || b.payment_status === 'Paid · Cash'
+                        ? <span className="status-pill done">Paid · {b.payment_method === 'cash' ? 'Cash' : 'Online'}</span>
+                        : b.payment_method === 'cash'
+                          ? <span className="status-pill">Cash due · Pay your assigned driver directly</span>
+                          : <button className="action-btn pay" onClick={() => onPay(b)}><CreditCard size={16} /> Pay {money(b.total)}</button>}
+                      {b.payment_method === 'cash' && b.payment_status !== 'Paid · Cash' && (
+                        <small className="muted">No cash PIN or customer confirmation is required. The driver marks collection after receiving the trip fare.</small>
+                      )}
                     </div>
                     <div className="trip-actions-row">
+                      <button className="action-btn" onClick={() => onReportDriver?.(b)}>
+                        <AlertCircle size={15} /> Report driver asking for extra money
+                      </button>
                       <button className="action-btn" onClick={() => downloadInvoice(b)}>
                         <FileText size={15} /> Download Invoice
                       </button>
                       {receipts.some((r: Receipt) => r.bookingId === b.id) && (
-                        <button
-                          className="action-btn"
-                          onClick={() => downloadReceipt(b, receipts.find((r: Receipt) => r.bookingId === b.id)!)}
-                        >
+                        <button className="action-btn" onClick={() => downloadReceipt(b, receipts.find((r: Receipt) => r.bookingId === b.id)!)}>
                           <Check size={15} /> View Receipt
                         </button>
                       )}
                     </div>
                   </>
-                )}
+                )})}
               </div>
             </div>
           ))}
@@ -2078,11 +2067,10 @@ function DriverPage({ bookings, update, user, onDutyChange, flash, onCashConfirm
                       <ArrowRight size={18} /> {b.carCarePassport?.customerConfirmedAt && b.carCarePassport?.driverConfirmedAt ? 'Verify start OTP' : 'Complete CarCare Passport first'}
                     </button>
                   )}
-                  {b.status === 'Awaiting cash confirmation' && b.payment_method === 'cash' && b.payment_status !== 'Paid · Cash' && (
+                  {b.status === 'Trip completed' && b.payment_method === 'cash' && b.payment_status !== 'Paid · Cash' && (
                     <div className="driver-cash-action">
-                      <div><b>Cash collection verification</b><small>Enter the amount you retained after returning any change, then verify the customer's one-time PIN.</small></div>
-                      <button className="primary-btn" style={{width:'100%',justifyContent:'center',background:'#0a7a6e'}} onClick={() => onCashConfirm(b)} disabled={b.cashDriverConfirmed}><ShieldCheck size={17}/>{b.cashDriverConfirmed ? 'Receipt submitted' : 'Verify cash handover'}</button>
-                      {b.cashDriverConfirmed && <small className="muted">You reported {money(Number(b.cashDriverAmount || 0))}. Waiting for customer confirmation.</small>}
+                      <div><b>Cash collection</b><small>After receiving the agreed fare, mark it as collected. No cash OTP or customer-side verification is required.</small></div>
+                      <button className="primary-btn" style={{width:'100%',justifyContent:'center',background:'#0a7a6e'}} onClick={() => onCashConfirm(b)}><IndianRupee size={17}/> Mark cash collected</button>
                     </div>
                   )}
                   {b.status === 'Trip started' && (
@@ -3676,45 +3664,6 @@ function AuthModal({ onClose, onLogin, onRegister, onCustomerLogin, onCustomerRe
     </div>
   );
 }
-function CashHandoverModal({ booking, mode, onClose, onSubmit }: { booking: Booking; mode: 'customer' | 'driver'; onClose: () => void; onSubmit: (amount: number, pin?: string) => Promise<boolean> }) {
-  const [amount, setAmount] = useState(String(Math.round(Number(booking.total || 0))));
-  const [pin, setPin] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState('');
-  const isCustomer = mode === 'customer';
-  const validAmount = /^\d{1,7}$/.test(amount.trim()) && Number.isSafeInteger(Number(amount)) && Number(amount) >= 0;
-  const submit = async () => {
-    if (!validAmount) { setError('Enter a valid amount in whole rupees.'); return; }
-    if (!isCustomer && !/^\d{6}$/.test(pin)) { setError('Enter all 6 digits of the customer PIN.'); return; }
-    setSubmitting(true); setError('');
-    try { const ok = await onSubmit(Number(amount), isCustomer ? undefined : pin); if (!ok) setError('Please review the details and try again.'); }
-    finally { setSubmitting(false); }
-  };
-  return (
-    <div className="overlay cash-handover-overlay" onMouseDown={(e) => e.target === e.currentTarget && !submitting && onClose()}>
-      <div className="modal cash-handover-modal">
-        <button className="modal-close-btn" onClick={onClose} disabled={submitting}><X size={18}/></button>
-        <div className="cash-modal-emblem"><ShieldCheck size={25}/></div>
-        <span className="eyebrow">{isCustomer ? 'CUSTOMER PAYMENT CONFIRMATION' : 'DRIVER RECEIPT VERIFICATION'}</span>
-        <h2>{isCustomer ? 'Confirm cash handed over' : 'Verify cash received'}</h2>
-        <p className="cash-modal-intro">{isCustomer ? 'If you paid the exact trip fare, the amount is already filled in. Just confirm. Change the amount only if your final payment was different.' : 'Enter the amount you kept after returning change, then verify the customer’s one-time PIN.'}</p>
-        <div className="cash-fare-summary"><span>Trip fare</span><b>{money(booking.total)}</b><small>Booking #{String(booking.id).slice(-8)} · {isCustomer ? 'Quick confirmation' : 'One-time secure verification'}</small></div>
-        <label className="cash-field-label" htmlFor="cash-handover-amount">{isCustomer ? 'Final amount paid after change (₹)' : 'Amount retained / received (₹)'}</label>
-        <div className="cash-amount-input"><IndianRupee size={20}/><input id="cash-handover-amount" type="text" inputMode="numeric" autoComplete="off" value={amount} onChange={(e) => { setAmount(e.target.value.replace(/[^0-9]/g, '').slice(0, 7)); setError(''); }} placeholder="Enter amount"/></div>
-        {!isCustomer && <>
-          <label className="cash-field-label" htmlFor="cash-handover-pin">Customer’s 6-digit secure PIN</label>
-          <input id="cash-handover-pin" className="cash-pin-input" type="password" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={pin} onChange={(e) => { setPin(e.target.value.replace(/\D/g, '').slice(0, 6)); setError(''); }} placeholder="• • • • • •" aria-label="Six digit cash handover PIN"/>
-          <small className="cash-pin-hint"><LockKeyhole size={13}/> PIN is verified securely and can only be used once.</small>
-        </>}
-        {error && <p className="cash-form-error"><AlertCircle size={15}/>{error}</p>}
-        <div className="cash-modal-assurance"><ShieldCheck size={16}/><span>Both parties must confirm the same amount. Any mismatch is flagged for admin review—never silently marked as paid.</span></div>
-        <button className="primary-btn-wide cash-submit-btn" onClick={submit} disabled={submitting || !validAmount || (!isCustomer && pin.length !== 6)}>{submitting ? 'Verifying securely…' : isCustomer ? `Confirm ${money(Number(amount || 0))} paid` : 'Verify PIN & confirm cash'} <ArrowRight size={17}/></button>
-        <button className="cash-cancel-btn" onClick={onClose} disabled={submitting}>Cancel</button>
-      </div>
-    </div>
-  );
-}
-
 function CheckoutModal({ booking, onClose, onPay }: any) {
   if (!booking) return null;
   return (
@@ -3832,66 +3781,55 @@ function RatingModal({ stars, setStars, onClose, onSubmit }: any) {
 }
 
 // ----------------- Dispute Modal -----------------
-function DisputeModal({ bookings, onClose, onSubmit }: any) {
-  const [bookingId, setBookingId] = useState('');
-  const [subject, setSubject] = useState('');
+function DisputeModal({ bookings, onClose, onSubmit, defaultBookingId = '', defaultSubject = '' }: any) {
+  const [bookingId, setBookingId] = useState(defaultBookingId);
+  const [subject, setSubject] = useState(defaultSubject);
   const [description, setDescription] = useState('');
+  const [reportedExtraAmount, setReportedExtraAmount] = useState('');
   const [busy, setBusy] = useState(false);
-
+  const isExtraMoneyReport = subject === 'Driver demanded extra money';
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!subject.trim() || !description.trim()) return;
+    if (isExtraMoneyReport && reportedExtraAmount && (!/^\\d{1,7}$/.test(reportedExtraAmount) || Number(reportedExtraAmount) > 1000000)) return;
     setBusy(true);
-    try {
-      await onSubmit(bookingId, subject, description);
-    } finally {
-      setBusy(false);
-    }
+    try { await onSubmit(bookingId, subject, description, reportedExtraAmount ? Number(reportedExtraAmount) : undefined); }
+    finally { setBusy(false); }
   };
-
   return (
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal dispute-modal">
         <button className="modal-close-btn" onClick={onClose}><X size={18} /></button>
-        <div className="modal-brand"><AlertCircle size={22} /><span>File a Dispute</span></div>
-        <h2 style={{ fontSize: '20px', marginBottom: '6px' }}>Report a Problem</h2>
-        <p className="modal-sub">Our team reviews and responds within 24 hours.</p>
+        <div className="modal-brand"><AlertCircle size={22} /><span>Customer Care</span></div>
+        <h2 style={{ fontSize: '20px', marginBottom: '6px' }}>Report a trip problem</h2>
+        <p className="modal-sub">Our team reviews every report. Driver earnings adjustments are considered only after investigation.</p>
         <form onSubmit={submit} className="auth-form">
           <label className="field-group">
-            <span>Related Booking (optional)</span>
+            <span>Related Booking</span>
             <select value={bookingId} onChange={(e) => setBookingId(e.target.value)}>
               <option value="">No specific booking</option>
-              {bookings.map((b: Booking) => (
-                <option key={b.id} value={b.id}>{b.id} — {b.pickup.split(',')[0]} → {b.destination.split(',')[0]}</option>
-              ))}
+              {bookings.map((b: Booking) => <option key={b.id} value={b.id}>{b.id} — {b.pickup.split(',')[0]} → {b.destination.split(',')[0]}</option>)}
             </select>
           </label>
           <label className="field-group">
-            <span>Subject</span>
+            <span>What happened?</span>
             <select value={subject} onChange={(e) => setSubject(e.target.value)} required>
               <option value="">Select a subject…</option>
+              <option value="Driver demanded extra money">Driver demanded extra money</option>
               <option value="Fare dispute">Fare dispute</option>
               <option value="Driver behaviour">Driver behaviour</option>
               <option value="Trip not completed">Trip not completed</option>
-              <option value="OTP issue">OTP issue</option>
+              <option value="OTP issue">Trip OTP issue</option>
               <option value="Payment issue">Payment issue</option>
               <option value="Other">Other</option>
             </select>
           </label>
+          {isExtraMoneyReport && <label className="field-group"><span>Extra amount requested (₹, optional)</span><input type="number" min="0" max="1000000" step="1" value={reportedExtraAmount} onChange={(e) => setReportedExtraAmount(e.target.value)} placeholder="Amount the driver asked for" /></label>}
           <label className="field-group">
-            <span>Description</span>
-            <textarea
-              required
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Describe what happened in detail…"
-              rows={4}
-              style={{ width: '100%', padding: '12px', border: '1px solid var(--slate-200)', borderRadius: '8px', fontSize: '14px', resize: 'vertical', outline: 'none', fontFamily: 'inherit' }}
-            />
+            <span>Describe what happened</span>
+            <textarea required value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Tell us what the driver said or what happened during the trip…" rows={4} style={{ width:'100%',padding:'12px',border:'1px solid var(--slate-200)',borderRadius:'8px',fontSize:'14px',resize:'vertical',outline:'none',fontFamily:'inherit' }} />
           </label>
-          <button className="primary-btn-wide" type="submit" disabled={busy || !subject || !description}>
-            {busy ? 'Submitting…' : 'Submit Dispute'}
-          </button>
+          <button className="primary-btn-wide" type="submit" disabled={busy || !subject || !description.trim()}>{busy ? 'Submitting report…' : 'Submit to Customer Care'}</button>
         </form>
       </div>
     </div>
