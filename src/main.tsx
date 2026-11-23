@@ -94,10 +94,8 @@ type Booking = {
   pickupCoordinates?: [number, number];
   destinationCoordinates?: [number, number];
   cashCustomerConfirmed?: boolean;
-  cashDriverConfirmed?: boolean;
-  cashCustomerAmount?: number;
-  cashDriverAmount?: number;
-  cashPin?: string;
+  cashCollectedAt?: string;
+  cashCollectedBy?: string;
   cashRewardPoints?: number;
   driver?: string;
   vehicle?: string;
@@ -1718,7 +1716,7 @@ function TripsPage({ bookings, filter, setFilter, update, onRate, onPay, onTrack
 
               {/* Live, transparent trip progress */}
               {b.status !== 'Cancelled' && (() => {
-                const stages = ['Searching', 'Driver assigned', 'Driver arriving', 'Trip started', 'Awaiting cash confirmation', 'Trip completed'];
+                const stages = ['Searching', 'Driver assigned', 'Driver arriving', 'Trip started', 'Trip completed'];
                 const current = Math.max(0, stages.indexOf(b.status));
                 return (
                   <section className="trip-progress" aria-label="Trip progress">
@@ -1730,7 +1728,7 @@ function TripsPage({ bookings, filter, setFilter, update, onRate, onPay, onTrack
                       {stages.map((stage, index) => (
                         <li key={stage} className={index < current ? 'complete' : index === current ? 'current' : ''}>
                           <span className="trip-progress-dot">{index < current ? <Check size={12} /> : index + 1}</span>
-                          <span>{stage === 'Searching' ? 'Finding a driver' : stage === 'Awaiting cash confirmation' ? 'Cash settlement pending' : stage}</span>
+                          <span>{stage === 'Searching' ? 'Finding a driver' : stage}</span>
                         </li>
                       ))}
                     </ol>
