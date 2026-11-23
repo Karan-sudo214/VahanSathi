@@ -558,6 +558,20 @@ function bookingAmountDue(booking) {
   return Math.max(0, Number(booking.total || 0)) + confirmedExpenseTotal(booking);
 }
 
+function markExpenseRecordsPaid(booking, expenseIds, method, paidAt) {
+  const ids = new Set(Array.isArray(expenseIds) ? expenseIds : []);
+  for (const expense of Array.isArray(booking.expenses) ? booking.expenses : []) {
+    if (ids.has(expense.id) && expense.status === 'confirmed') {
+      expense.status = 'paid';
+      expense.paymentStatus = 'paid';
+      expense.paymentMethod = method;
+      expense.paidAt = paidAt;
+      expense.timeline = Array.isArray(expense.timeline) ? expense.timeline : [];
+      expense.timeline.push({ status: 'paid', at: paidAt, actorRole: 'system', note: `Reimbursed with ${method} booking payment.` });
+    }
+  }
+}
+
 function xmlEscape(value) {
   return String(value ?? '').replace(/[&<>"']/g, (char) => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;'
@@ -1014,8 +1028,7 @@ app.post('/api/fare/estimate', asyncRoute(async (req, res) => {
 
 // Bookings
 // Razorpay Checkout: create orders on the server and verify every payment before marking a booking paid.
-// Cash settlement is a two-sided receipt: both parties enter the amount, and the driver
-// must also enter the customer's trip-specific cash PIN. Never accept a one-sided "paid" flag.
+// Cash service fare and customer-approved, receipted expenses are collected together without a cash OTP.
 async function recordCashEvent(booking, actor, action, amount, details = {}) {
   const event = {
     id: randomUUID(),
@@ -1049,15 +1062,17 @@ app.post('/api/payments/cash/collect', auth, roles('driver'), asyncRoute(async (
   booking.paidAt = now;
   booking.cashCollectedAt = now;
   booking.cashCollectedBy = req.user.id;
-  booking.cashCollectionAmount = Number(booking.total || 0);
+  const amountCollected = bookingAmountDue(booking);
+  booking.cashCollectionAmount = amountCollected;
   booking.cashCollectionMethod = 'driver_marked_collected';
   booking.cashEvents = Array.isArray(booking.cashEvents) ? booking.cashEvents : [];
   const event = {
     id: randomUUID(), bookingId: booking.id, actorId: req.user.id,
     actorRole: req.user.role, actorName: req.user.name || 'Driver partner',
-    action: 'driver_marked_cash_collected', amount: Number(booking.total || 0),
+    action: 'driver_marked_cash_collected', amount: amountCollected,
     currency: 'INR', createdAt: now
   };
+  markExpenseRecordsPaid(booking, (booking.expenses || []).filter((item) => item.status === 'confirmed').map((item) => item.id), 'cash', now);
   booking.cashEvents.push(event);
   data.payments.push({ ...event, provider: 'cash', status: 'collected' });
 
@@ -1094,10 +1109,11 @@ app.post('/api/payments/razorpay/order', auth, roles('customer', 'admin'), async
   if (req.user.role !== 'admin' && booking.userId !== req.user.id) return res.status(403).json({ error: 'You can only pay for your own booking.' });
   if (!['Trip completed', 'Rated'].includes(booking.status)) return res.status(409).json({ error: 'Payment is available after the trip is completed.' });
   if (booking.payment_status === 'Paid') return res.status(409).json({ error: 'This booking is already paid.' });
-  const amount = Math.round(Number(booking.total) * 100);
+  const amount = Math.round(bookingAmountDue(booking) * 100);
   if (!Number.isSafeInteger(amount) || amount < 100) return res.status(400).json({ error: 'The booking amount is invalid.' });
+  const confirmedExpenseIds = (booking.expenses || []).filter((item) => item.status === 'confirmed').map((item) => item.id);
 
-  const existing = data.payments.find((p) => p.bookingId === booking.id && p.provider === 'razorpay' && p.status === 'created');
+  const existing = data.payments.find((p) => p.bookingId === booking.id && p.provider === 'razorpay' && p.status === 'created' && Number(p.amount) === amount);
   if (existing && existing.createdAt && Date.now() - new Date(existing.createdAt).getTime() < 10 * 60 * 1000) {
     return res.json({ keyId, order: { id: existing.orderId, amount: existing.amount, currency: existing.currency } });
   }
@@ -1128,6 +1144,7 @@ app.post('/api/payments/razorpay/order', auth, roles('customer', 'admin'), async
     orderId: order.id,
     amount: order.amount,
     currency: order.currency,
+    expenseIds: confirmedExpenseIds,
     status: 'created',
     createdAt: new Date().toISOString()
   };
@@ -1167,6 +1184,7 @@ app.post('/api/payments/razorpay/webhook', asyncRoute(async (req, res) => {
       booking.payment_status = 'Paid';
       booking.paidAt = record.paidAt;
       booking.payment_method = record.method;
+      markExpenseRecordsPaid(booking, record.expenseIds, record.method, record.paidAt);
       await persistItem('app_payments', record.id, record);
       await persistItem('app_bookings', booking.id, booking);
       await save();
@@ -1217,6 +1235,7 @@ app.post('/api/payments/razorpay/verify', auth, roles('customer', 'admin'), asyn
   booking.payment_status = 'Paid';
   booking.paidAt = record.paidAt;
   booking.payment_method = record.method;
+  markExpenseRecordsPaid(booking, record.expenseIds, record.method, record.paidAt);
   await persistItem('app_payments', record.id, record);
   await persistItem('app_bookings', booking.id, booking);
   await save();
