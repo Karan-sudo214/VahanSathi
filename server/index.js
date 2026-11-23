@@ -1261,13 +1261,32 @@ app.post('/api/bookings/:id/location', auth, roles('driver'), asyncRoute(async (
   const deviceCapturedAt = Number.isFinite(suppliedCaptureTime) && suppliedCaptureTime > 0
     ? new Date(suppliedCaptureTime).toISOString()
     : serverReceivedAt;
-  booking.driverLocation = {
+  const source = req.body?.source === 'expense_capture' ? 'expense_capture' : 'background_tracking';
+  const locationSample = {
     lat, lng, accuracy: Math.max(0, accuracy),
     heading: Number.isFinite(Number(req.body?.heading)) ? Number(req.body.heading) : null,
     speed: Number.isFinite(Number(req.body?.speed)) ? Number(req.body.speed) : null,
-    deviceCapturedAt,
-    updatedAt: serverReceivedAt
+    deviceCapturedAt, updatedAt: serverReceivedAt, source
   };
+
+  if (source === 'background_tracking') {
+    const previous = [...(booking.driverLocationHistory || [])].reverse().find((item) => item.source === 'background_tracking');
+    if (previous?.updatedAt) {
+      const elapsedSeconds = Math.max(0.5, (Date.parse(serverReceivedAt) - Date.parse(previous.updatedAt)) / 1000);
+      const meanLat = (Number(previous.lat) + lat) / 2;
+      const dLat = (lat - Number(previous.lat)) * 111320;
+      const dLng = (lng - Number(previous.lng)) * 111320 * Math.cos(meanLat * Math.PI / 180);
+      const distanceMeters = Math.hypot(dLat, dLng);
+      if (distanceMeters > Math.max(250, elapsedSeconds * 80)) {
+        return res.status(409).json({ error: 'This GPS update is inconsistent with the recent trip location trail. Keep location enabled and retry after the device obtains a stable fix.' });
+      }
+    }
+    booking.driverLocationHistory = Array.isArray(booking.driverLocationHistory) ? booking.driverLocationHistory : [];
+    booking.driverLocationHistory.push(locationSample);
+    booking.driverLocationHistory = booking.driverLocationHistory.slice(-30);
+  }
+
+  booking.driverLocation = locationSample;
   await persistItem('app_bookings', booking.id, booking);
   // Neon is the production source of truth; avoid a synchronous full-file write for every GPS ping.
   if (!databaseReady) await save();
@@ -1411,10 +1430,30 @@ app.post('/api/bookings/:id/expenses', auth, roles('driver'), asyncRoute(async (
   const receivedAt = Date.now();
   const positionAgeMs = position?.updatedAt ? receivedAt - Date.parse(position.updatedAt) : Infinity;
   const deviceCaptureMs = position?.deviceCapturedAt ? Date.parse(position.deviceCapturedAt) : NaN;
-  if (!position || !Number.isFinite(positionAgeMs) || positionAgeMs < 0 || positionAgeMs > 30000 ||
+  if (!position || position.source !== 'expense_capture' || !Number.isFinite(positionAgeMs) || positionAgeMs < 0 || positionAgeMs > 30000 ||
       !Number.isFinite(Number(position.accuracy)) || Number(position.accuracy) > 100 ||
       !Number.isFinite(deviceCaptureMs) || Math.abs(receivedAt - deviceCaptureMs) > 60000) {
     return res.status(409).json({ error: 'A fresh GPS fix with accuracy within 100 metres is required. Keep location enabled and try again.' });
+  }
+
+  const recentTrackingSamples = (booking.driverLocationHistory || []).filter((sample) => {
+    const sampleAt = Date.parse(sample.updatedAt || '');
+    const captureAt = Date.parse(sample.deviceCapturedAt || '');
+    return sample.source === 'background_tracking' && Number.isFinite(sampleAt) &&
+      receivedAt - sampleAt >= 0 && receivedAt - sampleAt <= 60000 &&
+      Number.isFinite(Number(sample.accuracy)) && Number(sample.accuracy) <= 150 &&
+      Number.isFinite(captureAt) && Math.abs(receivedAt - captureAt) <= 90000;
+  });
+  const lastTracked = recentTrackingSamples[recentTrackingSamples.length - 1];
+  if (!lastTracked) {
+    return res.status(409).json({ error: 'Keep the trip GPS tracker active for a few seconds before requesting a fuel expense. A matching recent location trail is required.' });
+  }
+  const meanLat = (Number(lastTracked.lat) + Number(position.lat)) / 2;
+  const latDelta = (Number(position.lat) - Number(lastTracked.lat)) * 111320;
+  const lngDelta = (Number(position.lng) - Number(lastTracked.lng)) * 111320 * Math.cos(meanLat * Math.PI / 180);
+  const trailGapMeters = Math.hypot(latDelta, lngDelta);
+  if (trailGapMeters > 300) {
+    return res.status(409).json({ error: 'The fresh GPS fix does not match the recent trip location trail. Please wait for the tracker to stabilise and retry.' });
   }
 
   const serverReceivedAt = new Date(receivedAt).toISOString();
@@ -1663,7 +1702,7 @@ app.get('/api/bookings', auth, (req, res) => {
   const enriched = rows.map((b) => {
     const driverUser = data.users.find((u) => u.id === b.driverId);
     const customerUser = data.users.find((u) => u.id === b.userId);
-    const { cashPin, cashPinEncrypted, cashPinHash, cashPinAttempts, cashCustomerAmount, cashDriverAmount, expenseUploadTickets, ...safeBooking } = b;
+    const { cashPin, cashPinEncrypted, cashPinHash, cashPinAttempts, cashCustomerAmount, cashDriverAmount, expenseUploadTickets, driverLocationHistory, ...safeBooking } = b;
     return {
       ...safeBooking,
       // Legacy cash PIN values are never exposed. Start/end trip OTPs remain stage-gated.
