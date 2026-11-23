@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
   Activity,
+  Camera,
   CreditCard,
   ArrowDownUp,
   ArrowLeft,
@@ -87,17 +88,41 @@ type Booking = {
   payment_status: string;
   payment_method?: string;
   requestedDriverStyle?: string;
+  bookingMode?: 'immediate' | 'scheduled' | 'auto';
+  amountDue?: number;
+  expenseTotalDue?: number;
+  expenses?: Array<{
+    id: string;
+    category: string;
+    requestedAmount: number;
+    approvedAmount?: number;
+    actualAmount?: number;
+    reason: string;
+    litres?: number | null;
+    stationName?: string | null;
+    status: string;
+    proofPhotoUrl?: string | null;
+    receiptPhotoUrl?: string | null;
+    proofPhotoCapturedAt?: string | null;
+    gpsSnapshotDataUri?: string;
+    gpsMapUrl?: string;
+    gpsEmbedUrl?: string;
+    gps?: { lat: number; lng: number; accuracy: number; deviceCapturedAt: string; serverReceivedAt: string; signature?: string };
+    createdAt: string;
+    customerNote?: string | null;
+  }>;
+  scheduledStartAt?: string;
+  dispatchPriority?: { bucket: string; score: number; label: string; minutesUntilPickup: number };
+  grossPayout?: number;
+  earningsAdjustment?: number;
   smartMatch?: { score: number; tier: string; reasons: string[]; distanceKm: number | null; rank: number; poolSize: number } | null;
   driverMatch?: { score: number; tier: string; reasons: string[] } | null;
   carCarePassport?: { videoKey?: string; videoMimeType?: string; videoSizeBytes?: number; videoUploadedAt?: string; customerConfirmedAt?: string | null; driverConfirmedAt?: string | null } | null;
   driverLocation?: { lat: number; lng: number; accuracy?: number; heading?: number | null; speed?: number | null; updatedAt?: string };
   pickupCoordinates?: [number, number];
   destinationCoordinates?: [number, number];
-  cashCustomerConfirmed?: boolean;
-  cashDriverConfirmed?: boolean;
-  cashCustomerAmount?: number;
-  cashDriverAmount?: number;
-  cashPin?: string;
+  cashCollectedAt?: string;
+  cashCollectedBy?: string;
   cashRewardPoints?: number;
   driver?: string;
   vehicle?: string;
@@ -237,8 +262,8 @@ function App() {
   const lastBookingsPayloadRef = useRef('');
   const [toast, setToast] = useState('');
   const [modal, setModal] = useState('');
-  const [cashHandover, setCashHandover] = useState<{ booking: Booking; mode: 'customer' | 'driver' } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [bookingMode, setBookingMode] = useState<'immediate' | 'scheduled'>('scheduled');
   const [tripType, setTripType] = useState('Hourly');
   const [city, setCity] = useState(localStorage.getItem('vs_city') === 'Gurugram' ? 'Gurugram' : 'Delhi');
   const [pickup, setPickup] = useState('Connaught Place, Delhi');
@@ -540,7 +565,7 @@ function App() {
     try {
       const d = await api('/bookings', {
         method: 'POST',
-        body: JSON.stringify({ tripType, pickup, destination, date, time, hours, vehicle, city, paymentMethod, driverStyle })
+        body: JSON.stringify({ tripType, pickup, destination, date, time, hours, vehicle, city, paymentMethod, driverStyle, bookingMode })
       });
       // Refresh immediately so both customer and driver see the new booking without waiting
       await refresh();
@@ -616,7 +641,7 @@ function App() {
         status === 'Trip started'
           ? 'Trip started! Have a pleasant journey.'
           : status === 'Trip completed' && b.payment_method === 'cash'
-          ? 'Trip ended. Waiting for customer and driver cash confirmations before marking it completed.'
+          ? 'Trip completed. The driver can now mark the cash fare as collected.'
           : status === 'Trip completed'
           ? 'Trip completed! Invoice & receipt ready.'
           : `Booking updated: ${status}`
@@ -686,26 +711,17 @@ function App() {
     }
   };
 
-  const confirmCashAsCustomer = async (booking: Booking, amountGiven: number) => {
+  const markCashCollected = async (booking: Booking) => {
     try {
-      const result = await api('/payments/cash/customer-confirm', { method: 'POST', body: JSON.stringify({ bookingId: booking.id, amountGiven }) });
+      const result = await api('/payments/cash/collect', { method: 'POST', body: JSON.stringify({ bookingId: booking.id }) });
       await refresh();
-      flash(result.payment_status === 'Paid · Cash' ? 'Cash handover verified. Your receipt is ready.' : result.payment_status);
+      flash(result.alreadyCollected ? 'Cash collection was already recorded.' : 'Cash collection marked successfully.');
       return true;
-    } catch (error: any) { flash(error.message || 'Cash confirmation could not be saved.'); return false; }
+    } catch (error: any) {
+      flash(error.message || 'Cash collection could not be recorded.');
+      return false;
+    }
   };
-
-  const confirmCashAsDriver = async (booking: Booking, amountReceived: number, cashPin: string) => {
-    try {
-      const result = await api('/payments/cash/driver-confirm', { method: 'POST', body: JSON.stringify({ bookingId: booking.id, amountReceived, cashPin }) });
-      await refresh();
-      flash(result.payment_status === 'Paid · Cash' ? 'Cash receipt verified and recorded.' : result.payment_status);
-      return true;
-    } catch (error: any) { flash(error.message || 'Cash receipt could not be verified.'); return false; }
-  };
-
-  const openCustomerCashHandover = (booking: Booking) => setCashHandover({ booking, mode: 'customer' });
-  const openDriverCashHandover = (booking: Booking) => setCashHandover({ booking, mode: 'driver' });
 
   const logout = () => {
     if (user?.role === 'customer') {
@@ -1010,6 +1026,17 @@ function App() {
               setDestination={setDestination}
               date={date}
               setDate={setDate}
+              bookingMode={bookingMode}
+              setBookingMode={(mode: 'immediate' | 'scheduled') => {
+                setBookingMode(mode);
+                if (mode === 'immediate') {
+                  const pickupAt = new Date(Date.now() + 15 * 60 * 1000);
+                  const localValue = new Date(pickupAt.getTime() - pickupAt.getTimezoneOffset() * 60000).toISOString();
+                  setDate(localValue.slice(0, 10));
+                  setTime(localValue.slice(11, 16));
+                }
+                clearFareEstimate();
+              }}
               time={time}
               setTime={setTime}
               hours={hours}
@@ -1047,14 +1074,14 @@ function App() {
               onTrack={(b: Booking) => setModal('track:' + b.id)}
               onBook={() => setPage('Book a driver')}
               receipts={receipts}
-              onCashConfirm={openCustomerCashHandover}
+              onReportDriver={(b: Booking) => setModal('dispute:' + b.id)}
               cashRewardsPoints={Number(user?.cashRewardsPoints || 0)}
               onRefresh={refresh}
             />
           )}
 
-          {page === 'Requests' && <DriverPage bookings={bookings} update={updateStatus} user={user} onDutyChange={(v: boolean) => setUser((u: any) => u ? {...u, available: v} : u)} flash={flash} onCashConfirm={openDriverCashHandover} onRefresh={refresh} />}
-          {page === 'My trips' && <TripsPage bookings={bookings} filter={filter} setFilter={setFilter} update={updateStatus} onRate={(b: Booking) => setModal('rate:' + b.id)} onPay={(b: Booking) => setModal('payment:' + b.id)} onTrack={(b: Booking) => setModal('track:' + b.id)} onBook={() => setPage('Book a driver')} receipts={receipts} onCashConfirm={confirmCashAsCustomer} cashRewardsPoints={Number(user?.cashRewardsPoints || 0)} onRefresh={refresh} />}
+          {page === 'Requests' && <DriverPage bookings={bookings} update={updateStatus} user={user} onDutyChange={(v: boolean) => setUser((u: any) => u ? {...u, available: v} : u)} flash={flash} onCashConfirm={markCashCollected} onRefresh={refresh} />}
+          {page === 'My trips' && <TripsPage bookings={bookings} filter={filter} setFilter={setFilter} update={updateStatus} onRate={(b: Booking) => setModal('rate:' + b.id)} onPay={(b: Booking) => setModal('payment:' + b.id)} onTrack={(b: Booking) => setModal('track:' + b.id)} onBook={() => setPage('Book a driver')} receipts={receipts} cashRewardsPoints={Number(user?.cashRewardsPoints || 0)} onRefresh={refresh} />}
           {page === 'Earnings' && <EarningsPage bookings={bookings} />}
           {page === 'Wallet' && <WalletPage receipts={receipts} bookings={bookings} onReceipt={downloadReceipt} />}
           {page === 'Help' && <HelpPage flash={flash} onDispute={() => setModal('dispute')} />}
@@ -1072,21 +1099,6 @@ function App() {
           {page === 'Settings' && <AdminModulePage module="settings" bookings={bookings} flash={flash} />}
         </div>
       </main>
-
-      {cashHandover && (
-        <CashHandoverModal
-          booking={cashHandover.booking}
-          mode={cashHandover.mode}
-          onClose={() => setCashHandover(null)}
-          onSubmit={async (amount: number, pin?: string) => {
-            const ok = cashHandover.mode === 'customer'
-              ? await confirmCashAsCustomer(cashHandover.booking, amount)
-              : await confirmCashAsDriver(cashHandover.booking, amount, pin || '');
-            if (ok) setCashHandover(null);
-            return ok;
-          }}
-        />
-      )}
 
       {/* Modals */}
       {voiceAgentOpen && (
@@ -1144,22 +1156,18 @@ function App() {
         />
       )}
 
-      {/* Dispute filing modal */}
-      {modal === 'dispute' && (
+      {(modal === 'dispute' || modal.startsWith('dispute:')) && (
         <DisputeModal
           bookings={bookings}
+          defaultBookingId={modal.startsWith('dispute:') ? modal.slice(8) : ''}
+          defaultSubject={modal.startsWith('dispute:') ? 'Driver demanded extra money' : ''}
           onClose={() => setModal('')}
-          onSubmit={async (bookingId: string, subject: string, description: string) => {
+          onSubmit={async (bookingId: string, subject: string, description: string, reportedExtraAmount?: number) => {
             try {
-              await api('/disputes', {
-                method: 'POST',
-                body: JSON.stringify({ bookingId, subject, description })
-              });
+              await api('/disputes', { method: 'POST', body: JSON.stringify({ bookingId, subject, description, reportedExtraAmount }) });
               setModal('');
-              flash('Dispute filed. Our team will review and respond within 24 hours.');
-            } catch (e: any) {
-              flash(e.message);
-            }
+              flash('Report submitted. Customer Care will review the trip and the driver can respond before any action is taken.');
+            } catch (e: any) { flash(e.message); throw e; }
           }}
         />
       )}
@@ -1412,7 +1420,14 @@ function BookingPage(p: any) {
             </div>
           </div>
 
-          <h3>2. Route & Schedule</h3>
+          <h3>2. Choose pickup priority</h3>
+          <div className="trip-type-chips">
+            <button type="button" className={`type-chip ${p.bookingMode === 'immediate' ? 'active' : ''}`} onClick={() => p.setBookingMode('immediate')}>Immediate pickup · ASAP</button>
+            <button type="button" className={`type-chip ${p.bookingMode === 'scheduled' ? 'active' : ''}`} onClick={() => p.setBookingMode('scheduled')}>Schedule for later</button>
+          </div>
+          <p className="location-lookup-note">{p.bookingMode === 'immediate' ? 'Your request enters the urgent dispatch queue. Immediate long trips are prioritised over future reservations.' : 'Your selected date and time are saved as a scheduled request. Drivers with overlapping accepted trips are excluded.'}</p>
+
+          <h3>3. Route & Schedule</h3>
           <datalist id="service-locations-delhi">
             {SERVICE_LOCATIONS.Delhi.map((place) => <option key={place} value={place} />)}
           </datalist>
@@ -1526,7 +1541,7 @@ function BookingPage(p: any) {
               <button type="button" className={`payment-choice ${p.paymentMethod === 'cash' ? 'selected' : ''}`} onClick={() => p.setPaymentMethod('cash')}><IndianRupee size={19}/><span><b>Pay by cash</b><small>Pay the driver after your trip and earn CashCircle points</small></span></button>
             </div>
             {p.paymentMethod === 'online' && <button type="button" className="secondary-btn" style={{width:'100%',justifyContent:'center',marginTop:10}} onClick={p.onDemoPayment}><CreditCard size={16}/> Preview online payment demo</button>}
-            {p.paymentMethod === 'cash' && <div className="cash-reward-note"><b>CashCircle rewards</b><span>Earn 1 reward point for every ₹100 paid in cash. Points are added after both you and your driver confirm payment.</span></div>}
+            {p.paymentMethod === 'cash' && <div className="cash-reward-note"><b>CashCircle rewards</b><span>Earn 1 reward point for every ₹100. The driver marks cash collected after receiving the trip fare; no cash PIN or customer confirmation is needed.</span></div>}
           </section>
 
           <div className="booking-policy-box">
@@ -1559,14 +1574,14 @@ function BookingPage(p: any) {
 
           <div className="fare-divider" />
 
-          {p.fare?.distanceKm && (
-            <FareLine name={`Estimated Distance (${p.fare.distanceKm} km)`} value={p.fare.distanceCharge || 0} />
+          {p.fare?.distanceKm !== null && p.fare?.distanceKm !== undefined && (
+            <p className="fare-sub">Estimated route: {p.fare.distanceKm} km · {p.fare?.includedKm || 0} km included</p>
           )}
-          <FareLine name="Driver Service" value={p.fare?.base || 0} />
-          {p.fare?.night > 0 && <FareLine name="Night Driving Charge" value={p.fare.night} />}
-          {p.fare?.vehicleExtra > 0 && <FareLine name="Vehicle Class Add-on" value={p.fare.vehicleExtra} />}
-          <FareLine name="Platform & Safety Fee" value={p.fare?.serviceFee || 0} />
-          <FareLine name="GST (5%)" value={p.fare?.gst || 0} />
+          <FareLine name="Driver Service (before GST)" value={p.fare?.base || 0} />
+          {p.fare?.night > 0 && <FareLine name="Night Driving Charge (before GST)" value={p.fare.night} />}
+          {p.fare?.vehicleExtra > 0 && <FareLine name="Vehicle Class Add-on (before GST)" value={p.fare.vehicleExtra} />}
+          {p.fare?.distanceCharge > 0 && <FareLine name={`Extra distance (${p.fare.extraDistanceKm} km, before GST)`} value={p.fare.distanceCharge} />}
+          <FareLine name={`GST (${p.fare?.gstRate ?? 5}%)`} value={p.fare?.gst || 0} />
 
           <div className="fare-divider" />
 
@@ -1579,7 +1594,7 @@ function BookingPage(p: any) {
             <span className="share-icon"><IndianRupee size={16} /></span>
             <div>
               <b>{money(p.fare?.payout || 0)} goes directly to driver</b>
-              <small>80% driver payout share</small>
+              <small>{p.fare?.driverSharePercent ?? 80}% driver payout share · {p.fare?.commissionRate ?? 20}% platform commission</small>
             </div>
           </div>
 
@@ -1634,12 +1649,433 @@ function BookingRow({ booking: b, onClick }: any) {
   );
 }
 
+function TripExpensePanel({ booking, role, onRefresh, flash }: any) {
+  const expenses: any[] = Array.isArray(booking.expenses) ? booking.expenses : [];
+  const [category, setCategory] = useState('fuel');
+  const [amount, setAmount] = useState('');
+  const [reason, setReason] = useState('');
+  const [litres, setLitres] = useState('');
+  const [stationName, setStationName] = useState('');
+  const [nozzlePhoto, setNozzlePhoto] = useState<File | null>(null);
+  const [nozzlePhotoCapturedAt, setNozzlePhotoCapturedAt] = useState<string | null>(null);
+  const [nozzlePhotoPreviewUrl, setNozzlePhotoPreviewUrl] = useState('');
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [cameraError, setCameraError] = useState('');
+  const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
+  const cameraStreamRef = useRef<MediaStream | null>(null);
+  const [receipts, setReceipts] = useState<Record<string, File | null>>({});
+  const [actualAmounts, setActualAmounts] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState('');
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+
+  const isDriver = role === 'driver';
+  const canRequest = isDriver && booking.status === 'Trip started' &&
+    !expenses.some((item) => ['pending_customer_approval', 'approved'].includes(item.status));
+
+  const stopNozzleCamera = () => {
+    cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
+    cameraStreamRef.current = null;
+    setCameraOpen(false);
+  };
+
+  useEffect(() => {
+    if (!cameraOpen || !cameraVideoRef.current || !cameraStreamRef.current) return;
+    const video = cameraVideoRef.current;
+    video.srcObject = cameraStreamRef.current;
+    video.play().catch(() => setCameraError('The camera preview could not start. Close it and allow camera access.'));
+  }, [cameraOpen]);
+
+  useEffect(() => () => {
+    cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
+    cameraStreamRef.current = null;
+  }, [booking.id]);
+
+  useEffect(() => () => {
+    if (nozzlePhotoPreviewUrl) URL.revokeObjectURL(nozzlePhotoPreviewUrl);
+  }, [nozzlePhotoPreviewUrl]);
+
+  const openNozzleCamera = async () => {
+    setCameraError('');
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCameraError('Live camera capture is not supported by this browser. Use the latest Chrome or Safari on a secure connection.');
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: {
+          facingMode: { ideal: 'environment' },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 }
+        }
+      });
+      cameraStreamRef.current = stream;
+      setCameraOpen(true);
+    } catch (cameraFailure: any) {
+      setCameraError(cameraFailure?.name === 'NotAllowedError'
+        ? 'Camera permission is blocked. Allow camera access for VaahanSathi and try again.'
+        : cameraFailure?.name === 'NotFoundError'
+          ? 'No rear-facing camera was found on this device.'
+          : 'The camera could not be opened. Check camera permissions and try again.');
+    }
+  };
+
+  const captureNozzlePhoto = () => {
+    const video = cameraVideoRef.current;
+    if (!video || video.readyState < 2 || !video.videoWidth || !video.videoHeight) {
+      setCameraError('The live camera is not ready yet. Wait for the preview and try again.');
+      return;
+    }
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const context = canvas.getContext('2d');
+    if (!context) {
+      setCameraError('Could not capture the camera frame. Please retry.');
+      return;
+    }
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        setCameraError('The nozzle photo could not be created. Please retry.');
+        return;
+      }
+      const capturedAt = new Date().toISOString();
+      const photo = new File([blob], `vaahansathi-fuel-nozzle-${booking.id}-${Date.now()}.jpg`, {
+        type: 'image/jpeg',
+        lastModified: Date.now()
+      });
+      if (nozzlePhotoPreviewUrl) URL.revokeObjectURL(nozzlePhotoPreviewUrl);
+      setNozzlePhoto(photo);
+      setNozzlePhotoCapturedAt(capturedAt);
+      setNozzlePhotoPreviewUrl(URL.createObjectURL(photo));
+      setCameraError('');
+      stopNozzleCamera();
+    }, 'image/jpeg', 0.9);
+  };
+
+  const retakeNozzlePhoto = () => {
+    if (nozzlePhotoPreviewUrl) URL.revokeObjectURL(nozzlePhotoPreviewUrl);
+    setNozzlePhotoPreviewUrl('');
+    setNozzlePhoto(null);
+    setNozzlePhotoCapturedAt(null);
+    void openNozzleCamera();
+  };
+
+  const captureDeviceLocation = () => new Promise<GeolocationPosition>((resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject(new Error('This device does not provide GPS location. Please use a phone with location enabled.'));
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      resolve,
+      (gpsError) => reject(new Error(gpsError.code === gpsError.PERMISSION_DENIED
+        ? 'Location permission is blocked. Allow location access for VaahanSathi and try again.'
+        : gpsError.code === gpsError.TIMEOUT
+          ? 'The GPS fix took too long. Move to an area with a clearer GPS signal and retry.'
+          : 'A current GPS fix is not available. Enable device location and retry.')),
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 18000 }
+    );
+  });
+
+  const uploadEvidence = async (
+    file: File,
+    kind: 'nozzle' | 'receipt',
+    expenseId?: string,
+    proof?: { category?: string; captureMode?: string; capturedAt?: string | null }
+  ) => {
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) throw new Error('Use a JPEG, PNG or WebP photo.');
+    if (file.size < 1 || file.size > 10 * 1024 * 1024) throw new Error('Each expense photo must be smaller than 10 MB.');
+    const ticket = await api(`/bookings/${booking.id}/expenses/evidence-upload-url`, {
+      method: 'POST',
+      body: JSON.stringify({
+        kind, expenseId, mimeType: file.type,
+        category: proof?.category || (kind === 'receipt' ? 'fuel' : 'other'),
+        captureMode: proof?.captureMode || undefined,
+        capturedAt: proof?.capturedAt || undefined
+      })
+    });
+    const response = await fetch(ticket.uploadUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': file.type },
+      body: file
+    });
+    if (!response.ok) throw new Error('The private evidence photo could not be uploaded. Please retry while you have a stable connection.');
+    return { key: ticket.key, mimeType: file.type, sizeBytes: file.size, capturedAt: proof?.capturedAt || null };
+  };
+
+  const submitRequest = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setBusy('request'); setError(''); setNotice('');
+    try {
+      const requestedAmount = Number(amount);
+      if (!Number.isSafeInteger(requestedAmount) || requestedAmount < 1 || requestedAmount > 50000) {
+        throw new Error('Enter an amount between ₹1 and ₹50,000.');
+      }
+      if (reason.trim().length < 5) throw new Error('Add a short reason for the unexpected expense.');
+      if (category === 'fuel' && (!nozzlePhoto || !nozzlePhotoCapturedAt || !nozzlePhotoPreviewUrl)) {
+        throw new Error('Capture a fresh photo from the in-app rear camera. Gallery photos are not accepted for petrol requests.');
+      }
+
+      // Obtain a fresh high-accuracy fix after the camera capture. The backend
+      // timestamps and signs the GPS evidence card before it is shown to the customer.
+      const position = await captureDeviceLocation();
+      if (position.coords.accuracy > 100) throw new Error('GPS accuracy is too weak (over 100 m). Please retry where the GPS signal is clearer.');
+      await api(`/bookings/${booking.id}/location`, {
+        method: 'POST',
+        body: JSON.stringify({
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+          accuracy: position.coords.accuracy,
+          heading: position.coords.heading,
+          speed: position.coords.speed,
+          capturedAt: position.timestamp,
+          source: 'expense_capture'
+        })
+      });
+
+      let uploaded = { key: '', mimeType: '', sizeBytes: 0, capturedAt: null as string | null };
+      if (nozzlePhoto) {
+        uploaded = await uploadEvidence(nozzlePhoto, 'nozzle', undefined, {
+          category,
+          captureMode: category === 'fuel' ? 'live_camera' : 'file_picker',
+          capturedAt: category === 'fuel' ? nozzlePhotoCapturedAt : null
+        });
+        uploaded.capturedAt = category === 'fuel' ? nozzlePhotoCapturedAt : null;
+      }
+      await api(`/bookings/${booking.id}/expenses`, {
+        method: 'POST',
+        body: JSON.stringify({
+          category,
+          amount: requestedAmount,
+          reason: reason.trim(),
+          litres: litres ? Number(litres) : null,
+          stationName: stationName.trim(),
+          photoKey: uploaded.key || undefined,
+          mimeType: uploaded.mimeType || undefined,
+          sizeBytes: uploaded.sizeBytes || undefined,
+          photoCapturedAt: uploaded.capturedAt || undefined
+        })
+      });
+      setAmount(''); setReason(''); setLitres(''); setStationName('');
+      setNozzlePhoto(null); setNozzlePhotoCapturedAt(null);
+      if (nozzlePhotoPreviewUrl) URL.revokeObjectURL(nozzlePhotoPreviewUrl);
+      setNozzlePhotoPreviewUrl('');
+      setNotice('Request sent. The customer will see the photo and app-generated GPS proof before approving it.');
+      await onRefresh?.();
+    } catch (submitError: any) {
+      setError(submitError?.message || 'The expense request could not be submitted.');
+    } finally { setBusy(''); }
+  };
+
+  const submitReceipt = async (expense: any) => {
+    const file = receipts[expense.id];
+    const actualAmount = Number(actualAmounts[expense.id] || 0);
+    if (!file) { setError('Select a clear photo of the fuel receipt.'); return; }
+    if (!Number.isSafeInteger(actualAmount) || actualAmount < 1 || actualAmount > Number(expense.approvedAmount || 0)) {
+      setError(`Enter the actual amount, up to the approved limit of ${money(expense.approvedAmount)}.`);
+      return;
+    }
+    setBusy(expense.id); setError(''); setNotice('');
+    try {
+      const uploaded = await uploadEvidence(file, 'receipt', expense.id);
+      await api(`/bookings/${booking.id}/expenses/${expense.id}/receipt`, {
+        method: 'POST',
+        body: JSON.stringify({ actualAmount, receiptKey: uploaded.key, mimeType: uploaded.mimeType, sizeBytes: uploaded.sizeBytes })
+      });
+      setNotice('Receipt submitted. The actual amount is attached to the booking and included in its final payment.');
+      await onRefresh?.();
+    } catch (receiptError: any) {
+      setError(receiptError?.message || 'The receipt could not be submitted.');
+    } finally { setBusy(''); }
+  };
+
+  const decide = async (expense: any, decision: 'approve' | 'decline') => {
+    setBusy(expense.id); setError(''); setNotice('');
+    try {
+      await api(`/bookings/${booking.id}/expenses/${expense.id}/decision`, {
+        method: 'POST', body: JSON.stringify({ decision })
+      });
+      setNotice(decision === 'approve'
+        ? `Approved up to ${money(expense.requestedAmount)}. The driver must upload the fuel receipt after filling.`
+        : 'Expense request declined. No amount has been added to your booking.');
+      await onRefresh?.();
+    } catch (decisionError: any) {
+      setError(decisionError?.message || 'Your decision could not be saved.');
+    } finally { setBusy(''); }
+  };
+
+  if (role === 'customer' && expenses.length === 0) return null;
+  if (role === 'driver' && expenses.length === 0 && !canRequest) return null;
+
+  return (
+    <section className="panel" style={{ padding: 14, marginTop: 14, border: '1px solid var(--slate-200)' }}>
+      <div className="panel-header" style={{ alignItems: 'center' }}>
+        <div>
+          <span className="eyebrow">TRIP EXPENSES</span>
+          <h3 style={{ margin: '3px 0' }}>{isDriver ? 'Request an extra expense' : 'Expense approval & proof'}</h3>
+          <p style={{ margin: 0 }}>{isDriver ? 'Ask the customer before spending. Fuel requests require a live GPS proof and nozzle photo.' : 'Only requests you approve and receipts uploaded afterwards are included in the final amount.'}</p>
+        </div>
+        {Number(booking.expenseTotalDue || 0) > 0 && <span className="status-pill">{money(booking.expenseTotalDue)} added</span>}
+      </div>
+
+      {expenses.map((expense: any) => (
+        <div key={expense.id} style={{ borderTop: '1px solid var(--slate-200)', paddingTop: 12, marginTop: 12 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+            <b>{({ fuel: 'Petrol / fuel', toll: 'Toll', parking: 'Parking', other: 'Other expense' } as any)[expense.category] || 'Trip expense'}</b>
+            <span className="status-pill">{String(expense.status || '').replace(/_/g, ' ')}</span>
+          </div>
+          <p style={{ margin: '6px 0' }}>{expense.reason}</p>
+          <p style={{ margin: '4px 0' }}><b>Requested:</b> {money(expense.requestedAmount)}{expense.litres ? ` · ${expense.litres} L` : ''}{expense.stationName ? ` · ${expense.stationName}` : ''}</p>
+          {expense.proofPhotoUrl && (
+            <div style={{ marginTop: 10 }}>
+              <small className="eyebrow">DRIVER PHOTO EVIDENCE · LIVE CAMERA</small>
+              <img src={expense.proofPhotoUrl} alt="Fresh live camera capture of the petrol nozzle and vehicle" style={{ width: '100%', maxHeight: 250, objectFit: 'contain', background: '#f1f5f9', borderRadius: 10, marginTop: 6 }} />
+              {expense.proofPhotoCapturedAt && <small style={{ display: 'block', color: 'var(--slate-500)' }}>Camera capture time: {new Date(expense.proofPhotoCapturedAt).toLocaleString('en-IN')}</small>}
+            </div>
+          )}
+          {expense.gpsSnapshotDataUri && (
+            <div style={{ marginTop: 10 }}>
+              <small className="eyebrow">SYSTEM-CAPTURED GPS SNAPSHOT</small>
+              <img src={expense.gpsSnapshotDataUri} alt="VaahanSathi system-generated GPS location proof with server timestamp and signature" style={{ width: '100%', maxHeight: 230, objectFit: 'contain', background: '#f1f5f9', borderRadius: 10, marginTop: 6 }} />
+              {expense.gpsEmbedUrl && (
+                <iframe
+                  title="System-captured fuel expense GPS map"
+                  src={expense.gpsEmbedUrl}
+                  loading="lazy"
+                  referrerPolicy="no-referrer"
+                  style={{ width: '100%', height: 220, border: 0, borderRadius: 10, marginTop: 8 }}
+                />
+              )}
+              {expense.gpsMapUrl && <a href={expense.gpsMapUrl} target="_blank" rel="noreferrer" className="link-btn-inline">Open captured coordinates in OpenStreetMap</a>}
+              {expense.gps && <small style={{ display: 'block', color: 'var(--slate-500)' }}>GPS accuracy ±{Math.round(expense.gps.accuracy)} m · Server time {new Date(expense.gps.serverReceivedAt).toLocaleString('en-IN')} · Server-signed evidence record</small>}
+              <small className="muted">This is an app-generated GPS record, not a driver-uploaded screenshot. Device location can still be affected by weak signals or mock-location settings.</small>
+            </div>
+          )}
+
+          {role === 'customer' && expense.status === 'pending_customer_approval' && (
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
+              <button className="primary-btn" disabled={busy === expense.id} onClick={() => decide(expense, 'approve')}>Approve up to {money(expense.requestedAmount)}</button>
+              <button className="secondary-btn" disabled={busy === expense.id} onClick={() => decide(expense, 'decline')}>Decline request</button>
+            </div>
+          )}
+          {role === 'customer' && expense.status === 'approved' && <small className="muted">Approved up to {money(expense.approvedAmount)}. Waiting for the driver’s final pump receipt.</small>}
+          {expense.receiptPhotoUrl && (
+            <div style={{ marginTop: 10 }}>
+              <small className="eyebrow">FINAL FUEL RECEIPT</small>
+              <img src={expense.receiptPhotoUrl} alt="Uploaded petrol station receipt" style={{ width: '100%', maxHeight: 220, objectFit: 'contain', background: '#f1f5f9', borderRadius: 10, marginTop: 6 }} />
+            </div>
+          )}
+          {['confirmed', 'paid'].includes(expense.status) && (
+            <p style={{ margin: '8px 0' }}><b>Actual amount:</b> {money(expense.actualAmount)} {expense.status === 'paid' ? '· included in paid booking amount' : '· added to final booking payment'}</p>
+          )}
+          {role === 'driver' && expense.status === 'pending_customer_approval' && (
+            <div className="carcare-waiting" style={{ marginTop: 10 }}>
+              <Clock3 size={15} /> Do not refuel yet. Wait until the customer approves this exact amount.
+            </div>
+          )}
+          {role === 'driver' && expense.status === 'approved' && (
+            <div style={{ display: 'grid', gap: 8, marginTop: 10 }}>
+              <label className="field-group"><span>Actual amount on fuel receipt (up to {money(expense.approvedAmount)})</span>
+                <input type="number" min="1" max={expense.approvedAmount} step="1" value={actualAmounts[expense.id] || ''} onChange={(e) => setActualAmounts((current) => ({ ...current, [expense.id]: e.target.value }))} placeholder="Enter actual amount in rupees" />
+              </label>
+              <label className="field-group"><span>Upload fuel station receipt photo</span>
+                <input type="file" accept="image/jpeg,image/png,image/webp" capture="environment" onChange={(e) => setReceipts((current) => ({ ...current, [expense.id]: e.target.files?.[0] || null }))} />
+              </label>
+              <button className="primary-btn" disabled={busy === expense.id || !receipts[expense.id] || !actualAmounts[expense.id]} onClick={() => submitReceipt(expense)}>
+                {busy === expense.id ? 'Uploading receipt…' : 'Submit fuel receipt & actual amount'}
+              </button>
+            </div>
+          )}
+          {expense.status === 'declined' && <small className="muted">Customer declined this request. No expense has been charged.</small>}
+        </div>
+      ))}
+
+      {canRequest && (
+        <form onSubmit={submitRequest} style={{ display: 'grid', gap: 10, marginTop: 12, borderTop: '1px solid var(--slate-200)', paddingTop: 12 }}>
+          <label className="field-group"><span>Expense type</span>
+            <select value={category} onChange={(e) => setCategory(e.target.value)}>
+              <option value="fuel">Petrol / fuel</option>
+              <option value="toll">Toll</option>
+              <option value="parking">Parking</option>
+              <option value="other">Other unexpected expense</option>
+            </select>
+          </label>
+          <label className="field-group"><span>Amount requested (₹)</span>
+            <input type="number" min="1" max="50000" step="1" required value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="Enter exact amount you need" />
+          </label>
+          {category === 'fuel' && (
+            <>
+              <label className="field-group"><span>Fuel amount (litres, optional)</span>
+                <input type="number" min="0.1" max="200" step="0.1" value={litres} onChange={(e) => setLitres(e.target.value)} placeholder="Example: 8.5" />
+              </label>
+              <label className="field-group"><span>Petrol station (optional)</span>
+                <input maxLength={120} value={stationName} onChange={(e) => setStationName(e.target.value)} placeholder="Station name / area" />
+              </label>
+              <div className="field-group">
+                <span>Live photo of the petrol nozzle (required)</span>
+                {!cameraOpen && !nozzlePhotoPreviewUrl && (
+                  <button type="button" className="secondary-btn" onClick={openNozzleCamera}>
+                    <Camera size={16} /> Open rear camera & capture nozzle
+                  </button>
+                )}
+                {cameraOpen && (
+                  <div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
+                    <video
+                      ref={cameraVideoRef}
+                      autoPlay
+                      muted
+                      playsInline
+                      aria-label="Live rear camera preview for fuel nozzle proof"
+                      style={{ width: '100%', maxHeight: 320, objectFit: 'cover', background: '#0f172a', borderRadius: 12 }}
+                    />
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      <button type="button" className="primary-btn" onClick={captureNozzlePhoto}><Camera size={15} /> Capture live photo</button>
+                      <button type="button" className="secondary-btn" onClick={stopNozzleCamera}>Cancel camera</button>
+                    </div>
+                  </div>
+                )}
+                {nozzlePhotoPreviewUrl && (
+                  <div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
+                    <img src={nozzlePhotoPreviewUrl} alt="Fresh in-app camera capture of the car's petrol nozzle" style={{ width: '100%', maxHeight: 260, objectFit: 'contain', borderRadius: 10, background: '#0f172a' }} />
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+                      <small className="muted">Captured by VaahanSathi camera · {nozzlePhotoCapturedAt ? new Date(nozzlePhotoCapturedAt).toLocaleString('en-IN') : ''}</small>
+                      <button type="button" className="secondary-btn" onClick={retakeNozzlePhoto}>Retake photo</button>
+                    </div>
+                  </div>
+                )}
+                {cameraError && <small className="tripguard-error">{cameraError}</small>}
+              </div>
+              <small className="muted">Use the live rear camera. Keep the car’s fuel inlet, nozzle and pump area visible. The app attaches a fresh GPS fix, timestamp and system-generated location evidence. Do not use a saved gallery image.</small>
+            </>
+          )}
+          {category !== 'fuel' && (
+            <label className="field-group"><span>Supporting photo (optional)</span>
+              <input type="file" accept="image/jpeg,image/png,image/webp" capture="environment" onChange={(e) => setNozzlePhoto(e.target.files?.[0] || null)} />
+            </label>
+          )}
+          <label className="field-group"><span>Why is this expense needed?</span>
+            <textarea rows={2} required maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Briefly explain why this extra spend is needed during the trip." />
+          </label>
+          <button className="primary-btn-wide" type="submit" disabled={busy === 'request' || cameraOpen || !amount || reason.trim().length < 5 || (category === 'fuel' && (!nozzlePhoto || !nozzlePhotoCapturedAt))}>
+            {busy === 'request' ? 'Capturing GPS & submitting…' : 'Send proof for customer approval'}
+          </button>
+        </form>
+      )}
+
+      {notice && <p className="tripguard-status" role="status">{notice}</p>}
+      {error && <p className="tripguard-error" role="alert">{error}</p>}
+    </section>
+  );
+}
+
 // ----------------- Trips Page -----------------
-function TripsPage({ bookings, filter, setFilter, update, onRate, onPay, onTrack, onBook, receipts, onCashConfirm, onRefresh, cashRewardsPoints = 0 }: any) {
+function TripsPage({ bookings, filter, setFilter, update, onRate, onPay, onTrack, onBook, receipts, onReportDriver, onRefresh, cashRewardsPoints = 0 }: any) {
   const filters = ['Upcoming', 'Completed', 'Cancelled'];
   const list = bookings.filter((b: Booking) =>
     filter === 'Upcoming'
-      ? ['Searching', 'Driver assigned', 'Driver arriving', 'Trip started', 'Awaiting cash confirmation'].includes(b.status)
+      ? ['Searching', 'Driver assigned', 'Driver arriving', 'Trip started'].includes(b.status)
       : filter === 'Completed'
       ? ['Trip completed', 'Rated'].includes(b.status)
       : b.status === 'Cancelled'
@@ -1658,7 +2094,7 @@ function TripsPage({ bookings, filter, setFilter, update, onRate, onPay, onTrack
         </button>
       </div>
 
-      <div className="cashcircle-summary"><span className="cashcircle-icon">₹</span><div><b>CashCircle rewards</b><small>{cashRewardsPoints} points earned from confirmed cash trips</small></div></div>
+      <div className="cashcircle-summary"><span className="cashcircle-icon">₹</span><div><b>CashCircle rewards</b><small>{cashRewardsPoints} points earned from cash trips marked as collected</small></div></div>
       <div className="tabs-row">
         {filters.map((f) => (
           <button
@@ -1671,7 +2107,7 @@ function TripsPage({ bookings, filter, setFilter, update, onRate, onPay, onTrack
               {
                 bookings.filter((b: Booking) =>
                   f === 'Upcoming'
-                    ? ['Searching', 'Driver assigned', 'Driver arriving', 'Trip started', 'Awaiting cash confirmation'].includes(b.status)
+                    ? ['Searching', 'Driver assigned', 'Driver arriving', 'Trip started'].includes(b.status)
                     : f === 'Completed'
                     ? ['Trip completed', 'Rated'].includes(b.status)
                     : b.status === 'Cancelled'
@@ -1722,13 +2158,15 @@ function TripsPage({ bookings, filter, setFilter, update, onRate, onPay, onTrack
                 </div>
               </div>
 
+              <TripExpensePanel booking={b} role="customer" onRefresh={onRefresh} />
+
               {b.status === 'Driver arriving' && (
                 <CarCarePassport booking={b} role="customer" onRefresh={onRefresh} />
               )}
 
               {/* Live, transparent trip progress */}
               {b.status !== 'Cancelled' && (() => {
-                const stages = ['Searching', 'Driver assigned', 'Driver arriving', 'Trip started', 'Awaiting cash confirmation', 'Trip completed'];
+                const stages = ['Searching', 'Driver assigned', 'Driver arriving', 'Trip started', 'Trip completed'];
                 const current = Math.max(0, stages.indexOf(b.status));
                 return (
                   <section className="trip-progress" aria-label="Trip progress">
@@ -1740,7 +2178,7 @@ function TripsPage({ bookings, filter, setFilter, update, onRate, onPay, onTrack
                       {stages.map((stage, index) => (
                         <li key={stage} className={index < current ? 'complete' : index === current ? 'current' : ''}>
                           <span className="trip-progress-dot">{index < current ? <Check size={12} /> : index + 1}</span>
-                          <span>{stage === 'Searching' ? 'Finding a driver' : stage === 'Awaiting cash confirmation' ? 'Cash settlement pending' : stage}</span>
+                          <span>{stage === 'Searching' ? 'Finding a driver' : stage}</span>
                         </li>
                       ))}
                     </ol>
@@ -1793,30 +2231,36 @@ function TripsPage({ bookings, filter, setFilter, update, onRate, onPay, onTrack
                       <Navigation size={16} /> Track Driver Route
                     </button>
                   )}
+                  {onReportDriver && b.driverId && !['Trip completed', 'Rated', 'Cancelled'].includes(b.status) && (
+                    <button className="action-btn" onClick={() => onReportDriver(b)}>
+                      <AlertCircle size={15} /> Report an extra-money request
+                    </button>
+                  )}
                 </div>
-                {['Trip completed', 'Awaiting cash confirmation'].includes(b.status) && (
+                {['Trip completed', 'Rated'].includes(b.status) && (
                   <>
                     <div className="trip-actions-row">
                       {b.status === 'Trip completed' && <button className="action-btn rate" onClick={() => onRate(b)}><Star size={16} /> Rate Driver</button>}
-                      {b.payment_status === 'Paid' || b.payment_status === 'Paid · Cash' ? <span className="status-pill done">Paid · {b.payment_method === 'cash' ? 'Cash' : 'Online'}</span> :
-                        b.payment_method === 'cash' ? <button className="action-btn pay" onClick={() => onCashConfirm(b)} disabled={b.cashCustomerConfirmed}><IndianRupee size={16}/>{b.cashCustomerConfirmed ? 'Amount confirmation sent' : 'Confirm amount handed over'}</button> :
-                        <button className="action-btn pay" onClick={() => onPay(b)}><CreditCard size={16} /> Pay {money(b.total)}</button>}
-                      {b.payment_method === 'cash' && b.cashPin && b.payment_status !== 'Paid · Cash' && <div className="cash-pin-card">
-                        <div className="cash-pin-heading"><span className="cash-pin-icon"><ShieldCheck size={17}/></span><span><b>Secure cash handover</b><small>Share this code only after the driver has returned any change and you have confirmed the final fare.</small></span><span className="cash-pin-live">ONE-TIME</span></div>
-                        <div className="cash-pin-digits" aria-label={`Cash handover PIN ${b.cashPin}`}>{String(b.cashPin).split('').map((digit, index) => <span key={index}>{digit}</span>)}</div>
-                        <small className="cash-pin-foot"><LockKeyhole size={13}/> Your driver needs this PIN to verify the receipt. Never share it over a call or chat.</small>
-                      </div>}
-                      {b.payment_method === 'cash' && b.cashCustomerConfirmed && <small className="muted">You confirmed {money(Number(b.cashCustomerAmount || 0))}. Waiting for driver verification.</small>}
+                      {b.payment_status === 'Paid' || b.payment_status === 'Paid · Cash'
+                        ? <span className="status-pill done">Paid · {b.payment_method === 'cash' ? 'Cash' : 'Online'}</span>
+                        : b.payment_method === 'cash'
+                          ? <span className="status-pill">Cash due · Pay your assigned driver directly</span>
+                          : <button className="action-btn pay" onClick={() => onPay(b)}><CreditCard size={16} /> Pay {money(b.amountDue ?? b.total)}</button>}
+                      {b.payment_method === 'cash' && b.payment_status !== 'Paid · Cash' && (
+                        <small className="muted">No cash PIN or customer confirmation is required. The driver marks collection after receiving the trip fare.</small>
+                      )}
                     </div>
                     <div className="trip-actions-row">
+                      {onReportDriver && (
+                        <button className="action-btn" onClick={() => onReportDriver(b)}>
+                          <AlertCircle size={15} /> Report driver asking for extra money
+                        </button>
+                      )}
                       <button className="action-btn" onClick={() => downloadInvoice(b)}>
                         <FileText size={15} /> Download Invoice
                       </button>
                       {receipts.some((r: Receipt) => r.bookingId === b.id) && (
-                        <button
-                          className="action-btn"
-                          onClick={() => downloadReceipt(b, receipts.find((r: Receipt) => r.bookingId === b.id)!)}
-                        >
+                        <button className="action-btn" onClick={() => downloadReceipt(b, receipts.find((r: Receipt) => r.bookingId === b.id)!)}>
                           <Check size={15} /> View Receipt
                         </button>
                       )}
@@ -1833,6 +2277,76 @@ function TripsPage({ bookings, filter, setFilter, update, onRate, onPay, onTrack
 }
 
 // ----------------- Driver Partner Page -----------------
+function DriverComplaintsPanel({ user, flash }: any) {
+  const [complaints, setComplaints] = useState<any[]>([]);
+  const [adjustments, setAdjustments] = useState<any[]>([]);
+  const [responses, setResponses] = useState<Record<string, string>>({});
+  const [busyId, setBusyId] = useState('');
+
+  const load = async () => {
+    try {
+      const result = await api('/driver/complaints');
+      setComplaints(result.complaints || []);
+      setAdjustments(result.adjustments || []);
+    } catch (error: any) { console.warn('Driver complaint refresh:', error.message); }
+  };
+  useEffect(() => {
+    load();
+    const timer = window.setInterval(load, 20000);
+    return () => window.clearInterval(timer);
+  }, [user?.id]);
+
+  const submitResponse = async (item: any) => {
+    const response = String(responses[item.id] || '').trim();
+    if (response.length < 5) { flash?.('Please add a little more detail to your response.'); return; }
+    setBusyId(item.id);
+    try {
+      await api(`/driver/complaints/${item.id}`, { method: 'PATCH', body: JSON.stringify({ response }) });
+      setResponses((current) => ({ ...current, [item.id]: '' }));
+      flash?.('Your response has been sent to Customer Care.');
+      await load();
+    } catch (error: any) { flash?.(error.message); }
+    finally { setBusyId(''); }
+  };
+
+  if (!complaints.length && !adjustments.length) return null;
+  return (
+    <section className="panel driver-badges-panel">
+      <div className="panel-header">
+        <div><span className="eyebrow">CUSTOMER CARE</span><h3>Complaints & your responses</h3><p>Review reports linked to your trips and share your side of the story.</p></div>
+        <span className="status-pill">{complaints.filter((c) => !['resolved','closed','unsubstantiated'].includes(c.status)).length} open</span>
+      </div>
+      {complaints.map((item) => (
+        <div key={item.id} className="panel" style={{padding:14,marginBottom:10}}>
+          <div style={{display:'flex',justifyContent:'space-between',gap:10,flexWrap:'wrap'}}>
+            <b>{item.subject || 'Customer report'}</b><span className="status-pill">{String(item.status || 'under_review').replace(/_/g,' ')}</span>
+          </div>
+          <small>{item.bookingId || 'No booking reference'} · {item.createdAt ? new Date(item.createdAt).toLocaleString('en-IN') : 'Recently reported'}</small>
+          {item.route && <p style={{margin:'8px 0'}}>{item.route}</p>}
+          <p style={{margin:'8px 0'}}>{item.description}</p>
+          {Number(item.reportedExtraAmount) > 0 && <p><b>Extra amount reported:</b> {money(item.reportedExtraAmount)}</p>}
+          {item.resolution && <p><b>Customer Care note:</b> {item.resolution}</p>}
+          {item.driverResponse && <p><b>Your last response:</b> {item.driverResponse}</p>}
+          {!['resolved','closed','unsubstantiated'].includes(item.status) && (
+            <div style={{display:'grid',gap:8,marginTop:10}}>
+              <textarea rows={3} value={responses[item.id] || ''} onChange={(e) => setResponses((current) => ({...current,[item.id]:e.target.value.slice(0,1000)}))} placeholder="Share your explanation or supporting context…" style={{width:'100%',padding:10,border:'1px solid var(--slate-200)',borderRadius:8,fontFamily:'inherit'}} />
+              <button className="primary-btn" disabled={busyId === item.id || String(responses[item.id] || '').trim().length < 5} onClick={() => submitResponse(item)}>{busyId === item.id ? 'Sending…' : 'Submit your response'}</button>
+              <small className="muted">A report does not automatically reduce your earnings. Customer Care reviews both sides first.</small>
+            </div>
+          )}
+          {item.earningsAdjustmentAmount > 0 && <p style={{color:'#b45309'}}><b>Reviewed earnings adjustment:</b> {money(item.earningsAdjustmentAmount)}. Contact Customer Care to ask for a review.</p>}
+        </div>
+      ))}
+      {adjustments.length > 0 && (
+        <div style={{marginTop:12}}>
+          <b>Approved earnings adjustments</b>
+          {adjustments.map((adjustment) => <div className="earning-item-row" key={adjustment.id}><span>{adjustment.bookingId || 'Trip'} · {adjustment.description}</span><strong>{money(adjustment.amount)}</strong></div>)}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function DriverPage({ bookings, update, user, onDutyChange, flash, onCashConfirm, onRefresh }: any) {
   const [available, setAvailable] = useState<boolean>(user?.available === true);
   const [otpTarget, setOtpTarget] = useState<{ booking: Booking; status: 'Trip started' | 'Trip completed' } | null>(null);
@@ -1877,7 +2391,7 @@ function DriverPage({ bookings, update, user, onDutyChange, flash, onCashConfirm
     prevSearching.current = count;
   }, [newRequests.length]);
 
-  const completed = bookings.filter((b: Booking) => b.driverId === user?.id && b.status === 'Trip completed');
+  const completed = bookings.filter((b: Booking) => b.driverId === user?.id && ['Trip completed', 'Rated'].includes(b.status));
   const totalEarnings = completed.reduce((s: number, b: Booking) => s + b.payout, 0);
 
   // One GPS watcher per driver. Send meaningful movement at a controlled cadence
@@ -1903,7 +2417,8 @@ function DriverPage({ bookings, update, user, onDutyChange, flash, onCashConfirm
         sending = true;
         const payload = {
           lat, lng, accuracy: position.coords.accuracy,
-          heading: position.coords.heading, speed: position.coords.speed
+          heading: position.coords.heading, speed: position.coords.speed,
+          capturedAt: position.timestamp
         };
         Promise.all(active.map((booking: Booking) => api(`/bookings/${booking.id}/location`, {
           method: 'POST', body: JSON.stringify(payload)
@@ -1950,6 +2465,8 @@ function DriverPage({ bookings, update, user, onDutyChange, flash, onCashConfirm
           <span className="toggle-track" />
         </label>
       </div>
+
+      <DriverComplaintsPanel user={user} flash={flash} />
 
       <section className="panel driver-badges-panel">
         <div className="panel-header"><div><span className="eyebrow">PARTNER GROWTH</span><h3>Your Driver Performance Batch</h3><p>Transparent levels based on completed rides and verified customer ratings.</p></div><span className="driver-achievement-badge"><BadgeCheck size={14}/>{user?.driverBatch?.name || 'Starter'} Batch</span></div>
@@ -2036,6 +2553,19 @@ function DriverPage({ bookings, update, user, onDutyChange, flash, onCashConfirm
                 </div>
               </div>
 
+              {b.status === 'Searching' && b.dispatchPriority && (
+                <div className="smart-match-card">
+                  <div className="smart-match-topline">
+                    <span className="smart-match-kicker"><Zap size={13}/> DISPATCH PRIORITY</span>
+                    <b>{b.dispatchPriority.label}</b>
+                  </div>
+                  <div className="smart-match-meta">
+                    <span>{b.bookingMode === 'immediate' ? 'Immediate request' : 'Scheduled request'}</span>
+                    <span>{b.dispatchPriority.minutesUntilPickup <= 0 ? 'Pickup time reached' : `Pickup in ${b.dispatchPriority.minutesUntilPickup} min`}</span>
+                  </div>
+                </div>
+              )}
+
               {b.status === 'Searching' && b.smartMatch && (
                 <div className="smart-match-card">
                   <div className="smart-match-topline">
@@ -2078,11 +2608,10 @@ function DriverPage({ bookings, update, user, onDutyChange, flash, onCashConfirm
                       <ArrowRight size={18} /> {b.carCarePassport?.customerConfirmedAt && b.carCarePassport?.driverConfirmedAt ? 'Verify start OTP' : 'Complete CarCare Passport first'}
                     </button>
                   )}
-                  {b.status === 'Awaiting cash confirmation' && b.payment_method === 'cash' && b.payment_status !== 'Paid · Cash' && (
+                  {b.status === 'Trip completed' && b.payment_method === 'cash' && b.payment_status !== 'Paid · Cash' && (
                     <div className="driver-cash-action">
-                      <div><b>Cash collection verification</b><small>Enter the amount you retained after returning any change, then verify the customer's one-time PIN.</small></div>
-                      <button className="primary-btn" style={{width:'100%',justifyContent:'center',background:'#0a7a6e'}} onClick={() => onCashConfirm(b)} disabled={b.cashDriverConfirmed}><ShieldCheck size={17}/>{b.cashDriverConfirmed ? 'Receipt submitted' : 'Verify cash handover'}</button>
-                      {b.cashDriverConfirmed && <small className="muted">You reported {money(Number(b.cashDriverAmount || 0))}. Waiting for customer confirmation.</small>}
+                      <div><b>Cash collection</b><small>After receiving the agreed fare, mark it as collected. No cash OTP or customer-side verification is required.</small></div>
+                      <button className="primary-btn" style={{width:'100%',justifyContent:'center',background:'#0a7a6e'}} onClick={() => onCashConfirm(b)}><IndianRupee size={17}/> Mark {money(b.amountDue ?? b.total)} collected</button>
                     </div>
                   )}
                   {b.status === 'Trip started' && (
@@ -2096,6 +2625,9 @@ function DriverPage({ bookings, update, user, onDutyChange, flash, onCashConfirm
                   )}
                 </div>
               </div>
+              {(b.status === 'Trip started' || (b.expenses || []).length > 0) && (
+                <TripExpensePanel booking={b} role="driver" onRefresh={onRefresh} />
+              )}
             </div>
           ))}
         </div>
@@ -2478,14 +3010,18 @@ function OTPVerificationModal({ booking, stage, onClose, onSubmit }: any) {
 function LiveAdminPage({ bookings, focus = 'Overview', flash }: any) {
   const [summary, setSummary] = useState<any>({});
   const [filter, setFilter] = useState('All');
-  const [hourlyRate, setHourlyRate] = useState(599);
+  const [pricingValues, setPricingValues] = useState<Record<string, number>>({
+    package4h: 499, package8h: 899, package12h: 1299, extraKm: 12,
+    extraHour: 100, outstationPerKm: 18, airport: 599, night: 200,
+    commission: 20, gst: 5, suvMultiplier: 1.15, luxuryMultiplier: 1.25
+  });
 
   const fetchSummary = async () => {
     try {
       const d = await api('/admin/summary');
       setSummary(d);
-      const h = d.pricing?.find((p: any) => p.key === 'hourly');
-      if (h) setHourlyRate(h.value);
+      const current = Object.fromEntries((d.pricing || []).map((item: any) => [item.key, Number(item.value)]));
+      setPricingValues((previous) => ({ ...previous, ...current, package4h: Number(current.package4h ?? current.hourly ?? previous.package4h) }));
     } catch {}
   };
 
@@ -2493,17 +3029,16 @@ function LiveAdminPage({ bookings, focus = 'Overview', flash }: any) {
     fetchSummary();
   }, [bookings]);
 
+  const updatePricingValue = (key: string, value: number) => setPricingValues((current) => ({ ...current, [key]: value }));
   const savePricing = async () => {
     try {
       await api('/admin/pricing', {
         method: 'PATCH',
-        body: JSON.stringify({ hourly: Number(hourlyRate) })
+        body: JSON.stringify({ ...pricingValues, hourly: pricingValues.package4h })
       });
-      flash?.('Pricing configuration saved.');
+      flash?.('All fare packages and add-on rates were saved to the database.');
       fetchSummary();
-    } catch (e: any) {
-      flash?.(e.message);
-    }
+    } catch (e: any) { flash?.(e.message); }
   };
 
   const t = summary.totals || {};
@@ -2556,27 +3091,29 @@ function LiveAdminPage({ bookings, focus = 'Overview', flash }: any) {
 
       {focus === 'Pricing' ? (
         <section className="panel pricing-panel">
-          <h3>Pricing Engine Configuration</h3>
-          <p>Update base rates and commission stored in Neon DB.</p>
+          <h3>Delhi NCR driver-service tariff</h3>
+          <p>Configurable launch rates for a customer-owned car. Fuel, tolls and parking remain separate customer expenses.</p>
           <div className="pricing-grid">
-            <label className="field-group">
-              <span>Hourly Base Fare (4 Hours) · INR</span>
-              <input
-                type="number"
-                value={hourlyRate}
-                onChange={(e) => setHourlyRate(Number(e.target.value))}
-              />
-            </label>
-            <div className="pricing-breakdown">
-              <div><span>Airport Drop Base</span><b>₹599</b></div>
-              <div><span>Night Surcharge (10PM - 6AM)</span><b>₹120</b></div>
-              <div><span>Platform Commission</span><b>20%</b></div>
-              <div><span>GST Rate</span><b>5%</b></div>
-            </div>
+            {([
+              ['package4h', '4 hours / 40 km package'],
+              ['package8h', '8 hours / 80 km package'],
+              ['package12h', '12 hours / 120 km package'],
+              ['extraKm', 'Extra local distance (₹/km)'],
+              ['extraHour', 'Extra hour (₹)'],
+              ['outstationPerKm', 'Outstation distance (₹/km)'],
+              ['airport', 'Airport package'],
+              ['night', 'Night surcharge (10 PM–6 AM)'],
+              ['commission', 'Platform commission (%)'],
+              ['gst', 'GST (%)']
+            ] as [string, string][]).map(([key, label]) => (
+              <label className="field-group" key={key}>
+                <span>{label}</span>
+                <input type="number" min="0" step="1" value={pricingValues[key] ?? 0} onChange={(e) => updatePricingValue(key, Number(e.target.value))} />
+              </label>
+            ))}
           </div>
-          <button className="primary-btn" onClick={savePricing}>
-            Save New Pricing to Neon DB <Check size={16} />
-          </button>
+          <p className="muted">Vehicle upgrades: SUV {pricingValues.suvMultiplier}× · Luxury {pricingValues.luxuryMultiplier}×. Values can be changed by an authorised admin.</p>
+          <button className="primary-btn" onClick={savePricing}>Save all pricing to Neon DB <Check size={16} /></button>
         </section>
       ) : focus === 'Drivers' ? (
         <section className="panel drivers-admin-panel">
@@ -2690,14 +3227,21 @@ function AdminModulePage({ module, bookings, flash }: { module: string; bookings
   };
 
   const resolveDispute = async (disputeId: string, status: string) => {
-    const resolution = prompt('Enter resolution note:');
+    const resolution = prompt('Enter the investigation / resolution note:');
     if (!resolution) return;
+    let penaltyAmount = 0;
+    if (status === 'substantiated') {
+      const rawPenalty = prompt('Optional driver earnings adjustment in INR (enter 0 for no adjustment):', '0');
+      if (rawPenalty === null) return;
+      penaltyAmount = Number(rawPenalty || 0);
+      if (!Number.isSafeInteger(penaltyAmount) || penaltyAmount < 0) { flash?.('Enter a valid whole-rupee adjustment.'); return; }
+    }
     try {
       await api(`/admin/disputes/${disputeId}`, {
         method: 'PATCH',
-        body: JSON.stringify({ status, resolution })
+        body: JSON.stringify({ status, resolution, penaltyAmount })
       });
-      flash?.('Dispute updated.');
+      flash?.(penaltyAmount > 0 ? 'Complaint reviewed and earnings adjustment ledger updated.' : 'Complaint status updated.');
       load();
     } catch (e: any) { flash?.(e.message); }
   };
@@ -2859,16 +3403,18 @@ function AdminModulePage({ module, bookings, flash }: { module: string; bookings
                     ) : module === 'disputes' ? (
                       <tr key={r.id || i}>
                         <td><b>{String(r.id || 'Case').slice(0, 8)}…</b><small>{r.createdAt ? new Date(r.createdAt).toLocaleDateString('en-IN') : '—'}</small></td>
-                        <td>{r.userName || '—'}</td>
-                        <td>{r.subject || 'General complaint'}<small>{r.bookingId || '—'}</small></td>
-                        <td><span className={`status-pill ${r.status === 'resolved' ? 'done' : ''}`}>{r.status || 'open'}</span></td>
+                        <td>{r.userName || '—'}<small>Driver: {r.driverName || r.driverId || 'Not assigned'}</small></td>
+                        <td>{r.subject || 'General complaint'}<small>{r.bookingId || '—'}{r.reportedExtraAmount ? ` · asked ${money(r.reportedExtraAmount)} extra` : ''}</small><small>{r.description || ''}</small>{r.driverResponse && <small><b>Driver response:</b> {r.driverResponse}</small>}</td>
+                        <td><span className={`status-pill ${['resolved','closed','unsubstantiated'].includes(r.status) ? 'done' : ''}`}>{String(r.status || 'open').replace(/_/g, ' ')}</span></td>
                         <td style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                          {r.status === 'open' && (
+                          {!['resolved','closed','unsubstantiated'].includes(r.status) && (
                             <>
-                              <button className="inline-action-btn success" onClick={() => resolveDispute(r.id, 'resolved')}>Resolve</button>
-                              <button className="inline-action-btn danger" onClick={() => resolveDispute(r.id, 'closed')}>Close</button>
+                              <button className="inline-action-btn success" onClick={() => resolveDispute(r.id, 'substantiated')}>Substantiate</button>
+                              <button className="inline-action-btn danger" onClick={() => resolveDispute(r.id, 'unsubstantiated')}>Not substantiated</button>
+                              <button className="inline-action-btn" onClick={() => resolveDispute(r.id, 'escalated')}>Escalate</button>
                             </>
                           )}
+                          {r.earningsAdjustmentAmount > 0 && <small>Ledger adjustment: {money(r.earningsAdjustmentAmount)}</small>}
                         </td>
                       </tr>
                     ) : (
@@ -2895,7 +3441,7 @@ function AdminModulePage({ module, bookings, flash }: { module: string; bookings
 
 // ----------------- Other Support Pages -----------------
 function EarningsPage({ bookings }: any) {
-  const completed = bookings.filter((b: Booking) => b.status === 'Trip completed');
+  const completed = bookings.filter((b: Booking) => ['Trip completed', 'Rated'].includes(b.status));
   const total = completed.reduce((s: number, b: Booking) => s + b.payout, 0);
 
   return (
@@ -3676,45 +4222,6 @@ function AuthModal({ onClose, onLogin, onRegister, onCustomerLogin, onCustomerRe
     </div>
   );
 }
-function CashHandoverModal({ booking, mode, onClose, onSubmit }: { booking: Booking; mode: 'customer' | 'driver'; onClose: () => void; onSubmit: (amount: number, pin?: string) => Promise<boolean> }) {
-  const [amount, setAmount] = useState(String(Math.round(Number(booking.total || 0))));
-  const [pin, setPin] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState('');
-  const isCustomer = mode === 'customer';
-  const validAmount = /^\d{1,7}$/.test(amount.trim()) && Number.isSafeInteger(Number(amount)) && Number(amount) >= 0;
-  const submit = async () => {
-    if (!validAmount) { setError('Enter a valid amount in whole rupees.'); return; }
-    if (!isCustomer && !/^\d{6}$/.test(pin)) { setError('Enter all 6 digits of the customer PIN.'); return; }
-    setSubmitting(true); setError('');
-    try { const ok = await onSubmit(Number(amount), isCustomer ? undefined : pin); if (!ok) setError('Please review the details and try again.'); }
-    finally { setSubmitting(false); }
-  };
-  return (
-    <div className="overlay cash-handover-overlay" onMouseDown={(e) => e.target === e.currentTarget && !submitting && onClose()}>
-      <div className="modal cash-handover-modal">
-        <button className="modal-close-btn" onClick={onClose} disabled={submitting}><X size={18}/></button>
-        <div className="cash-modal-emblem"><ShieldCheck size={25}/></div>
-        <span className="eyebrow">{isCustomer ? 'CUSTOMER PAYMENT CONFIRMATION' : 'DRIVER RECEIPT VERIFICATION'}</span>
-        <h2>{isCustomer ? 'Confirm cash handed over' : 'Verify cash received'}</h2>
-        <p className="cash-modal-intro">{isCustomer ? 'If you paid the exact trip fare, the amount is already filled in. Just confirm. Change the amount only if your final payment was different.' : 'Enter the amount you kept after returning change, then verify the customer’s one-time PIN.'}</p>
-        <div className="cash-fare-summary"><span>Trip fare</span><b>{money(booking.total)}</b><small>Booking #{String(booking.id).slice(-8)} · {isCustomer ? 'Quick confirmation' : 'One-time secure verification'}</small></div>
-        <label className="cash-field-label" htmlFor="cash-handover-amount">{isCustomer ? 'Final amount paid after change (₹)' : 'Amount retained / received (₹)'}</label>
-        <div className="cash-amount-input"><IndianRupee size={20}/><input id="cash-handover-amount" type="text" inputMode="numeric" autoComplete="off" value={amount} onChange={(e) => { setAmount(e.target.value.replace(/[^0-9]/g, '').slice(0, 7)); setError(''); }} placeholder="Enter amount"/></div>
-        {!isCustomer && <>
-          <label className="cash-field-label" htmlFor="cash-handover-pin">Customer’s 6-digit secure PIN</label>
-          <input id="cash-handover-pin" className="cash-pin-input" type="password" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={pin} onChange={(e) => { setPin(e.target.value.replace(/\D/g, '').slice(0, 6)); setError(''); }} placeholder="• • • • • •" aria-label="Six digit cash handover PIN"/>
-          <small className="cash-pin-hint"><LockKeyhole size={13}/> PIN is verified securely and can only be used once.</small>
-        </>}
-        {error && <p className="cash-form-error"><AlertCircle size={15}/>{error}</p>}
-        <div className="cash-modal-assurance"><ShieldCheck size={16}/><span>Both parties must confirm the same amount. Any mismatch is flagged for admin review—never silently marked as paid.</span></div>
-        <button className="primary-btn-wide cash-submit-btn" onClick={submit} disabled={submitting || !validAmount || (!isCustomer && pin.length !== 6)}>{submitting ? 'Verifying securely…' : isCustomer ? `Confirm ${money(Number(amount || 0))} paid` : 'Verify PIN & confirm cash'} <ArrowRight size={17}/></button>
-        <button className="cash-cancel-btn" onClick={onClose} disabled={submitting}>Cancel</button>
-      </div>
-    </div>
-  );
-}
-
 function CheckoutModal({ booking, onClose, onPay }: any) {
   if (!booking) return null;
   return (
@@ -3725,8 +4232,8 @@ function CheckoutModal({ booking, onClose, onPay }: any) {
         <h2>Complete Trip Payment</h2>
         <p className="checkout-route">{booking.pickup} → {booking.destination}</p>
         <div className="total-due-banner">
-          <span>Total Fare Amount</span>
-          <b>{money(booking.total)}</b>
+          <span>Trip fare + approved, receipted expenses</span>
+          <b>{money(booking.amountDue ?? booking.total)}</b>
         </div>
         <p className="modal-sub">Pay securely using UPI, cards, or net banking through Razorpay. VaahanSathi records payment only after server verification.</p>
         <button className="primary-btn-wide" onClick={() => onPay(booking)}>
@@ -3832,66 +4339,55 @@ function RatingModal({ stars, setStars, onClose, onSubmit }: any) {
 }
 
 // ----------------- Dispute Modal -----------------
-function DisputeModal({ bookings, onClose, onSubmit }: any) {
-  const [bookingId, setBookingId] = useState('');
-  const [subject, setSubject] = useState('');
+function DisputeModal({ bookings, onClose, onSubmit, defaultBookingId = '', defaultSubject = '' }: any) {
+  const [bookingId, setBookingId] = useState(defaultBookingId);
+  const [subject, setSubject] = useState(defaultSubject);
   const [description, setDescription] = useState('');
+  const [reportedExtraAmount, setReportedExtraAmount] = useState('');
   const [busy, setBusy] = useState(false);
-
+  const isExtraMoneyReport = subject === 'Driver demanded extra money';
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!subject.trim() || !description.trim()) return;
+    if (isExtraMoneyReport && reportedExtraAmount && (!/^\\d{1,7}$/.test(reportedExtraAmount) || Number(reportedExtraAmount) > 1000000)) return;
     setBusy(true);
-    try {
-      await onSubmit(bookingId, subject, description);
-    } finally {
-      setBusy(false);
-    }
+    try { await onSubmit(bookingId, subject, description, reportedExtraAmount ? Number(reportedExtraAmount) : undefined); }
+    finally { setBusy(false); }
   };
-
   return (
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal dispute-modal">
         <button className="modal-close-btn" onClick={onClose}><X size={18} /></button>
-        <div className="modal-brand"><AlertCircle size={22} /><span>File a Dispute</span></div>
-        <h2 style={{ fontSize: '20px', marginBottom: '6px' }}>Report a Problem</h2>
-        <p className="modal-sub">Our team reviews and responds within 24 hours.</p>
+        <div className="modal-brand"><AlertCircle size={22} /><span>Customer Care</span></div>
+        <h2 style={{ fontSize: '20px', marginBottom: '6px' }}>Report a trip problem</h2>
+        <p className="modal-sub">Our team reviews every report. Driver earnings adjustments are considered only after investigation.</p>
         <form onSubmit={submit} className="auth-form">
           <label className="field-group">
-            <span>Related Booking (optional)</span>
+            <span>Related Booking</span>
             <select value={bookingId} onChange={(e) => setBookingId(e.target.value)}>
               <option value="">No specific booking</option>
-              {bookings.map((b: Booking) => (
-                <option key={b.id} value={b.id}>{b.id} — {b.pickup.split(',')[0]} → {b.destination.split(',')[0]}</option>
-              ))}
+              {bookings.map((b: Booking) => <option key={b.id} value={b.id}>{b.id} — {b.pickup.split(',')[0]} → {b.destination.split(',')[0]}</option>)}
             </select>
           </label>
           <label className="field-group">
-            <span>Subject</span>
+            <span>What happened?</span>
             <select value={subject} onChange={(e) => setSubject(e.target.value)} required>
               <option value="">Select a subject…</option>
+              <option value="Driver demanded extra money">Driver demanded extra money</option>
               <option value="Fare dispute">Fare dispute</option>
               <option value="Driver behaviour">Driver behaviour</option>
               <option value="Trip not completed">Trip not completed</option>
-              <option value="OTP issue">OTP issue</option>
+              <option value="OTP issue">Trip OTP issue</option>
               <option value="Payment issue">Payment issue</option>
               <option value="Other">Other</option>
             </select>
           </label>
+          {isExtraMoneyReport && <label className="field-group"><span>Extra amount requested (₹, optional)</span><input type="number" min="0" max="1000000" step="1" value={reportedExtraAmount} onChange={(e) => setReportedExtraAmount(e.target.value)} placeholder="Amount the driver asked for" /></label>}
           <label className="field-group">
-            <span>Description</span>
-            <textarea
-              required
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Describe what happened in detail…"
-              rows={4}
-              style={{ width: '100%', padding: '12px', border: '1px solid var(--slate-200)', borderRadius: '8px', fontSize: '14px', resize: 'vertical', outline: 'none', fontFamily: 'inherit' }}
-            />
+            <span>Describe what happened</span>
+            <textarea required value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Tell us what the driver said or what happened during the trip…" rows={4} style={{ width:'100%',padding:'12px',border:'1px solid var(--slate-200)',borderRadius:'8px',fontSize:'14px',resize:'vertical',outline:'none',fontFamily:'inherit' }} />
           </label>
-          <button className="primary-btn-wide" type="submit" disabled={busy || !subject || !description}>
-            {busy ? 'Submitting…' : 'Submit Dispute'}
-          </button>
+          <button className="primary-btn-wide" type="submit" disabled={busy || !subject || !description.trim()}>{busy ? 'Submitting report…' : 'Submit to Customer Care'}</button>
         </form>
       </div>
     </div>

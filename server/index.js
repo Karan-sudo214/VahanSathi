@@ -3,7 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { randomUUID, randomInt, randomBytes, createCipheriv, createDecipheriv, createHmac, createHash, timingSafeEqual, createPublicKey, verify as verifySignature } from 'node:crypto';
+import { randomUUID, randomInt, createHmac, createHash, timingSafeEqual, createPublicKey, verify as verifySignature } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import pg from 'pg';
@@ -13,24 +13,6 @@ const app = express();
 const port = process.env.PORT || 4000;
 const secret = process.env.JWT_SECRET || (process.env.NODE_ENV === 'production' ? null : 'local-development-secret-change-before-deploy');
 
-const cashPinKey = createHmac('sha256', secret || 'local-development-secret-change-before-deploy').update('vaahansathi-cash-pin-encryption-v1').digest();
-function encryptCashPin(pin) {
-  const iv = randomBytes(12);
-  const cipher = createCipheriv('aes-256-gcm', cashPinKey, iv);
-  const ciphertext = Buffer.concat([cipher.update(String(pin), 'utf8'), cipher.final()]);
-  return [iv.toString('hex'), cipher.getAuthTag().toString('hex'), ciphertext.toString('hex')].join('.');
-}
-function decryptCashPin(payload) {
-  if (!payload) return null;
-  const [ivHex, tagHex, ciphertextHex] = String(payload).split('.');
-  if (!ivHex || !tagHex || !ciphertextHex) return null;
-  const decipher = createDecipheriv('aes-256-gcm', cashPinKey, Buffer.from(ivHex, 'hex'));
-  decipher.setAuthTag(Buffer.from(tagHex, 'hex'));
-  return Buffer.concat([decipher.update(Buffer.from(ciphertextHex, 'hex')), decipher.final()]).toString('utf8');
-}
-function hashCashPin(pin) {
-  return createHmac('sha256', secret).update(String(pin)).digest('hex');
-}
 if (!secret) throw new Error('JWT_SECRET must be configured before production startup.');
 
 app.use(cors({ origin: process.env.CLIENT_ORIGIN || '*' }));
@@ -39,16 +21,22 @@ app.use(express.json({ limit: '1mb', verify: (req, res, buffer) => { req.rawBody
 const dataPath = path.resolve(process.env.DATA_PATH || './data/app.json');
 fs.mkdirSync(path.dirname(dataPath), { recursive: true });
 
+const DEFAULT_PRICING = Object.freeze({
+  version: 2, hourly: 499, package4h: 499, package8h: 899, package12h: 1299,
+  extraKm: 12, extraHour: 100, outstationPerKm: 18, night: 200, airport: 599,
+  commission: 20, gst: 5, suvMultiplier: 1.15, luxuryMultiplier: 1.25
+});
+function normalizePricing(pricing = {}) {
+  if (Number(pricing.version) === 2) return { ...DEFAULT_PRICING, ...pricing };
+  return {
+    ...DEFAULT_PRICING,
+    commission: Number.isFinite(Number(pricing.commission)) ? Number(pricing.commission) : DEFAULT_PRICING.commission,
+    gst: Number.isFinite(Number(pricing.gst)) ? Number(pricing.gst) : DEFAULT_PRICING.gst
+  };
+}
 const blank = () => ({
-  users: [],
-  bookings: [],
-  ratings: [],
-  history: [],
-  auditLogs: [],
-  disputes: [],
-  payments: [],
-  payouts: [],
-  pricing: { hourly: 599, night: 120, airport: 599, commission: 20, gst: 5 }
+  users: [], bookings: [], ratings: [], history: [], auditLogs: [],
+  disputes: [], payments: [], payouts: [], pricing: { ...DEFAULT_PRICING }
 });
 
 let data;
@@ -57,6 +45,8 @@ try {
 } catch {
   data = blank();
 }
+data = { ...blank(), ...data };
+data.pricing = normalizePricing(data.pricing);
 
 // ----------------- Neon PostgreSQL Database -----------------
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -284,7 +274,7 @@ async function seedDefaultAccounts() {
   data.bookings = seedBookings;
   data.ratings = seedRatings;
   data.history = seedHistory;
-  data.pricing = { hourly: 599, night: 120, airport: 599, commission: 20, gst: 5 };
+  data.pricing = { ...DEFAULT_PRICING };
 
   for (const u of seedUsers) await persistItem('app_users', u.id, u);
   for (const b of seedBookings) await persistItem('app_bookings', b.id, b);
@@ -393,12 +383,10 @@ async function loadNeon() {
       totalRows += count;
     }
 
-    if (pricingResult.rows[0]) {
-      data.pricing = pricingResult.rows[0].payload;
-    }
-
+    data.pricing = normalizePricing(pricingResult.rows[0]?.payload || data.pricing);
     databaseReady = true;
     databaseError = '';
+    await persistPricing(data.pricing);
 
     if (totalRows > 0 && loaded.users?.length > 0) {
       for (const name of Object.keys(postgresTables)) {
@@ -560,6 +548,74 @@ function tripGuardParticipant(req, booking) {
     (req.user.role === 'driver' && booking.driverId === req.user.id);
 }
 
+function confirmedExpenseTotal(booking) {
+  return (Array.isArray(booking.expenses) ? booking.expenses : [])
+    .filter((expense) => expense.status === 'confirmed')
+    .reduce((sum, expense) => sum + Math.max(0, Number(expense.actualAmount || 0)), 0);
+}
+
+function bookingAmountDue(booking) {
+  return Math.max(0, Number(booking.total || 0)) + confirmedExpenseTotal(booking);
+}
+
+function markExpenseRecordsPaid(booking, expenseIds, method, paidAt) {
+  const ids = new Set(Array.isArray(expenseIds) ? expenseIds : []);
+  for (const expense of Array.isArray(booking.expenses) ? booking.expenses : []) {
+    if (ids.has(expense.id) && expense.status === 'confirmed') {
+      expense.status = 'paid';
+      expense.paymentStatus = 'paid';
+      expense.paymentMethod = method;
+      expense.paidAt = paidAt;
+      expense.timeline = Array.isArray(expense.timeline) ? expense.timeline : [];
+      expense.timeline.push({ status: 'paid', at: paidAt, actorRole: 'system', note: `Reimbursed with ${method} booking payment.` });
+    }
+  }
+}
+
+function xmlEscape(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (char) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;'
+  })[char]);
+}
+
+function buildGpsExpenseSnapshot({ bookingId, lat, lng, accuracy, capturedAt, serverReceivedAt }) {
+  const latText = Number(lat).toFixed(6);
+  const lngText = Number(lng).toFixed(6);
+  const mapUrl = `https://www.openstreetmap.org/?mlat=${encodeURIComponent(latText)}&mlon=${encodeURIComponent(lngText)}#map=17/${encodeURIComponent(latText)}/${encodeURIComponent(lngText)}`;
+  const captured = new Date(capturedAt || serverReceivedAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'medium' });
+  const received = new Date(serverReceivedAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'medium' });
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="960" height="560" viewBox="0 0 960 560">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f0fdfa"/><stop offset="1" stop-color="#e8eef7"/></linearGradient>
+    <pattern id="grid" width="44" height="44" patternUnits="userSpaceOnUse"><path d="M44 0H0V44" fill="none" stroke="#bfd1d6" stroke-width="1.5"/></pattern>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="7" stdDeviation="8" flood-color="#15323b" flood-opacity=".15"/></filter>
+  </defs>
+  <rect width="960" height="560" rx="28" fill="url(#bg)"/>
+  <rect x="20" y="20" width="920" height="520" rx="22" fill="#f8fafc" stroke="#cbd5e1" stroke-width="2"/>
+  <rect x="40" y="106" width="880" height="230" rx="15" fill="#e8f1ef"/>
+  <rect x="40" y="106" width="880" height="230" rx="15" fill="url(#grid)" opacity=".9"/>
+  <path d="M50 278 C170 222 245 258 350 195 S590 220 710 145 S830 163 910 120" fill="none" stroke="#fff" stroke-width="18" stroke-linecap="round"/>
+  <path d="M50 278 C170 222 245 258 350 195 S590 220 710 145 S830 163 910 120" fill="none" stroke="#b5c8cc" stroke-width="3" stroke-dasharray="12 9" stroke-linecap="round"/>
+  <path d="M232 112 L306 332 M540 112 L590 332 M770 110 L810 335" fill="none" stroke="#fff" stroke-width="12"/>
+  <g transform="translate(480 220)" filter="url(#shadow)">
+    <circle r="48" fill="#0f766e" opacity=".16"/>
+    <path d="M0 -42 C-24 -42 -41 -24 -41 0 C-41 30 0 66 0 66 S41 30 41 0 C41 -24 24 -42 0 -42Z" fill="#dc2626" stroke="#fff" stroke-width="5"/>
+    <circle cy="-2" r="13" fill="#fff"/>
+  </g>
+  <rect x="58" y="40" width="12" height="34" rx="6" fill="#0f766e"/>
+  <text x="88" y="62" font-family="Arial,sans-serif" font-size="25" font-weight="700" fill="#0f172a">VAAHANSATHI · AUTO-CAPTURED GPS PROOF</text>
+  <text x="60" y="372" font-family="Arial,sans-serif" font-size="18" font-weight="700" fill="#0f766e">DEVICE LOCATION CAPTURED BY THE APP</text>
+  <text x="60" y="412" font-family="Arial,sans-serif" font-size="25" font-weight="700" fill="#0f172a">Latitude: ${latText}    Longitude: ${lngText}</text>
+  <text x="60" y="447" font-family="Arial,sans-serif" font-size="20" fill="#334155">GPS accuracy: ±${Math.round(Number(accuracy) || 0)} metres</text>
+  <text x="60" y="480" font-family="Arial,sans-serif" font-size="17" fill="#334155">Device capture: ${xmlEscape(captured)}</text>
+  <text x="60" y="507" font-family="Arial,sans-serif" font-size="17" fill="#334155">Server received: ${xmlEscape(received)} · Booking: ${xmlEscape(bookingId)}</text>
+  <text x="60" y="528" font-family="Arial,sans-serif" font-size="12" fill="#64748b">System-generated evidence card. Select the map link in VaahanSathi to inspect the coordinates.</text>
+</svg>`;
+  const delta = 0.006;
+  const mapEmbedUrl = `https://www.openstreetmap.org/export/embed.html?bbox=${lng-delta}%2C${lat-delta}%2C${lng+delta}%2C${lat+delta}&layer=mapnik&marker=${latText}%2C${lngText}`;
+  return { svg, mapUrl, mapEmbedUrl };
+}
+
 const adminOnly = roles('admin', 'super_admin', 'operations_admin');
 
 const cityLandmarks = {
@@ -697,44 +753,61 @@ async function routeDistance(pickup, destination, city) {
 }
 
 function calculateFare({ tripType = 'Hourly', hours = 4, time = '08:00', vehicle = 'Sedan', distanceKm = null, distanceSource = null }) {
+  const pricing = normalizePricing(data.pricing);
   const h = Math.max(1, Math.min(24, Number(hours) || 1));
-  const hourlyTotal = Number(data.pricing.hourly) || 599;
-  const base =
-    tripType === 'Hourly' || tripType === 'Custom'
-      ? Math.max(100, Math.floor(hourlyTotal / 1.05) - 60) + Math.max(0, h - 4) * 120
-      : {
-          Airport: Number(data.pricing.airport) > 0 ? Number(data.pricing.airport) : 599,
-          'Night driver': 699,
-          'Full day': 999,
-          Outstation: 1499
-        }[tripType] || 599;
+  const km = Number.isFinite(Number(distanceKm)) ? Math.max(0, Number(distanceKm)) : 0;
+  const taxRate = Math.max(0, Number(pricing.gst) || 0) / 100;
+  const toPreTax = (value) => Math.round(Number(value || 0) / (1 + taxRate));
+  let packagePrice = 0;
+  let includedKm = 0;
 
+  if (tripType === 'Outstation') {
+    packagePrice = 0;
+  } else if (tripType === 'Airport') {
+    packagePrice = Number(pricing.airport); includedKm = 40;
+  } else if (tripType === 'Night driver') {
+    packagePrice = Number(pricing.package8h); includedKm = 80;
+  } else if (tripType === 'Full day') {
+    packagePrice = Number(pricing.package12h); includedKm = 120;
+  } else if (h <= 4) {
+    packagePrice = Number(pricing.package4h); includedKm = 40;
+  } else if (h <= 8) {
+    packagePrice = Number(pricing.package8h); includedKm = 80;
+  } else if (h <= 12) {
+    packagePrice = Number(pricing.package12h); includedKm = 120;
+  } else {
+    packagePrice = Number(pricing.package12h) + (h - 12) * Number(pricing.extraHour);
+    includedKm = 120 + (h - 12) * 10;
+  }
+
+  // Public package rates are GST-inclusive. Convert each displayed component to
+  // its taxable amount so the customer-facing itemisation adds up exactly.
+  const extraDistanceKm = tripType === 'Outstation' ? km : Math.max(0, km - includedKm);
+  const ratePerKm = tripType === 'Outstation' ? Number(pricing.outstationPerKm) : Number(pricing.extraKm);
+  const distanceChargeGross = Math.round(extraDistanceKm * ratePerKm);
   const hour = Number(String(time).slice(0, 2));
-  const night = hour >= 22 || hour < 6 ? Number(data.pricing.night) || 120 : 0;
-  const vehicleExtra = { Hatchback: 0, Sedan: 0, SUV: 100, Luxury: 350 }[vehicle] || 0;
-  const distanceCharge = distanceKm && distanceKm > 10 ? Math.round((distanceKm - 10) * 8) : 0;
-  const serviceFee = 60;
-  const subtotal = base + night + vehicleExtra + distanceCharge + serviceFee;
-  const gst = Math.round(subtotal * (Number(data.pricing.gst ?? 5) / 100));
-  const total = subtotal + gst;
-  const commissionRate = Number(data.pricing.commission ?? 20);
-  const commission = Math.round((total * commissionRate) / 100);
-  const payout = total - commission;
+  const nightGross = hour >= 22 || hour < 6 || tripType === 'Night driver' ? Number(pricing.night) : 0;
+  const multiplier = vehicle === 'SUV' ? Number(pricing.suvMultiplier) : vehicle === 'Luxury' ? Number(pricing.luxuryMultiplier) : 1;
+  const vehicleExtraGross = Math.round(packagePrice * Math.max(0, multiplier - 1));
 
+  const base = toPreTax(packagePrice);
+  const night = toPreTax(nightGross);
+  const vehicleExtra = toPreTax(vehicleExtraGross);
+  const distanceCharge = toPreTax(distanceChargeGross);
+  const subtotal = base + night + vehicleExtra + distanceCharge;
+  const gstRate = Number(pricing.gst) || 0;
+  const gst = Math.round(subtotal * taxRate);
+  const total = subtotal + gst;
+  const commissionRate = Math.max(0, Math.min(100, Number(pricing.commission) || 0));
+  const commission = Math.round(total * commissionRate / 100);
   return {
-    base,
-    night,
-    airport: tripType === 'Airport' ? base : 0,
+    base, night, airport: tripType === 'Airport' ? base : 0,
     outstation: tripType === 'Outstation' ? distanceCharge : 0,
-    vehicleExtra,
-    distanceKm,
-    distanceCharge,
-    serviceFee,
-    gst,
-    total,
-    payout,
-    commission,
-    currency: 'INR',
+    vehicleExtra, distanceKm: distanceKm ?? null, includedKm, extraDistanceKm,
+    distanceCharge, serviceFee: 0, gst, gstRate, total,
+    payout: total - commission, commission, commissionRate,
+    driverSharePercent: 100 - commissionRate,
+    currency: 'INR', pricingVersion: 2,
     distanceSource: distanceSource || 'calculated'
   };
 }
@@ -765,8 +838,9 @@ app.get('/api/events', auth, (req, res) => {
 // ----------------- API Endpoints -----------------
 
 app.get('/api/health', (_, res) => {
-  res.json({
-    ok: true,
+  const ready = process.env.NODE_ENV !== 'production' || databaseReady;
+  res.status(ready ? 200 : 503).json({
+    ok: ready,
     service: 'VaahanSathi',
     mode: databaseReady ? 'neon-postgres' : DATABASE_URL ? 'database-unavailable' : process.env.NODE_ENV === 'production' ? 'local-json-fallback' : 'local-development',
     database: databaseReady,
@@ -956,8 +1030,7 @@ app.post('/api/fare/estimate', asyncRoute(async (req, res) => {
 
 // Bookings
 // Razorpay Checkout: create orders on the server and verify every payment before marking a booking paid.
-// Cash settlement is a two-sided receipt: both parties enter the amount, and the driver
-// must also enter the customer's trip-specific cash PIN. Never accept a one-sided "paid" flag.
+// Cash service fare and customer-approved, receipted expenses are collected together without a cash OTP.
 async function recordCashEvent(booking, actor, action, amount, details = {}) {
   const event = {
     id: randomUUID(),
@@ -978,139 +1051,53 @@ async function recordCashEvent(booking, actor, action, amount, details = {}) {
   return event;
 }
 
-function finalizeCashSettlement(booking) {
-  const customerAmount = Number(booking.cashCustomerAmount);
-  const driverAmount = Number(booking.cashDriverAmount);
-  if (!booking.cashCustomerConfirmed || !booking.cashDriverConfirmed) {
-    booking.payment_status = 'Cash confirmation pending';
-    return false;
-  }
-  if (customerAmount !== driverAmount) {
-    booking.payment_status = 'Cash amount mismatch · under review';
-    booking.cashDispute = { customerAmount, driverAmount, detectedAt: new Date().toISOString() };
-    return false;
-  }
-  if (customerAmount !== Number(booking.total || 0)) {
-    booking.payment_status = 'Cash amount mismatch · under review';
-    booking.cashBalanceDue = Math.max(0, Number(booking.total || 0) - customerAmount);
-    booking.cashDispute = { customerAmount, driverAmount, expectedFare: Number(booking.total || 0), detectedAt: new Date().toISOString() };
-    return false;
-  }
+app.post('/api/payments/cash/collect', auth, roles('driver'), asyncRoute(async (req, res) => {
+  const booking = data.bookings.find((item) => item.id === String(req.body?.bookingId || ''));
+  if (!booking) return res.status(404).json({ error: 'Booking not found.' });
+  if (booking.driverId !== req.user.id) return res.status(403).json({ error: 'Only the assigned driver can mark this cash fare as collected.' });
+  if (booking.payment_method !== 'cash') return res.status(409).json({ error: 'This booking is not a cash booking.' });
+  if (!['Trip completed', 'Rated'].includes(booking.status)) return res.status(409).json({ error: 'Cash can be marked collected only after the end-trip OTP completes the trip.' });
+  if (booking.payment_status === 'Paid · Cash') return res.json({ ok: true, payment_status: booking.payment_status, alreadyCollected: true });
+
+  const now = new Date().toISOString();
   booking.payment_status = 'Paid · Cash';
-  booking.paidAt = new Date().toISOString();
-  booking.cashBalanceDue = 0;
-  if (booking.status === 'Awaiting cash confirmation') {
-    booking.status = 'Trip completed';
-    booking.cashSettlementCompletedAt = booking.paidAt;
-    const historyItem = { id: randomUUID(), booking_id: booking.id, status: 'Trip completed', at: booking.paidAt, note: 'Cash settlement approved by customer and driver' };
-    booking.cashSettlementHistoryId = historyItem.id;
-    data.history.unshift(historyItem);
-  }
-  return true;
-}
+  booking.paidAt = now;
+  booking.cashCollectedAt = now;
+  booking.cashCollectedBy = req.user.id;
+  const amountCollected = bookingAmountDue(booking);
+  booking.cashCollectionAmount = amountCollected;
+  booking.cashCollectionMethod = 'driver_marked_collected';
+  booking.cashEvents = Array.isArray(booking.cashEvents) ? booking.cashEvents : [];
+  const event = {
+    id: randomUUID(), bookingId: booking.id, actorId: req.user.id,
+    actorRole: req.user.role, actorName: req.user.name || 'Driver partner',
+    action: 'driver_marked_cash_collected', amount: amountCollected,
+    currency: 'INR', createdAt: now
+  };
+  markExpenseRecordsPaid(booking, (booking.expenses || []).filter((item) => item.status === 'confirmed').map((item) => item.id), 'cash', now);
+  booking.cashEvents.push(event);
+  data.payments.push({ ...event, provider: 'cash', status: 'collected' });
 
-app.post('/api/payments/cash/customer-confirm', auth, roles('customer'), asyncRoute(async (req, res) => {
-  const booking = data.bookings.find((item) => item.id === String(req.body?.bookingId || ''));
-  if (!booking) return res.status(404).json({ error: 'Booking not found.' });
-  if (booking.userId !== req.user.id) return res.status(403).json({ error: 'You can only confirm your own cash payment.' });
-  if (booking.payment_method !== 'cash' || !['Awaiting cash confirmation', 'Trip completed', 'Rated'].includes(booking.status)) return res.status(409).json({ error: 'Cash confirmation is available after the end-trip OTP, while settlement is pending.' });
-  if (booking.payment_status === 'Paid · Cash') return res.json({ ok: true, payment_status: booking.payment_status });
-  const amount = Number(req.body?.amountGiven);
-  if (!Number.isSafeInteger(amount) || amount < 0 || amount > 1000000) return res.status(400).json({ error: 'Enter the exact cash amount you handed to the driver in whole rupees.' });
-  if (booking.cashCustomerConfirmed) return res.status(409).json({ error: 'Your cash amount has already been submitted. Contact support if it is incorrect.' });
-  booking.cashCustomerAmount = amount;
-  booking.cashCustomerConfirmed = true;
-  await recordCashEvent(booking, req.user, 'customer_declared_cash_handed_over', amount);
-  const paid = finalizeCashSettlement(booking);
-  if (booking.payment_status === 'Cash amount mismatch · under review') {
-    await recordCashEvent(booking, req.user, 'cash_amount_mismatch_flagged', amount, {
-      customerAmount: booking.cashCustomerAmount, driverAmount: booking.cashDriverAmount,
-      expectedFare: Number(booking.total || 0)
-    });
+  const customer = data.users.find((u) => u.id === booking.userId);
+  if (customer && !booking.cashRewardAwarded) {
+    const points = Math.max(1, Math.floor(Number(booking.total || 0) / 100));
+    customer.cashRewardsPoints = Number(customer.cashRewardsPoints || 0) + points;
+    booking.cashRewardAwarded = true;
+    booking.cashRewardPoints = points;
+    await persistItem('app_users', customer.id, customer);
   }
-  if (paid) {
-    if (booking.cashSettlementHistoryId) {
-      const settlementHistory = data.history.find((item) => item.id === booking.cashSettlementHistoryId);
-      if (settlementHistory) await persistItem('app_history', settlementHistory.id, settlementHistory);
-    }
-    const customer = data.users.find((u) => u.id === booking.userId);
-    if (customer && !booking.cashRewardAwarded) {
-      const points = Math.max(1, Math.floor(amount / 100));
-      customer.cashRewardsPoints = Number(customer.cashRewardsPoints || 0) + points;
-      booking.cashRewardAwarded = true;
-      booking.cashRewardPoints = points;
-      await persistItem('app_users', customer.id, customer);
-    }
-  }
+  await persistItem('app_payments', event.id, { ...event, provider: 'cash', status: 'collected' });
   await persistItem('app_bookings', booking.id, booking);
   await save();
-  res.json({ ok: true, payment_status: booking.payment_status, cashBalanceDue: booking.cashBalanceDue || 0 });
-}));
-
-app.post('/api/payments/cash/driver-confirm', auth, roles('driver'), asyncRoute(async (req, res) => {
-  const booking = data.bookings.find((item) => item.id === String(req.body?.bookingId || ''));
-  if (!booking) return res.status(404).json({ error: 'Booking not found.' });
-  if (booking.driverId !== req.user.id) return res.status(403).json({ error: 'Only the assigned driver can confirm this cash handover.' });
-  if (booking.payment_method !== 'cash' || !['Awaiting cash confirmation', 'Trip completed', 'Rated'].includes(booking.status)) return res.status(409).json({ error: 'Cash confirmation is available after the end-trip OTP, while settlement is pending.' });
-  if (booking.payment_status === 'Paid · Cash') return res.json({ ok: true, payment_status: booking.payment_status });
-  const amount = Number(req.body?.amountReceived);
-  const pin = String(req.body?.cashPin || '').trim();
-  if (!Number.isSafeInteger(amount) || amount < 0 || amount > 1000000) return res.status(400).json({ error: 'Enter the exact amount of cash received in whole rupees.' });
-  if (!/^\d{6}$/.test(pin)) return res.status(400).json({ error: "Enter the customer's 6-digit cash confirmation PIN." });
-  if (booking.cashDriverConfirmed) return res.status(409).json({ error: 'Your cash receipt has already been submitted.' });
-  if (booking.cashPinLockedAt) return res.status(423).json({ error: 'Cash PIN is locked. Contact support.' });
-  const storedHash = booking.cashPinHash || (booking.cashPin ? hashCashPin(booking.cashPin) : null);
-  const expected = storedHash ? Buffer.from(storedHash, 'hex') : Buffer.alloc(0);
-  const supplied = Buffer.from(hashCashPin(pin), 'hex');
-  if (!storedHash || expected.length !== supplied.length || !timingSafeEqual(expected, supplied)) {
-    booking.cashPinAttempts = Number(booking.cashPinAttempts || 0) + 1;
-    await recordCashEvent(booking, req.user, 'cash_pin_verification_failed', 0, { attempt: booking.cashPinAttempts });
-    if (booking.cashPinAttempts >= 5) booking.cashPinLockedAt = new Date().toISOString();
-    await persistItem('app_bookings', booking.id, booking);
-    await save();
-    return res.status(booking.cashPinAttempts >= 5 ? 423 : 400).json({ error: booking.cashPinAttempts >= 5 ? 'Cash PIN locked after too many attempts. Contact support.' : 'Cash PIN is incorrect.' });
-  }
-  booking.cashDriverAmount = amount;
-  booking.cashDriverConfirmed = true;
-  booking.cashPinVerifiedAt = new Date().toISOString();
-  booking.cashPin = null; // clear legacy plaintext PIN, if this is an older booking
-  booking.cashPinEncrypted = null;
-  booking.cashPinHash = null;
-  await recordCashEvent(booking, req.user, 'driver_declared_cash_received', amount, { cashPinVerified: true });
-  const paid = finalizeCashSettlement(booking);
-  if (booking.payment_status === 'Cash amount mismatch · under review') {
-    await recordCashEvent(booking, req.user, 'cash_amount_mismatch_flagged', amount, {
-      customerAmount: booking.cashCustomerAmount, driverAmount: booking.cashDriverAmount,
-      expectedFare: Number(booking.total || 0)
-    });
-  }
-  if (paid) {
-    if (booking.cashSettlementHistoryId) {
-      const settlementHistory = data.history.find((item) => item.id === booking.cashSettlementHistoryId);
-      if (settlementHistory) await persistItem('app_history', settlementHistory.id, settlementHistory);
-    }
-    const customer = data.users.find((u) => u.id === booking.userId);
-    if (customer && !booking.cashRewardAwarded) {
-      const points = Math.max(1, Math.floor(amount / 100));
-      customer.cashRewardsPoints = Number(customer.cashRewardsPoints || 0) + points;
-      booking.cashRewardAwarded = true;
-      booking.cashRewardPoints = points;
-      await persistItem('app_users', customer.id, customer);
-    }
-  }
-  await persistItem('app_bookings', booking.id, booking);
-  await save();
-  res.json({ ok: true, payment_status: booking.payment_status, cashBalanceDue: booking.cashBalanceDue || 0, cashAmountMatch: booking.cashCustomerConfirmed ? Number(booking.cashCustomerAmount) === amount : null });
+  res.json({ ok: true, payment_status: booking.payment_status, paidAt: booking.paidAt });
 }));
 
 // Admin-only cash ledger: amounts, confirmations, mismatches and timestamps are visible for reconciliation.
 app.get('/api/admin/cash-ledger', auth, adminOnly, (req, res) => {
   const rows = data.bookings.filter((b) => b.payment_method === 'cash').map((b) => ({
     bookingId: b.id, customer: b.customer, driver: b.driver, fare: b.total,
-    customerAmount: b.cashCustomerAmount ?? null, driverAmount: b.cashDriverAmount ?? null,
-    customerConfirmed: !!b.cashCustomerConfirmed, driverConfirmed: !!b.cashDriverConfirmed,
-    status: b.payment_status, balanceDue: b.cashBalanceDue || 0,
-    events: b.cashEvents || [], dispute: b.cashDispute || null
+    collected: b.payment_status === 'Paid · Cash', collectedAt: b.cashCollectedAt || b.paidAt || null,
+    collectedBy: b.cashCollectedBy || null, status: b.payment_status, events: b.cashEvents || []
   }));
   res.json({ cashBookings: rows });
 });
@@ -1124,10 +1111,11 @@ app.post('/api/payments/razorpay/order', auth, roles('customer', 'admin'), async
   if (req.user.role !== 'admin' && booking.userId !== req.user.id) return res.status(403).json({ error: 'You can only pay for your own booking.' });
   if (!['Trip completed', 'Rated'].includes(booking.status)) return res.status(409).json({ error: 'Payment is available after the trip is completed.' });
   if (booking.payment_status === 'Paid') return res.status(409).json({ error: 'This booking is already paid.' });
-  const amount = Math.round(Number(booking.total) * 100);
+  const amount = Math.round(bookingAmountDue(booking) * 100);
   if (!Number.isSafeInteger(amount) || amount < 100) return res.status(400).json({ error: 'The booking amount is invalid.' });
+  const confirmedExpenseIds = (booking.expenses || []).filter((item) => item.status === 'confirmed').map((item) => item.id);
 
-  const existing = data.payments.find((p) => p.bookingId === booking.id && p.provider === 'razorpay' && p.status === 'created');
+  const existing = data.payments.find((p) => p.bookingId === booking.id && p.provider === 'razorpay' && p.status === 'created' && Number(p.amount) === amount);
   if (existing && existing.createdAt && Date.now() - new Date(existing.createdAt).getTime() < 10 * 60 * 1000) {
     return res.json({ keyId, order: { id: existing.orderId, amount: existing.amount, currency: existing.currency } });
   }
@@ -1158,6 +1146,7 @@ app.post('/api/payments/razorpay/order', auth, roles('customer', 'admin'), async
     orderId: order.id,
     amount: order.amount,
     currency: order.currency,
+    expenseIds: confirmedExpenseIds,
     status: 'created',
     createdAt: new Date().toISOString()
   };
@@ -1197,6 +1186,7 @@ app.post('/api/payments/razorpay/webhook', asyncRoute(async (req, res) => {
       booking.payment_status = 'Paid';
       booking.paidAt = record.paidAt;
       booking.payment_method = record.method;
+      markExpenseRecordsPaid(booking, record.expenseIds, record.method, record.paidAt);
       await persistItem('app_payments', record.id, record);
       await persistItem('app_bookings', booking.id, booking);
       await save();
@@ -1247,6 +1237,7 @@ app.post('/api/payments/razorpay/verify', auth, roles('customer', 'admin'), asyn
   booking.payment_status = 'Paid';
   booking.paidAt = record.paidAt;
   booking.payment_method = record.method;
+  markExpenseRecordsPaid(booking, record.expenseIds, record.method, record.paidAt);
   await persistItem('app_payments', record.id, record);
   await persistItem('app_bookings', booking.id, booking);
   await save();
@@ -1265,12 +1256,37 @@ app.post('/api/bookings/:id/location', auth, roles('driver'), asyncRoute(async (
   if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180 || accuracy > 250) {
     return res.status(400).json({ error: 'A valid GPS position with acceptable accuracy is required.' });
   }
-  booking.driverLocation = {
+  const serverReceivedAt = new Date().toISOString();
+  const suppliedCaptureTime = Number(req.body?.capturedAt);
+  const deviceCapturedAt = Number.isFinite(suppliedCaptureTime) && suppliedCaptureTime > 0
+    ? new Date(suppliedCaptureTime).toISOString()
+    : serverReceivedAt;
+  const source = req.body?.source === 'expense_capture' ? 'expense_capture' : 'background_tracking';
+  const locationSample = {
     lat, lng, accuracy: Math.max(0, accuracy),
     heading: Number.isFinite(Number(req.body?.heading)) ? Number(req.body.heading) : null,
     speed: Number.isFinite(Number(req.body?.speed)) ? Number(req.body.speed) : null,
-    updatedAt: new Date().toISOString()
+    deviceCapturedAt, updatedAt: serverReceivedAt, source
   };
+
+  if (source === 'background_tracking') {
+    const previous = [...(booking.driverLocationHistory || [])].reverse().find((item) => item.source === 'background_tracking');
+    if (previous?.updatedAt) {
+      const elapsedSeconds = Math.max(0.5, (Date.parse(serverReceivedAt) - Date.parse(previous.updatedAt)) / 1000);
+      const meanLat = (Number(previous.lat) + lat) / 2;
+      const dLat = (lat - Number(previous.lat)) * 111320;
+      const dLng = (lng - Number(previous.lng)) * 111320 * Math.cos(meanLat * Math.PI / 180);
+      const distanceMeters = Math.hypot(dLat, dLng);
+      if (distanceMeters > Math.max(250, elapsedSeconds * 80)) {
+        return res.status(409).json({ error: 'This GPS update is inconsistent with the recent trip location trail. Keep location enabled and retry after the device obtains a stable fix.' });
+      }
+    }
+    booking.driverLocationHistory = Array.isArray(booking.driverLocationHistory) ? booking.driverLocationHistory : [];
+    booking.driverLocationHistory.push(locationSample);
+    booking.driverLocationHistory = booking.driverLocationHistory.slice(-30);
+  }
+
+  booking.driverLocation = locationSample;
   await persistItem('app_bookings', booking.id, booking);
   // Neon is the production source of truth; avoid a synchronous full-file write for every GPS ping.
   if (!databaseReady) await save();
@@ -1294,6 +1310,261 @@ app.get('/api/bookings/:id/location', auth, asyncRoute(async (req, res) => {
 }));
 
 
+const expenseImageTypes = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp'
+};
+
+async function verifyExpenseImageInR2(key, expectedMimeType) {
+  try {
+    const response = await fetch(r2Presign('HEAD', key, 60), { method: 'HEAD' });
+    if (!response.ok) return null;
+    const mimeType = String(response.headers.get('content-type') || '').split(';')[0].toLowerCase();
+    const sizeBytes = Number(response.headers.get('content-length') || 0);
+    if (!expenseImageTypes[mimeType] || mimeType !== expectedMimeType || !Number.isSafeInteger(sizeBytes) || sizeBytes < 1 || sizeBytes > 10 * 1024 * 1024) return null;
+    return { mimeType, sizeBytes };
+  } catch {
+    return null;
+  }
+}
+
+app.post('/api/bookings/:id/expenses/evidence-upload-url', auth, roles('driver'), asyncRoute(async (req, res) => {
+  const booking = data.bookings.find((item) => item.id === req.params.id);
+  if (!booking || booking.driverId !== req.user.id) return res.status(404).json({ error: 'Assigned booking not found.' });
+  const kind = String(req.body?.kind || 'nozzle');
+  if (!['nozzle', 'receipt'].includes(kind)) return res.status(400).json({ error: 'Choose a valid expense evidence type.' });
+  if (kind === 'nozzle' && booking.status !== 'Trip started') return res.status(409).json({ error: 'A new expense request can be raised only while the trip is active.' });
+  if (kind === 'receipt' && !['Trip started', 'Trip completed', 'Rated'].includes(booking.status)) return res.status(409).json({ error: 'A receipt can be uploaded only for this active or recently completed trip.' });
+  if (!r2Ready()) return res.status(503).json({ error: 'Private evidence storage is not configured. Please contact VaahanSathi support.' });
+  const mimeType = String(req.body?.mimeType || '').toLowerCase();
+  const extension = expenseImageTypes[mimeType];
+  if (!extension) return res.status(400).json({ error: 'Upload a JPEG, PNG or WebP photo.' });
+  const expenseCategory = String(req.body?.category || 'fuel');
+  if (!['fuel', 'toll', 'parking', 'other'].includes(expenseCategory)) return res.status(400).json({ error: 'Choose a valid expense category.' });
+  const captureMode = String(req.body?.captureMode || '');
+  const photoCapturedAt = String(req.body?.capturedAt || '');
+  if (kind === 'nozzle' && expenseCategory === 'fuel') {
+    const capturedMs = Date.parse(photoCapturedAt);
+    const ageMs = Date.now() - capturedMs;
+    if (captureMode !== 'live_camera' || !Number.isFinite(capturedMs) || ageMs < -30000 || ageMs > 5 * 60 * 1000) {
+      return res.status(400).json({ error: 'Fuel nozzle proof must be captured from the live in-app camera immediately before the request.' });
+    }
+  }
+  let expense = null;
+  if (kind === 'receipt') {
+    expense = (booking.expenses || []).find((item) => item.id === String(req.body?.expenseId || '') && item.driverId === req.user.id);
+    if (!expense || expense.status !== 'approved') return res.status(409).json({ error: 'The customer must approve this request before a fuel receipt can be uploaded.' });
+  }
+  const evidenceId = expense?.id || randomUUID();
+  const key = `trip-expenses/${booking.id}/${evidenceId}/${kind}-${randomUUID()}.${extension}`;
+  booking.expenseUploadTickets = Array.isArray(booking.expenseUploadTickets) ? booking.expenseUploadTickets : [];
+  const ticket = {
+    key, kind, expenseId: expense?.id || null,
+    expenseCategory, captureMode: captureMode || null,
+    photoCapturedAt: photoCapturedAt || null,
+    createdAt: new Date().toISOString(), usedAt: null
+  };
+  booking.expenseUploadTickets.push(ticket);
+  booking.expenseUploadTickets = booking.expenseUploadTickets.slice(-30);
+  await persistItem('app_bookings', booking.id, booking);
+  await save();
+  res.json({ uploadUrl: r2Presign('PUT', key, 600), key, expiresIn: 600, mimeType });
+}));
+
+app.post('/api/bookings/:id/expenses', auth, roles('driver'), asyncRoute(async (req, res) => {
+  const booking = data.bookings.find((item) => item.id === req.params.id);
+  if (!booking || booking.driverId !== req.user.id) return res.status(404).json({ error: 'Assigned booking not found.' });
+  if (booking.status !== 'Trip started') return res.status(409).json({ error: 'An expense request can be raised only during an active trip.' });
+  if (!r2Ready()) return res.status(503).json({ error: 'Private evidence storage is not configured.' });
+
+  const category = String(req.body?.category || 'fuel');
+  if (!['fuel', 'toll', 'parking', 'other'].includes(category)) return res.status(400).json({ error: 'Choose fuel, toll, parking or other.' });
+  const amount = Number(req.body?.amount);
+  if (!Number.isSafeInteger(amount) || amount < 1 || amount > 50000) return res.status(400).json({ error: 'Enter an expense amount from ₹1 to ₹50,000 in whole rupees.' });
+  const reason = String(req.body?.reason || '').trim().slice(0, 500);
+  if (reason.length < 5) return res.status(400).json({ error: 'Add a short reason for the extra expense.' });
+
+  const activeRequest = (booking.expenses || []).some((item) => ['pending_customer_approval', 'approved'].includes(item.status));
+  if (activeRequest) return res.status(409).json({ error: 'This trip already has an expense awaiting approval or its receipt. Complete it before creating another request.' });
+
+  const photoKey = String(req.body?.photoKey || '');
+  const mimeType = String(req.body?.mimeType || '');
+  const sizeBytes = Number(req.body?.sizeBytes || 0);
+  const validPhotoKey = photoKey.startsWith(`trip-expenses/${booking.id}/`) &&
+    Object.values(expenseImageTypes).some((ext) => photoKey.endsWith(`.${ext}`));
+  let verifiedPhoto = null;
+  let uploadTicket = null;
+  if (category === 'fuel' && (!validPhotoKey || !expenseImageTypes[mimeType] || !Number.isSafeInteger(sizeBytes) || sizeBytes < 1 || sizeBytes > 10 * 1024 * 1024)) {
+    return res.status(400).json({ error: 'Fuel requests require a fuel-nozzle photo smaller than 10 MB.' });
+  }
+  if (category !== 'fuel' && photoKey && (!validPhotoKey || !expenseImageTypes[mimeType] || !Number.isSafeInteger(sizeBytes) || sizeBytes < 1 || sizeBytes > 10 * 1024 * 1024)) {
+    return res.status(400).json({ error: 'The uploaded expense photo is invalid or exceeds 10 MB.' });
+  }
+  if (category === 'fuel' && !photoKey) return res.status(400).json({ error: 'A nozzle photo is required for petrol expenses.' });
+  if (photoKey) {
+    const ticket = (booking.expenseUploadTickets || []).find((item) => item.key === photoKey && item.kind === 'nozzle' && !item.usedAt);
+    if (!ticket || Date.now() - Date.parse(ticket.createdAt) > 10 * 60 * 1000) return res.status(400).json({ error: 'The photo upload ticket is missing or expired. Upload a fresh photo.' });
+    if (ticket.expenseCategory && ticket.expenseCategory !== category) return res.status(400).json({ error: 'The uploaded photo was prepared for a different expense category.' });
+    uploadTicket = ticket;
+    if (category === 'fuel') {
+      const capturedMs = Date.parse(ticket.photoCapturedAt || '');
+      const ageMs = Date.now() - capturedMs;
+      if (ticket.captureMode !== 'live_camera' || !Number.isFinite(capturedMs) || ageMs < -30000 || ageMs > 10 * 60 * 1000 ||
+          String(req.body?.photoCapturedAt || '') !== ticket.photoCapturedAt) {
+        return res.status(400).json({ error: 'A fresh live-camera nozzle photo is required. Gallery uploads are not accepted for petrol requests.' });
+      }
+    }
+    verifiedPhoto = await verifyExpenseImageInR2(photoKey, mimeType);
+    if (!verifiedPhoto) return res.status(400).json({ error: 'The photo was not found in private storage or its type/size could not be verified. Please upload it again.' });
+    ticket.usedAt = new Date().toISOString();
+  }
+  const enteredLitres = category === 'fuel' && req.body?.litres !== undefined && req.body?.litres !== '' ? Number(req.body.litres) : null;
+  if (enteredLitres !== null && (!Number.isFinite(enteredLitres) || enteredLitres < 0.1 || enteredLitres > 200)) {
+    return res.status(400).json({ error: 'Enter fuel litres between 0.1 and 200.' });
+  }
+
+  // Do not accept coordinates from the expense form. Use the most recent position
+  // already recorded by the trip's background GPS watcher on the server.
+  const position = booking.driverLocation;
+  const receivedAt = Date.now();
+  const positionAgeMs = position?.updatedAt ? receivedAt - Date.parse(position.updatedAt) : Infinity;
+  const deviceCaptureMs = position?.deviceCapturedAt ? Date.parse(position.deviceCapturedAt) : NaN;
+  if (!position || position.source !== 'expense_capture' || !Number.isFinite(positionAgeMs) || positionAgeMs < 0 || positionAgeMs > 30000 ||
+      !Number.isFinite(Number(position.accuracy)) || Number(position.accuracy) > 100 ||
+      !Number.isFinite(deviceCaptureMs) || Math.abs(receivedAt - deviceCaptureMs) > 60000) {
+    return res.status(409).json({ error: 'A fresh GPS fix with accuracy within 100 metres is required. Keep location enabled and try again.' });
+  }
+
+  const recentTrackingSamples = (booking.driverLocationHistory || []).filter((sample) => {
+    const sampleAt = Date.parse(sample.updatedAt || '');
+    const captureAt = Date.parse(sample.deviceCapturedAt || '');
+    return sample.source === 'background_tracking' && Number.isFinite(sampleAt) &&
+      receivedAt - sampleAt >= 0 && receivedAt - sampleAt <= 60000 &&
+      Number.isFinite(Number(sample.accuracy)) && Number(sample.accuracy) <= 150 &&
+      Number.isFinite(captureAt) && Math.abs(receivedAt - captureAt) <= 90000;
+  });
+  const lastTracked = recentTrackingSamples[recentTrackingSamples.length - 1];
+  if (!lastTracked) {
+    return res.status(409).json({ error: 'Keep the trip GPS tracker active for a few seconds before requesting a fuel expense. A matching recent location trail is required.' });
+  }
+  const meanLat = (Number(lastTracked.lat) + Number(position.lat)) / 2;
+  const latDelta = (Number(position.lat) - Number(lastTracked.lat)) * 111320;
+  const lngDelta = (Number(position.lng) - Number(lastTracked.lng)) * 111320 * Math.cos(meanLat * Math.PI / 180);
+  const trailGapMeters = Math.hypot(latDelta, lngDelta);
+  if (trailGapMeters > 300) {
+    return res.status(409).json({ error: 'The fresh GPS fix does not match the recent trip location trail. Please wait for the tracker to stabilise and retry.' });
+  }
+
+  const serverReceivedAt = new Date(receivedAt).toISOString();
+  const gpsEvidencePayload = [
+    booking.id, Number(position.lat).toFixed(6), Number(position.lng).toFixed(6),
+    Number(position.accuracy).toFixed(1), String(position.deviceCapturedAt), serverReceivedAt
+  ].join('|');
+  const gpsProofSignature = createHmac('sha256', secret).update(gpsEvidencePayload).digest('hex');
+  const gpsSnapshot = buildGpsExpenseSnapshot({
+    bookingId: booking.id,
+    lat: position.lat,
+    lng: position.lng,
+    accuracy: position.accuracy,
+    capturedAt: position.deviceCapturedAt,
+    serverReceivedAt
+  });
+  const id = randomUUID();
+  const expense = {
+    id, bookingId: booking.id, customerId: booking.userId, driverId: req.user.id,
+    category, requestedAmount: amount, amount, reason,
+    litres: enteredLitres,
+    stationName: String(req.body?.stationName || '').trim().slice(0, 120) || null,
+    proofPhotoKey: photoKey || null,
+    proofPhotoMimeType: verifiedPhoto?.mimeType || null,
+    proofPhotoSizeBytes: verifiedPhoto?.sizeBytes || null,
+    proofPhotoCapturedAt: uploadTicket?.photoCapturedAt || null,
+    proofCaptureMode: uploadTicket?.captureMode || null,
+    gps: {
+      lat: Number(position.lat), lng: Number(position.lng),
+      accuracy: Number(position.accuracy),
+      deviceCapturedAt: position.deviceCapturedAt,
+      serverReceivedAt,
+      signature: gpsProofSignature
+    },
+    gpsSnapshotDataUri: `data:image/svg+xml;base64,${Buffer.from(gpsSnapshot.svg.replace('</svg>', `<text x="60" y="548" font-family="Arial,sans-serif" font-size="9" fill="#64748b">GPS evidence signature: ${gpsProofSignature}</text></svg>`), 'utf8').toString('base64')}`,
+    gpsMapUrl: gpsSnapshot.mapUrl,
+    gpsEmbedUrl: gpsSnapshot.mapEmbedUrl,
+    status: 'pending_customer_approval',
+    createdAt: serverReceivedAt,
+    timeline: [{ status: 'pending_customer_approval', at: serverReceivedAt, actorId: req.user.id, actorRole: 'driver' }]
+  };
+  booking.expenses = Array.isArray(booking.expenses) ? booking.expenses : [];
+  booking.expenses.unshift(expense);
+  await persistItem('app_bookings', booking.id, booking);
+  await save();
+  res.status(201).json({ expense: { ...expense, proofPhotoKey: undefined }, message: 'Expense request sent to the customer with its uploaded photo and system-generated GPS proof.' });
+}));
+
+app.post('/api/bookings/:id/expenses/:expenseId/decision', auth, roles('customer'), asyncRoute(async (req, res) => {
+  const booking = data.bookings.find((item) => item.id === req.params.id && item.userId === req.user.id);
+  if (!booking) return res.status(404).json({ error: 'Booking not found.' });
+  if (!['Driver assigned', 'Driver arriving', 'Trip started', 'Trip completed', 'Rated'].includes(booking.status)) return res.status(409).json({ error: 'Expense approval is not available for this booking state.' });
+  if (['Paid', 'Paid · Cash'].includes(booking.payment_status)) return res.status(409).json({ error: 'This booking has already been paid. Contact support to review a late expense request.' });
+  const expense = (booking.expenses || []).find((item) => item.id === req.params.expenseId);
+  if (!expense) return res.status(404).json({ error: 'Expense request not found.' });
+  if (expense.status !== 'pending_customer_approval') return res.status(409).json({ error: 'This expense request has already been reviewed.' });
+  const decision = String(req.body?.decision || '');
+  if (!['approve', 'decline'].includes(decision)) return res.status(400).json({ error: 'Choose approve or decline.' });
+  const now = new Date().toISOString();
+  expense.status = decision === 'approve' ? 'approved' : 'declined';
+  expense.approvedAmount = decision === 'approve' ? Number(expense.requestedAmount) : 0;
+  expense.reviewedAt = now;
+  expense.reviewedBy = req.user.id;
+  expense.customerNote = String(req.body?.note || '').trim().slice(0, 300) || null;
+  expense.timeline = Array.isArray(expense.timeline) ? expense.timeline : [];
+  expense.timeline.push({ status: expense.status, at: now, actorId: req.user.id, actorRole: 'customer' });
+  await persistItem('app_bookings', booking.id, booking);
+  await save();
+  res.json({ expense: { id: expense.id, status: expense.status, approvedAmount: expense.approvedAmount } });
+}));
+
+app.post('/api/bookings/:id/expenses/:expenseId/receipt', auth, roles('driver'), asyncRoute(async (req, res) => {
+  const booking = data.bookings.find((item) => item.id === req.params.id && item.driverId === req.user.id);
+  if (!booking) return res.status(404).json({ error: 'Assigned booking not found.' });
+  if (!['Trip started', 'Trip completed', 'Rated'].includes(booking.status)) return res.status(409).json({ error: 'A fuel receipt can be uploaded only for this trip.' });
+  const expense = (booking.expenses || []).find((item) => item.id === req.params.expenseId && item.driverId === req.user.id);
+  if (!expense || expense.status !== 'approved') return res.status(409).json({ error: 'Only a customer-approved expense can be completed with a receipt.' });
+  const actualAmount = Number(req.body?.actualAmount);
+  if (!Number.isSafeInteger(actualAmount) || actualAmount < 1 || actualAmount > Number(expense.approvedAmount || 0)) {
+    return res.status(400).json({ error: `Enter the actual amount up to the approved limit of ₹${Number(expense.approvedAmount || 0)}. Request approval again for any extra amount.` });
+  }
+  const receiptKey = String(req.body?.receiptKey || '');
+  const receiptMimeType = String(req.body?.mimeType || '');
+  const receiptSizeBytes = Number(req.body?.sizeBytes || 0);
+  const validReceiptKey = receiptKey.startsWith(`trip-expenses/${booking.id}/${expense.id}/receipt-`) &&
+    Object.values(expenseImageTypes).some((ext) => receiptKey.endsWith(`.${ext}`));
+  if (!validReceiptKey || !expenseImageTypes[receiptMimeType] || !Number.isSafeInteger(receiptSizeBytes) || receiptSizeBytes < 1 || receiptSizeBytes > 10 * 1024 * 1024) {
+    return res.status(400).json({ error: 'A valid expense receipt photo under 10 MB is required.' });
+  }
+  const receiptTicket = (booking.expenseUploadTickets || []).find((item) => item.key === receiptKey && item.kind === 'receipt' && item.expenseId === expense.id && !item.usedAt);
+  if (!receiptTicket || Date.now() - Date.parse(receiptTicket.createdAt) > 10 * 60 * 1000) return res.status(400).json({ error: 'The receipt upload ticket is missing or expired. Upload a fresh receipt.' });
+  const verifiedReceipt = await verifyExpenseImageInR2(receiptKey, receiptMimeType);
+  if (!verifiedReceipt) return res.status(400).json({ error: 'The receipt was not found in private storage or its type/size could not be verified. Please upload it again.' });
+  receiptTicket.usedAt = new Date().toISOString();
+  const now = new Date().toISOString();
+  expense.actualAmount = actualAmount;
+  expense.receiptPhotoKey = receiptKey;
+  expense.receiptPhotoMimeType = verifiedReceipt.mimeType;
+  expense.receiptPhotoSizeBytes = verifiedReceipt.sizeBytes;
+  expense.status = 'confirmed';
+  expense.confirmedAt = now;
+  expense.paymentStatus = 'due';
+  expense.timeline = Array.isArray(expense.timeline) ? expense.timeline : [];
+  expense.timeline.push({ status: 'confirmed', at: now, actorId: req.user.id, actorRole: 'driver', note: 'Fuel receipt uploaded; amount is within the customer-approved limit.' });
+  booking.expenseTotalDue = confirmedExpenseTotal(booking);
+  await persistItem('app_bookings', booking.id, booking);
+  await save();
+  res.json({ expense: { id: expense.id, status: expense.status, actualAmount: expense.actualAmount }, amountDue: bookingAmountDue(booking) });
+}));
+
+
 const distanceBetweenKm = (a, b) => {
   if (!a || !b || !Number.isFinite(Number(a.lat)) || !Number.isFinite(Number(a.lng)) || !Number.isFinite(Number(b.lat)) || !Number.isFinite(Number(b.lng))) return null;
   const rad = (value) => Number(value) * Math.PI / 180;
@@ -1311,6 +1582,7 @@ const getSmartDriverMatch = (booking, driver, customer, requireAvailable = true)
   if (!driver || driver.role !== 'driver' || driver.verificationStatus !== 'verified') return null;
   if (requireAvailable && driver.available !== true) return null;
   if (normalizeServiceCity(driver.city) !== normalizeServiceCity(booking.city)) return null;
+  if (requireAvailable && driverHasScheduleConflict(driver, booking)) return null;
 
   const driverBookings = data.bookings.filter((item) => item.driverId === driver.id && item.id !== booking.id);
   const completed = driverBookings.filter((item) => ['Trip completed', 'Rated'].includes(item.status));
@@ -1378,11 +1650,39 @@ const getSmartDriverMatch = (booking, driver, customer, requireAvailable = true)
   };
 };
 
+function bookingWindow(booking) {
+  const start = Number.isFinite(Date.parse(booking?.scheduledStartAt || ''))
+    ? Date.parse(booking.scheduledStartAt)
+    : Date.parse(`${booking?.date || ''}T${booking?.time || '10:00'}:00+05:30`);
+  if (!Number.isFinite(start)) return null;
+  const safeStart = ['Driver arriving', 'Trip started'].includes(booking?.status) ? Date.now() : start;
+  const hours = Math.max(1, Math.min(24, Number(booking?.hours) || 1));
+  return { start: safeStart, end: safeStart + hours * 60 * 60 * 1000 + 30 * 60 * 1000 };
+}
+function dispatchPriorityFor(booking) {
+  const window = bookingWindow(booking);
+  const minutesUntil = window ? (window.start - Date.now()) / 60000 : 24 * 60;
+  const longTrip = booking?.trip_type === 'Outstation' || Number(booking?.distanceKm || 0) >= 40;
+  const immediate = booking?.bookingMode === 'immediate' || minutesUntil <= 90;
+  const bucket = immediate ? (longTrip ? 'immediate_long' : 'immediate') : (longTrip ? 'scheduled_long' : 'scheduled');
+  const score = bucket === 'immediate_long' ? 4000 : bucket === 'immediate' ? 3500 : bucket === 'scheduled_long' ? 2500 : 2000;
+  return { bucket, score, label: bucket === 'immediate_long' ? 'Urgent long trip' : bucket === 'immediate' ? 'Immediate pickup' : bucket === 'scheduled_long' ? 'Scheduled long trip' : 'Scheduled pickup', minutesUntilPickup: Math.round(minutesUntil) };
+}
+function driverHasScheduleConflict(driver, booking) {
+  const target = bookingWindow(booking);
+  if (!target) return false;
+  return data.bookings.some((other) => {
+    if (other.id === booking.id || other.driverId !== driver.id) return false;
+    if (!['Driver assigned', 'Driver arriving', 'Trip started'].includes(other.status)) return false;
+    const assigned = bookingWindow(other);
+    return !!assigned && target.start < assigned.end && assigned.start < target.end;
+  });
+}
 const getRankedSmartMatches = (booking, customer) => data.users
   .filter((driver) => driver.role === 'driver')
-  .map((driver) => ({ driver, match: getSmartDriverMatch(booking, driver, customer, true) }))
-  .filter((entry) => entry.match)
-  .sort((a, b) => b.match.score - a.match.score || Number(b.driver.rating || 0) - Number(a.driver.rating || 0));
+  .map((driver) => ({ driver, match: getSmartDriverMatch(booking, driver, customer, true), dispatch: dispatchPriorityFor(booking) }))
+  .filter((entry) => entry.match && !driverHasScheduleConflict(entry.driver, booking))
+  .sort((a, b) => b.dispatch.score - a.dispatch.score || b.match.score - a.match.score || Number(b.driver.rating || 0) - Number(a.driver.rating || 0));
 
 app.get('/api/bookings', auth, (req, res) => {
   let rows = [...data.bookings];
@@ -1402,24 +1702,40 @@ app.get('/api/bookings', auth, (req, res) => {
   const enriched = rows.map((b) => {
     const driverUser = data.users.find((u) => u.id === b.driverId);
     const customerUser = data.users.find((u) => u.id === b.userId);
-    const { cashPin, cashPinEncrypted, cashPinHash, cashPinAttempts, ...safeBooking } = b;
-    const canSeeCashPin = req.user.role === 'customer' && b.userId === req.user.id && b.payment_method === 'cash' && ['Awaiting cash confirmation', 'Trip completed', 'Rated'].includes(b.status) && !b.cashPinLockedAt;
+    const { cashPin, cashPinEncrypted, cashPinHash, cashPinAttempts, cashCustomerAmount, cashDriverAmount, expenseUploadTickets, driverLocationHistory, ...safeBooking } = b;
     return {
       ...safeBooking,
-      // OTPs are customer-only secrets and are visible only at their exact trip stage.
+      // Legacy cash PIN values are never exposed. Start/end trip OTPs remain stage-gated.
       start_otp: req.user.role === 'customer' && b.userId === req.user.id && b.status === 'Driver arriving' && b.carCarePassport?.videoKey && b.carCarePassport?.customerConfirmedAt && b.carCarePassport?.driverConfirmedAt ? b.start_otp : undefined,
       end_otp: req.user.role === 'customer' && b.userId === req.user.id && b.status === 'Trip started' ? b.end_otp : undefined,
-      cashPin: canSeeCashPin ? (cashPinEncrypted ? decryptCashPin(cashPinEncrypted) : cashPin) : undefined,
       cashEvents: req.user.role === 'admin' ? (b.cashEvents || []) : undefined,
-      cashCustomerAmount: req.user.role === 'customer' ? b.cashCustomerAmount : undefined,
-      cashDriverAmount: req.user.role === 'driver' ? b.cashDriverAmount : undefined,
+      expenses: (Array.isArray(b.expenses) ? b.expenses : []).map((expense) => {
+        const { proofPhotoKey, receiptPhotoKey, ...safeExpense } = expense;
+        return {
+          ...safeExpense,
+          proofPhotoUrl: proofPhotoKey && r2Ready() ? r2Presign('GET', proofPhotoKey, 900) : null,
+          receiptPhotoUrl: receiptPhotoKey && r2Ready() ? r2Presign('GET', receiptPhotoKey, 900) : null
+        };
+      }),
+      expenseTotalDue: confirmedExpenseTotal(b),
+      amountDue: bookingAmountDue(b),
       driver: driverUser ? driverUser.name : b.driver || null,
       customer: customerUser ? customerUser.name : b.customer || null,
+      ...(req.user.role === 'driver' ? (() => {
+        const adjustment = data.payouts
+          .filter((item) => item.driverId === req.user.id && item.bookingId === b.id && item.type === 'complaint_adjustment' && item.status === 'approved')
+          .reduce((sum, item) => sum + Number(item.amount || 0), 0);
+        return adjustment > 0 ? {
+          grossPayout: Number(b.payout || 0),
+          earningsAdjustment: adjustment,
+          payout: Math.max(0, Number(b.payout || 0) - adjustment)
+        } : {};
+      })() : {}),
       ...(req.user.role === 'driver' && b.status === 'Searching' ? (() => {
         const ranked = getRankedSmartMatches(b, customerUser);
         const rank = ranked.findIndex((entry) => entry.driver.id === req.user.id);
         const match = rank >= 0 ? ranked[rank].match : null;
-        return { smartMatch: match ? { ...match, rank: rank + 1, poolSize: ranked.length } : null };
+        return { smartMatch: match ? { ...match, rank: rank + 1, poolSize: ranked.length } : null, dispatchPriority: rank >= 0 ? ranked[rank].dispatch : dispatchPriorityFor(b) };
       })() : {}),
       ...(req.user.role === 'customer' && driverUser ? (() => {
         const match = getSmartDriverMatch(b, driverUser, customerUser, false);
@@ -1430,7 +1746,9 @@ app.get('/api/bookings', auth, (req, res) => {
 
   const sorted = enriched.sort((a, b) => {
     if (req.user.role === 'driver' && a.status === 'Searching' && b.status === 'Searching') {
-      return Number(b.smartMatch?.score || 0) - Number(a.smartMatch?.score || 0) || String(b.createdAt || '').localeCompare(String(a.createdAt || ''));
+      return Number(b.dispatchPriority?.score || 0) - Number(a.dispatchPriority?.score || 0)
+        || Number(b.smartMatch?.score || 0) - Number(a.smartMatch?.score || 0)
+        || String(b.createdAt || '').localeCompare(String(a.createdAt || ''));
     }
     return String(b.createdAt || '').localeCompare(String(a.createdAt || ''));
   });
@@ -1461,9 +1779,22 @@ app.post(
     const f = calculateFare({ tripType, hours, time, vehicle, ...route });
     const customerUser = data.users.find((u) => u.id === req.user.id);
 
-    // Create every customer request as an open dispatch offer. Drivers must explicitly accept it.
+    // Create every customer request as an open dispatch offer. Explicit immediate and scheduled
+    // modes are retained so the driver queue can prioritize urgent work without losing reservations.
+    const requestedMode = String(req.body?.bookingMode || 'auto');
+    if (!['auto', 'immediate', 'scheduled'].includes(requestedMode)) return res.status(400).json({ error: 'Choose immediate or scheduled booking.' });
+    const localStart = Date.parse(`${date}T${time}:00+05:30`);
+    if (!Number.isFinite(localStart)) return res.status(400).json({ error: 'Enter a valid booking date and time.' });
+    const bookingMode = requestedMode === 'auto'
+      ? (localStart <= Date.now() + 90 * 60 * 1000 ? 'immediate' : 'scheduled')
+      : requestedMode;
+    if (bookingMode === 'scheduled' && localStart < Date.now() + 30 * 60 * 1000) {
+      return res.status(400).json({ error: 'Scheduled bookings must be at least 30 minutes ahead. Choose immediate booking for an urgent pickup.' });
+    }
+    if (bookingMode === 'immediate' && (localStart < Date.now() - 10 * 60 * 1000 || localStart > Date.now() + 90 * 60 * 1000)) {
+      return res.status(400).json({ error: 'Immediate pickup must be scheduled within the next 90 minutes. Choose scheduled pickup for a later time.' });
+    }
     const bookingId = `VS-${new Date().getFullYear()}-${randomInt(100000, 999999)}`;
-    const cashPin = paymentMethod === 'cash' ? String(randomInt(100000, 999999)) : null;
     const b = {
       id: bookingId,
       userId: req.user.id,
@@ -1484,11 +1815,8 @@ app.post(
       requestedDriverStyle: driverStyle,
       payment_method: paymentMethod,
       payment_status: paymentMethod === 'cash' ? 'Cash due after trip' : 'Payment due after trip',
-      cashCustomerConfirmed: false,
-      cashDriverConfirmed: false,
-      cashPinEncrypted: cashPin ? encryptCashPin(cashPin) : null,
-      cashPinHash: cashPin ? hashCashPin(cashPin) : null,
-      cashPinAttempts: 0,
+      bookingMode,
+      scheduledStartAt: new Date(localStart).toISOString(),
       status: 'Searching',
       // Codes are issued just-in-time: start after customer handover approval,
       // end only after the driver has successfully verified the start code.
@@ -1512,9 +1840,6 @@ app.post(
       ...b,
       start_otp: undefined,
       end_otp: undefined,
-      cashPin: undefined,
-      cashPinEncrypted: undefined,
-      cashPinHash: undefined
     };
     res.status(201).json({
       booking: customerBooking,
@@ -1732,6 +2057,9 @@ app.patch(
         if (currentUser?.verificationStatus !== 'verified' || currentUser?.available !== true || normalizeServiceCity(currentUser?.city) !== normalizeServiceCity(b.city)) {
           return res.status(403).json({ error: 'Your driver account must be verified and on duty to accept rides.' });
         }
+        if (driverHasScheduleConflict(currentUser, b)) {
+          return res.status(409).json({ error: 'This pickup overlaps another trip you have already accepted. Please accept another request instead.' });
+        }
         // Communication style is a customer preference shown on the offer, not a hard
         // dispatch gate. Do not strand a customer if no exact-style driver is online.
         b.driverId = req.user.id;
@@ -1779,15 +2107,10 @@ app.patch(
       }
       b.endOtpVerifiedAt = new Date().toISOString();
       b.end_otp = null;
-      b.payment_status = b.payment_method === 'cash' ? 'Cash confirmation pending' : 'Payment due';
-    }
-    if (req.user.role === 'admin' && status === 'Trip completed' && b.payment_method === 'cash' && b.payment_status !== 'Paid · Cash') {
-      return res.status(409).json({ error: 'This cash booking cannot be marked completed until customer and driver confirmations, amount matching, and PIN verification are all approved.' });
+      b.payment_status = b.payment_method === 'cash' ? 'Cash due after trip' : 'Payment due';
     }
 
-    const effectiveStatus = req.user.role === 'driver' && status === 'Trip completed' && b.payment_method === 'cash'
-      ? 'Awaiting cash confirmation'
-      : status;
+    const effectiveStatus = status;
     b.status = effectiveStatus;
     if (effectiveStatus !== 'Trip started' && b.tripGuard?.sessions) {
       for (const session of b.tripGuard.sessions) if (session.status === 'recording') {
@@ -1842,7 +2165,10 @@ app.post(
 // Driver & Admin Stats
 app.get('/api/driver/summary', auth, roles('driver', 'admin'), (req, res) => {
   const driverId = req.user.id;
-  const mine = data.bookings.filter((b) => b.driverId === driverId && b.status === 'Trip completed');
+  const mine = data.bookings.filter((b) => b.driverId === driverId && ['Trip completed', 'Rated'].includes(b.status));
+  const approvedAdjustments = data.payouts.filter((item) => item.driverId === driverId && item.type === 'complaint_adjustment' && item.status === 'approved');
+  const adjustmentTotal = approvedAdjustments.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+  const grossEarnings = mine.reduce((sum, booking) => sum + Number(booking.payout || 0), 0);
   const myRatings = data.ratings.filter((r) => r.driverId === driverId);
   const avgRating = myRatings.length
     ? Number((myRatings.reduce((s, r) => s + r.stars, 0) / myRatings.length).toFixed(1))
@@ -1851,7 +2177,9 @@ app.get('/api/driver/summary', auth, roles('driver', 'admin'), (req, res) => {
   res.json({
     summary: {
       trips: mine.length,
-      earnings: mine.reduce((s, b) => s + b.payout, 0),
+      earnings: Math.max(0, grossEarnings - adjustmentTotal),
+      grossEarnings,
+      approvedAdjustments: adjustmentTotal,
       rating: avgRating
     },
     available: true
@@ -1907,11 +2235,14 @@ app.patch(
   auth,
   roles('admin'),
   asyncRoute(async (req, res) => {
-    for (const k of ['hourly', 'night', 'airport', 'commission', 'gst']) {
-      if (Number.isFinite(Number(req.body[k]))) {
-        data.pricing[k] = Number(req.body[k]);
-      }
+    const allowed = ['package4h', 'package8h', 'package12h', 'extraKm', 'extraHour', 'outstationPerKm', 'night', 'airport', 'commission', 'gst', 'suvMultiplier', 'luxuryMultiplier'];
+    for (const key of allowed) {
+      if (req.body[key] !== undefined && Number.isFinite(Number(req.body[key])) && Number(req.body[key]) >= 0) data.pricing[key] = Number(req.body[key]);
     }
+    if (req.body.hourly !== undefined && Number.isFinite(Number(req.body.hourly)) && Number(req.body.hourly) >= 0) data.pricing.package4h = Number(req.body.hourly);
+    data.pricing.hourly = data.pricing.package4h;
+    data.pricing.version = 2;
+    data.pricing = normalizePricing(data.pricing);
     await persistPricing(data.pricing);
     await audit(req, 'pricing_updated', 'pricing', 'current', null, data.pricing, 'Pricing configuration updated');
     res.json({ ok: true, pricing: data.pricing });
@@ -1949,39 +2280,84 @@ app.patch('/api/me', auth, asyncRoute(async (req, res) => {
 app.post('/api/disputes', auth, roles('customer', 'admin'), asyncRoute(async (req, res) => {
   const { bookingId, subject, description } = req.body || {};
   if (!subject || !description) return res.status(400).json({ error: 'Subject and description are required.' });
-  const booking = data.bookings.find((b) => b.id === bookingId);
+  const booking = bookingId ? data.bookings.find((b) => b.id === String(bookingId)) : null;
+  if (bookingId && !booking) return res.status(404).json({ error: 'The selected booking could not be found.' });
+  if (booking && req.user.role === 'customer' && booking.userId !== req.user.id) return res.status(403).json({ error: 'You can only report a problem on your own booking.' });
+  const isExtraMoneyReport = String(subject).toLowerCase().includes('extra money') || String(subject).toLowerCase().includes('extra fare');
+  const reportedExtraAmount = req.body?.reportedExtraAmount === undefined || req.body?.reportedExtraAmount === '' ? null : Number(req.body.reportedExtraAmount);
+  if (reportedExtraAmount !== null && (!Number.isSafeInteger(reportedExtraAmount) || reportedExtraAmount < 0 || reportedExtraAmount > 1000000)) return res.status(400).json({ error: 'Enter a valid extra amount in whole rupees.' });
   const dispute = {
-    id: randomUUID(),
-    bookingId: bookingId || null,
-    userId: req.user.id,
-    userName: req.user.name,
-    subject: String(subject).slice(0, 120),
-    description: String(description).slice(0, 1000),
-    status: 'open',
-    createdAt: new Date().toISOString(),
-    route: booking ? `${booking.pickup} â†’ ${booking.destination}` : null,
+    id: randomUUID(), bookingId: bookingId || null, userId: req.user.id, userName: req.user.name,
+    driverId: booking?.driverId || null, driverName: booking?.driver || null,
+    subject: String(subject).slice(0, 120), description: String(description).slice(0, 1000),
+    reportedExtraAmount: isExtraMoneyReport ? reportedExtraAmount : null,
+    status: 'under_review', createdAt: new Date().toISOString(),
+    route: booking ? `${booking.pickup} → ${booking.destination}` : null,
+    responseHistory: []
   };
   data.disputes.push(dispute);
   await persistItem('app_disputes', dispute.id, dispute);
+  await audit(req, 'customer_complaint_filed', 'disputes', dispute.id, null, { bookingId: dispute.bookingId, driverId: dispute.driverId, subject: dispute.subject }, 'Customer complaint submitted for review');
   await save();
   res.status(201).json({ dispute });
 }));
 
-// â”€â”€ Admin: resolve/close dispute â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+app.get('/api/driver/complaints', auth, roles('driver'), (req, res) => {
+  const complaints = data.disputes.filter((item) => item.driverId === req.user.id)
+    .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+  const adjustments = data.payouts.filter((item) => item.driverId === req.user.id && item.type === 'complaint_adjustment' && item.status === 'approved');
+  res.json({ complaints, adjustments });
+});
+
+app.patch('/api/driver/complaints/:id', auth, roles('driver'), asyncRoute(async (req, res) => {
+  const complaint = data.disputes.find((item) => item.id === req.params.id && item.driverId === req.user.id);
+  if (!complaint) return res.status(404).json({ error: 'Complaint not found for your driver account.' });
+  if (['resolved', 'closed', 'unsubstantiated'].includes(complaint.status)) return res.status(409).json({ error: 'This complaint is closed. Contact support to request a review.' });
+  const response = String(req.body?.response || '').trim().slice(0, 1000);
+  if (response.length < 5) return res.status(400).json({ error: 'Please enter at least 5 characters so the review team can understand your response.' });
+  const now = new Date().toISOString();
+  complaint.driverResponse = response; complaint.driverRespondedAt = now; complaint.status = 'driver_response_submitted';
+  complaint.responseHistory = Array.isArray(complaint.responseHistory) ? complaint.responseHistory : [];
+  complaint.responseHistory.push({ actorId: req.user.id, actorRole: 'driver', response, createdAt: now });
+  await persistItem('app_disputes', complaint.id, complaint);
+  await audit(req, 'driver_complaint_response', 'disputes', complaint.id, null, { status: complaint.status }, 'Driver submitted a response');
+  await save();
+  res.json({ complaint });
+}));
+
 app.patch('/api/admin/disputes/:id', auth, adminOnly, asyncRoute(async (req, res) => {
   const d = data.disputes.find((x) => x.id === req.params.id);
   if (!d) return res.status(404).json({ error: 'Dispute not found.' });
-  d.status = ['resolved', 'closed', 'escalated'].includes(req.body.status) ? req.body.status : d.status;
-  d.resolution = String(req.body.resolution || '').slice(0, 500);
-  d.resolvedAt = new Date().toISOString();
-  d.resolvedBy = req.user.name;
+  const allowedStatuses = ['under_review', 'driver_response_submitted', 'substantiated', 'unsubstantiated', 'resolved', 'closed', 'escalated'];
+  const nextStatus = allowedStatuses.includes(req.body.status) ? req.body.status : d.status;
+  const resolution = String(req.body.resolution || '').trim().slice(0, 500);
+  const penaltyAmount = req.body.penaltyAmount === undefined || req.body.penaltyAmount === '' ? 0 : Number(req.body.penaltyAmount);
+  if (!Number.isSafeInteger(penaltyAmount) || penaltyAmount < 0 || penaltyAmount > 1000000) return res.status(400).json({ error: 'Enter a valid penalty amount in whole rupees.' });
+  if (penaltyAmount > 0 && nextStatus !== 'substantiated') return res.status(409).json({ error: 'A driver earnings adjustment is allowed only after the complaint is marked substantiated.' });
+  d.status = nextStatus;
+  if (resolution) d.resolution = resolution;
+  if (['resolved', 'closed', 'unsubstantiated'].includes(nextStatus)) { d.resolvedAt = new Date().toISOString(); d.resolvedBy = req.user.name; }
+  if (penaltyAmount > 0 && !d.earningsAdjustmentId) {
+    if (!d.driverId) return res.status(409).json({ error: 'No assigned driver is linked to this complaint.' });
+    const linkedBooking = data.bookings.find((b) => b.id === d.bookingId);
+    const maxAdjustment = Math.max(0, Number(linkedBooking?.payout || 0));
+    if (penaltyAmount > maxAdjustment) return res.status(400).json({ error: 'Adjustment cannot exceed the driver payout for this booking.' });
+    const adjustment = {
+      id: randomUUID(), type: 'complaint_adjustment', provider: 'internal_ledger',
+      bookingId: d.bookingId, disputeId: d.id, driverId: d.driverId, amount: penaltyAmount,
+      currency: 'INR', status: 'approved',
+      description: 'Admin-approved adjustment after complaint investigation',
+      createdAt: new Date().toISOString(), createdBy: req.user.id
+    };
+    data.payouts.push(adjustment); d.earningsAdjustmentId = adjustment.id; d.earningsAdjustmentAmount = penaltyAmount;
+    await persistItem('app_payouts', adjustment.id, adjustment);
+  }
   await persistItem('app_disputes', d.id, d);
-  await audit(req, 'dispute_updated', 'disputes', d.id, null, { status: d.status }, req.body.resolution || 'Dispute updated');
+  await audit(req, 'dispute_updated', 'disputes', d.id, null, { status: d.status, penaltyAmount: d.earningsAdjustmentAmount || 0 }, resolution || 'Dispute updated');
   await save();
   res.json({ dispute: d });
 }));
 
-// â”€â”€ Admin: cancel any booking â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 app.patch('/api/admin/bookings/:id/cancel', auth, adminOnly, asyncRoute(async (req, res) => {
   const b = data.bookings.find((x) => x.id === req.params.id);
   if (!b) return res.status(404).json({ error: 'Booking not found.' });
@@ -2524,6 +2900,29 @@ async function start() {
   }
   databaseReadyPromise = neonPool ? loadNeon() : Promise.resolve();
   await databaseReadyPromise;
+
+  // One-time cleanup of the retired cash-PIN workflow. Normal start/end trip OTPs are untouched.
+  let migratedLegacyCash = false;
+  for (const booking of data.bookings) {
+    let bookingChanged = false;
+    if (booking.status === 'Awaiting cash confirmation') {
+      booking.status = 'Trip completed';
+      if (booking.payment_method === 'cash' && booking.payment_status !== 'Paid · Cash') booking.payment_status = 'Cash due after trip';
+      bookingChanged = true;
+    }
+    for (const key of ['cashPin', 'cashPinEncrypted', 'cashPinHash', 'cashPinAttempts', 'cashPinLockedAt', 'cashCustomerConfirmed', 'cashDriverConfirmed', 'cashCustomerAmount', 'cashDriverAmount', 'cashBalanceDue', 'cashDispute']) {
+      if (Object.prototype.hasOwnProperty.call(booking, key)) {
+        delete booking[key];
+        bookingChanged = true;
+      }
+    }
+    if (bookingChanged) {
+      migratedLegacyCash = true;
+      if (databaseReady) await persistItem('app_bookings', booking.id, booking);
+    }
+  }
+  if (migratedLegacyCash) await save();
+
   if (!neonPool && data.users.length === 0) await seedDefaultAccounts();
   await ensureDemoAccounts();
   app.listen(port, () => {
