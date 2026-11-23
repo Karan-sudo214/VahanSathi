@@ -2507,6 +2507,25 @@ async function start() {
   }
   databaseReadyPromise = neonPool ? loadNeon() : Promise.resolve();
   await databaseReadyPromise;
+
+  // One-time cleanup of the retired cash-PIN workflow. Normal start/end trip OTPs are untouched.
+  let migratedLegacyCash = false;
+  for (const booking of data.bookings) {
+    if (booking.status === 'Awaiting cash confirmation') {
+      booking.status = 'Trip completed';
+      if (booking.payment_method === 'cash' && booking.payment_status !== 'Paid · Cash') booking.payment_status = 'Cash due after trip';
+      migratedLegacyCash = true;
+    }
+    for (const key of ['cashPin', 'cashPinEncrypted', 'cashPinHash', 'cashPinAttempts', 'cashPinLockedAt', 'cashCustomerConfirmed', 'cashDriverConfirmed', 'cashCustomerAmount', 'cashDriverAmount', 'cashBalanceDue', 'cashDispute']) {
+      if (Object.prototype.hasOwnProperty.call(booking, key)) {
+        delete booking[key];
+        migratedLegacyCash = true;
+      }
+    }
+    if (migratedLegacyCash && databaseReady) await persistItem('app_bookings', booking.id, booking);
+  }
+  if (migratedLegacyCash) await save();
+
   if (!neonPool && data.users.length === 0) await seedDefaultAccounts();
   await ensureDemoAccounts();
   app.listen(port, () => {
