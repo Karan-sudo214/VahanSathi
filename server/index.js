@@ -712,16 +712,22 @@ function calculateFare({ tripType = 'Hourly', hours = 4, time = '08:00', vehicle
     includedKm = 120 + (h - 12) * 10;
   }
 
+  // Public package rates are GST-inclusive. Convert each displayed component to
+  // its taxable amount so the customer-facing itemisation adds up exactly.
   const extraDistanceKm = tripType === 'Outstation' ? km : Math.max(0, km - includedKm);
   const ratePerKm = tripType === 'Outstation' ? Number(pricing.outstationPerKm) : Number(pricing.extraKm);
-  const distanceCharge = Math.round(extraDistanceKm * ratePerKm);
+  const distanceChargeGross = Math.round(extraDistanceKm * ratePerKm);
   const hour = Number(String(time).slice(0, 2));
-  const night = hour >= 22 || hour < 6 || tripType === 'Night driver' ? Number(pricing.night) : 0;
+  const nightGross = hour >= 22 || hour < 6 || tripType === 'Night driver' ? Number(pricing.night) : 0;
   const multiplier = vehicle === 'SUV' ? Number(pricing.suvMultiplier) : vehicle === 'Luxury' ? Number(pricing.luxuryMultiplier) : 1;
-  const vehicleExtra = Math.round(packagePrice * Math.max(0, multiplier - 1));
+  const vehicleExtraGross = Math.round(packagePrice * Math.max(0, multiplier - 1));
+
   const base = toPreTax(packagePrice);
-  const taxableExtras = toPreTax(night + vehicleExtra + distanceCharge);
-  const subtotal = base + taxableExtras;
+  const night = toPreTax(nightGross);
+  const vehicleExtra = toPreTax(vehicleExtraGross);
+  const distanceCharge = toPreTax(distanceChargeGross);
+  const subtotal = base + night + vehicleExtra + distanceCharge;
+  const gstRate = Number(pricing.gst) || 0;
   const gst = Math.round(subtotal * taxRate);
   const total = subtotal + gst;
   const commissionRate = Math.max(0, Math.min(100, Number(pricing.commission) || 0));
@@ -730,8 +736,10 @@ function calculateFare({ tripType = 'Hourly', hours = 4, time = '08:00', vehicle
     base, night, airport: tripType === 'Airport' ? base : 0,
     outstation: tripType === 'Outstation' ? distanceCharge : 0,
     vehicleExtra, distanceKm: distanceKm ?? null, includedKm, extraDistanceKm,
-    distanceCharge, serviceFee: 0, gst, total, payout: total - commission,
-    commission, currency: 'INR', pricingVersion: 2,
+    distanceCharge, serviceFee: 0, gst, gstRate, total,
+    payout: total - commission, commission, commissionRate,
+    driverSharePercent: 100 - commissionRate,
+    currency: 'INR', pricingVersion: 2,
     distanceSource: distanceSource || 'calculated'
   };
 }
