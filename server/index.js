@@ -2466,6 +2466,7 @@ app.get('/api/support/config', (req, res) => {
     grievanceOfficerDesignation: process.env.GRIEVANCE_OFFICER_DESIGNATION || '',
     grievanceOfficerEmail: process.env.GRIEVANCE_OFFICER_EMAIL || '',
     grievanceOfficerPhone: process.env.GRIEVANCE_OFFICER_PHONE || '',
+    evidenceStorageConfigured: r2Ready(),
     acknowledgementTargetHours: 48,
     firstHumanResponseTargetHours: 48,
     resolutionTargetDays: 30
