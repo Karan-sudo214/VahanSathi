@@ -1295,13 +1295,27 @@ const expenseImageTypes = {
   'image/webp': 'webp'
 };
 
+async function verifyExpenseImageInR2(key, expectedMimeType) {
+  try {
+    const response = await fetch(r2Presign('HEAD', key, 60), { method: 'HEAD' });
+    if (!response.ok) return null;
+    const mimeType = String(response.headers.get('content-type') || '').split(';')[0].toLowerCase();
+    const sizeBytes = Number(response.headers.get('content-length') || 0);
+    if (!expenseImageTypes[mimeType] || mimeType !== expectedMimeType || !Number.isSafeInteger(sizeBytes) || sizeBytes < 1 || sizeBytes > 10 * 1024 * 1024) return null;
+    return { mimeType, sizeBytes };
+  } catch {
+    return null;
+  }
+}
+
 app.post('/api/bookings/:id/expenses/evidence-upload-url', auth, roles('driver'), asyncRoute(async (req, res) => {
   const booking = data.bookings.find((item) => item.id === req.params.id);
   if (!booking || booking.driverId !== req.user.id) return res.status(404).json({ error: 'Assigned booking not found.' });
-  if (booking.status !== 'Trip started') return res.status(409).json({ error: 'Unexpected expenses can be requested only while the trip is active.' });
-  if (!r2Ready()) return res.status(503).json({ error: 'Private evidence storage is not configured. Please contact VaahanSathi support.' });
   const kind = String(req.body?.kind || 'nozzle');
   if (!['nozzle', 'receipt'].includes(kind)) return res.status(400).json({ error: 'Choose a valid expense evidence type.' });
+  if (kind === 'nozzle' && booking.status !== 'Trip started') return res.status(409).json({ error: 'A new expense request can be raised only while the trip is active.' });
+  if (kind === 'receipt' && !['Trip started', 'Trip completed', 'Rated'].includes(booking.status)) return res.status(409).json({ error: 'A receipt can be uploaded only for this active or recently completed trip.' });
+  if (!r2Ready()) return res.status(503).json({ error: 'Private evidence storage is not configured. Please contact VaahanSathi support.' });
   const mimeType = String(req.body?.mimeType || '').toLowerCase();
   const extension = expenseImageTypes[mimeType];
   if (!extension) return res.status(400).json({ error: 'Upload a JPEG, PNG or WebP photo.' });
@@ -1336,11 +1350,20 @@ app.post('/api/bookings/:id/expenses', auth, roles('driver'), asyncRoute(async (
   const sizeBytes = Number(req.body?.sizeBytes || 0);
   const validPhotoKey = photoKey.startsWith(`trip-expenses/${booking.id}/`) &&
     Object.values(expenseImageTypes).some((ext) => photoKey.endsWith(`.${ext}`));
+  let verifiedPhoto = null;
   if (category === 'fuel' && (!validPhotoKey || !expenseImageTypes[mimeType] || !Number.isSafeInteger(sizeBytes) || sizeBytes < 1 || sizeBytes > 10 * 1024 * 1024)) {
     return res.status(400).json({ error: 'Fuel requests require a fuel-nozzle photo smaller than 10 MB.' });
   }
   if (category !== 'fuel' && photoKey && (!validPhotoKey || !expenseImageTypes[mimeType] || !Number.isSafeInteger(sizeBytes) || sizeBytes < 1 || sizeBytes > 10 * 1024 * 1024)) {
     return res.status(400).json({ error: 'The uploaded expense photo is invalid or exceeds 10 MB.' });
+  }
+  if (photoKey) {
+    verifiedPhoto = await verifyExpenseImageInR2(photoKey, mimeType);
+    if (!verifiedPhoto) return res.status(400).json({ error: 'The photo was not found in private storage or its type/size could not be verified. Please upload it again.' });
+  }
+  const enteredLitres = category === 'fuel' && req.body?.litres !== undefined && req.body?.litres !== '' ? Number(req.body.litres) : null;
+  if (enteredLitres !== null && (!Number.isFinite(enteredLitres) || enteredLitres < 0.1 || enteredLitres > 200)) {
+    return res.status(400).json({ error: 'Enter fuel litres between 0.1 and 200.' });
   }
 
   // Do not accept coordinates from the expense form. Use the most recent position
@@ -1368,11 +1391,11 @@ app.post('/api/bookings/:id/expenses', auth, roles('driver'), asyncRoute(async (
   const expense = {
     id, bookingId: booking.id, customerId: booking.userId, driverId: req.user.id,
     category, requestedAmount: amount, amount, reason,
-    litres: category === 'fuel' && req.body?.litres !== '' ? Number(req.body?.litres) || null : null,
+    litres: enteredLitres,
     stationName: String(req.body?.stationName || '').trim().slice(0, 120) || null,
-    proofPhotoKey: category === 'fuel' || photoKey ? photoKey : null,
-    proofPhotoMimeType: category === 'fuel' || photoKey ? mimeType : null,
-    proofPhotoSizeBytes: category === 'fuel' || photoKey ? sizeBytes : null,
+    proofPhotoKey: photoKey || null,
+    proofPhotoMimeType: verifiedPhoto?.mimeType || null,
+    proofPhotoSizeBytes: verifiedPhoto?.sizeBytes || null,
     gps: {
       lat: Number(position.lat), lng: Number(position.lng),
       accuracy: Number(position.accuracy),
@@ -1432,11 +1455,13 @@ app.post('/api/bookings/:id/expenses/:expenseId/receipt', auth, roles('driver'),
   if (!validReceiptKey || !expenseImageTypes[receiptMimeType] || !Number.isSafeInteger(receiptSizeBytes) || receiptSizeBytes < 1 || receiptSizeBytes > 10 * 1024 * 1024) {
     return res.status(400).json({ error: 'A valid fuel receipt photo under 10 MB is required.' });
   }
+  const verifiedReceipt = await verifyExpenseImageInR2(receiptKey, receiptMimeType);
+  if (!verifiedReceipt) return res.status(400).json({ error: 'The receipt was not found in private storage or its type/size could not be verified. Please upload it again.' });
   const now = new Date().toISOString();
   expense.actualAmount = actualAmount;
   expense.receiptPhotoKey = receiptKey;
-  expense.receiptPhotoMimeType = receiptMimeType;
-  expense.receiptPhotoSizeBytes = receiptSizeBytes;
+  expense.receiptPhotoMimeType = verifiedReceipt.mimeType;
+  expense.receiptPhotoSizeBytes = verifiedReceipt.sizeBytes;
   expense.status = 'confirmed';
   expense.confirmedAt = now;
   expense.paymentStatus = 'due';
