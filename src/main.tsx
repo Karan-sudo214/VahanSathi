@@ -3128,6 +3128,17 @@ function LiveAdminPage({ bookings, focus = 'Overview', flash }: any) {
             <span className="status-pill">{summary.pricingValidation?.ok ? 'Tariff checks passed' : 'Review tariff settings'}</span>
           </div>
           {summary.pricingValidation?.issues?.length > 0 && <p className="tripguard-error">{summary.pricingValidation.issues.join(' ')}</p>}
+          {summary.pricingValidation?.marketGuards && (
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))',gap:8,margin:'10px 0'}}>
+              {Object.entries(summary.pricingValidation.marketGuards).map(([key, band]: [string, any]) => (
+                <div key={key} style={{padding:9,border:'1px solid var(--slate-200)',borderRadius:9}}>
+                  <small className="muted">{band.label}</small>
+                  <b style={{display:'block',fontSize:12}}>₹{band.min}–₹{band.max}</b>
+                  <small className="muted">Current: ₹{pricingValues[key] ?? 0}</small>
+                </div>
+              ))}
+            </div>
+          )}
           <div className="pricing-grid">
             {([
               ['package4h', '4 hours / 40 km package'],
