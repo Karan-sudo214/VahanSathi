@@ -634,7 +634,7 @@ function App() {
         method: 'POST',
         body: JSON.stringify(voiceInput)
       });
-      if (!quote?.quoteToken || !quote?.pricingAudit?.verified) {
+      if (!quote?.quoteToken) {
         throw new Error('The voice trip could not receive a verified fare. Please review the trip details and try again.');
       }
       const d = await api('/bookings', {
@@ -1612,32 +1612,14 @@ function BookingPage(p: any) {
               {p.fare.routeDurationMinutes ? ' · about ' + p.fare.routeDurationMinutes + ' min' : ''}
             </p>
           )}
-          {p.fare?.pricingAudit && (
-            <div style={{display:'grid',gap:5,margin:'10px 0',padding:'10px 11px',border:'1px solid #cfe8dd',borderRadius:11,background:'#f3fbf7'}}>
-              <b style={{display:'flex',alignItems:'center',gap:7,color:'#18734f',fontSize:11}}><ShieldCheck size={14}/> Price arithmetic verified</b>
-              <small style={{color:'#496b5b'}}>Fare components, configured GST arithmetic, driver payout and platform share reconcile. Quote {p.fare.quoteId || ''} · valid until {p.fare.expiresAt ? new Date(p.fare.expiresAt).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'}) : 'refresh required'}</small>
-              {p.fare.pricingAudit.warnings?.map((warning: string, index: number) => <small key={index} style={{color:'#8a641f'}}>{warning}</small>)}
-            </div>
-          )}
-          <FareLine name="Driver Service (before GST)" value={p.fare?.base || 0} />
-          {p.fare?.night > 0 && <FareLine name="Night Driving Charge (before GST)" value={p.fare.night} />}
-          {p.fare?.vehicleExtra > 0 && <FareLine name="Vehicle Class Add-on (before GST)" value={p.fare.vehicleExtra} />}
-          {p.fare?.distanceCharge > 0 && <FareLine name={`Extra distance (${p.fare.extraDistanceKm} km, before GST)`} value={p.fare.distanceCharge} />}
+          <FareLine name="Service charge" value={p.fare?.serviceCharge || 0} />
           <FareLine name={`GST (${p.fare?.gstRate ?? 5}%)`} value={p.fare?.gst || 0} />
 
           <div className="fare-divider" />
 
           <div className="fare-total-row">
-            <span>Total Payable</span>
+            <span>Total payable</span>
             <b>{p.fare ? money(p.fare.total) : '—'}</b>
-          </div>
-
-          <div className="driver-share-box">
-            <span className="share-icon"><IndianRupee size={16} /></span>
-            <div>
-              <b>{money(p.fare?.payout || 0)} goes directly to driver</b>
-              <small>{p.fare?.driverSharePercent ?? 80}% driver payout share · {p.fare?.commissionRate ?? 20}% platform commission</small>
-            </div>
           </div>
 
           <button
