@@ -770,8 +770,9 @@ app.get('/api/events', auth, (req, res) => {
 // ----------------- API Endpoints -----------------
 
 app.get('/api/health', (_, res) => {
-  res.json({
-    ok: true,
+  const ready = process.env.NODE_ENV !== 'production' || databaseReady;
+  res.status(ready ? 200 : 503).json({
+    ok: ready,
     service: 'VaahanSathi',
     mode: databaseReady ? 'neon-postgres' : DATABASE_URL ? 'database-unavailable' : process.env.NODE_ENV === 'production' ? 'local-json-fallback' : 'local-development',
     database: databaseReady,
