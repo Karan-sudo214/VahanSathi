@@ -1293,7 +1293,7 @@ function bookingWindow(booking) {
     ? Date.parse(booking.scheduledStartAt)
     : Date.parse(`${booking?.date || ''}T${booking?.time || '10:00'}:00+05:30`);
   if (!Number.isFinite(start)) return null;
-  const safeStart = booking?.status === 'Trip started' ? Date.now() : start;
+  const safeStart = ['Driver arriving', 'Trip started'].includes(booking?.status) ? Date.now() : start;
   const hours = Math.max(1, Math.min(24, Number(booking?.hours) || 1));
   return { start: safeStart, end: safeStart + hours * 60 * 60 * 1000 + 30 * 60 * 1000 };
 }
@@ -1349,6 +1349,16 @@ app.get('/api/bookings', auth, (req, res) => {
       cashEvents: req.user.role === 'admin' ? (b.cashEvents || []) : undefined,
       driver: driverUser ? driverUser.name : b.driver || null,
       customer: customerUser ? customerUser.name : b.customer || null,
+      ...(req.user.role === 'driver' ? (() => {
+        const adjustment = data.payouts
+          .filter((item) => item.driverId === req.user.id && item.bookingId === b.id && item.type === 'complaint_adjustment' && item.status === 'approved')
+          .reduce((sum, item) => sum + Number(item.amount || 0), 0);
+        return adjustment > 0 ? {
+          grossPayout: Number(b.payout || 0),
+          earningsAdjustment: adjustment,
+          payout: Math.max(0, Number(b.payout || 0) - adjustment)
+        } : {};
+      })() : {}),
       ...(req.user.role === 'driver' && b.status === 'Searching' ? (() => {
         const ranked = getRankedSmartMatches(b, customerUser);
         const rank = ranked.findIndex((entry) => entry.driver.id === req.user.id);
@@ -1399,7 +1409,6 @@ app.post(
 
     // Create every customer request as an open dispatch offer. Explicit immediate and scheduled
     // modes are retained so the driver queue can prioritize urgent work without losing reservations.
-    const bookingId = `VS-${new Date().getFullYear()}-${randomInt(100000, 999999)}`;
     const requestedMode = String(req.body?.bookingMode || 'auto');
     if (!['auto', 'immediate', 'scheduled'].includes(requestedMode)) return res.status(400).json({ error: 'Choose immediate or scheduled booking.' });
     const localStart = Date.parse(`${date}T${time}:00+05:30`);
@@ -1410,6 +1419,10 @@ app.post(
     if (bookingMode === 'scheduled' && localStart < Date.now() + 30 * 60 * 1000) {
       return res.status(400).json({ error: 'Scheduled bookings must be at least 30 minutes ahead. Choose immediate booking for an urgent pickup.' });
     }
+    if (bookingMode === 'immediate' && (localStart < Date.now() - 10 * 60 * 1000 || localStart > Date.now() + 90 * 60 * 1000)) {
+      return res.status(400).json({ error: 'Immediate pickup must be scheduled within the next 90 minutes. Choose scheduled pickup for a later time.' });
+    }
+    const bookingId = `VS-${new Date().getFullYear()}-${randomInt(100000, 999999)}`;
     const b = {
       id: bookingId,
       userId: req.user.id,
@@ -1672,6 +1685,9 @@ app.patch(
         if (currentUser?.verificationStatus !== 'verified' || currentUser?.available !== true || normalizeServiceCity(currentUser?.city) !== normalizeServiceCity(b.city)) {
           return res.status(403).json({ error: 'Your driver account must be verified and on duty to accept rides.' });
         }
+        if (driverHasScheduleConflict(currentUser, b)) {
+          return res.status(409).json({ error: 'This pickup overlaps another trip you have already accepted. Please accept another request instead.' });
+        }
         // Communication style is a customer preference shown on the offer, not a hard
         // dispatch gate. Do not strand a customer if no exact-style driver is online.
         b.driverId = req.user.id;
@@ -1777,7 +1793,10 @@ app.post(
 // Driver & Admin Stats
 app.get('/api/driver/summary', auth, roles('driver', 'admin'), (req, res) => {
   const driverId = req.user.id;
-  const mine = data.bookings.filter((b) => b.driverId === driverId && b.status === 'Trip completed');
+  const mine = data.bookings.filter((b) => b.driverId === driverId && ['Trip completed', 'Rated'].includes(b.status));
+  const approvedAdjustments = data.payouts.filter((item) => item.driverId === driverId && item.type === 'complaint_adjustment' && item.status === 'approved');
+  const adjustmentTotal = approvedAdjustments.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+  const grossEarnings = mine.reduce((sum, booking) => sum + Number(booking.payout || 0), 0);
   const myRatings = data.ratings.filter((r) => r.driverId === driverId);
   const avgRating = myRatings.length
     ? Number((myRatings.reduce((s, r) => s + r.stars, 0) / myRatings.length).toFixed(1))
@@ -1786,7 +1805,9 @@ app.get('/api/driver/summary', auth, roles('driver', 'admin'), (req, res) => {
   res.json({
     summary: {
       trips: mine.length,
-      earnings: mine.reduce((s, b) => s + b.payout, 0),
+      earnings: Math.max(0, grossEarnings - adjustmentTotal),
+      grossEarnings,
+      approvedAdjustments: adjustmentTotal,
       rating: avgRating
     },
     available: true
@@ -2511,18 +2532,22 @@ async function start() {
   // One-time cleanup of the retired cash-PIN workflow. Normal start/end trip OTPs are untouched.
   let migratedLegacyCash = false;
   for (const booking of data.bookings) {
+    let bookingChanged = false;
     if (booking.status === 'Awaiting cash confirmation') {
       booking.status = 'Trip completed';
       if (booking.payment_method === 'cash' && booking.payment_status !== 'Paid · Cash') booking.payment_status = 'Cash due after trip';
-      migratedLegacyCash = true;
+      bookingChanged = true;
     }
     for (const key of ['cashPin', 'cashPinEncrypted', 'cashPinHash', 'cashPinAttempts', 'cashPinLockedAt', 'cashCustomerConfirmed', 'cashDriverConfirmed', 'cashCustomerAmount', 'cashDriverAmount', 'cashBalanceDue', 'cashDispute']) {
       if (Object.prototype.hasOwnProperty.call(booking, key)) {
         delete booking[key];
-        migratedLegacyCash = true;
+        bookingChanged = true;
       }
     }
-    if (migratedLegacyCash && databaseReady) await persistItem('app_bookings', booking.id, booking);
+    if (bookingChanged) {
+      migratedLegacyCash = true;
+      if (databaseReady) await persistItem('app_bookings', booking.id, booking);
+    }
   }
   if (migratedLegacyCash) await save();
 
