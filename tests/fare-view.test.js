@@ -41,3 +41,15 @@ test('customer booking projection removes internal revenue and audit fields', ()
     'fareQuoteExpiresAt', 'farePricingRevision'
   ]) assert.equal(Object.hasOwn(booking, field), false, field + ' should stay private');
 });
+
+
+test('driver booking projection may retain only the driver payout amount', () => {
+  const booking = hideInternalFareDetails({
+    id: 'booking-2', payout: 479, commission: 120,
+    pricingAudit: { verified: true }, fareAudit: { arithmeticVerified: true }
+  }, { includeDriverPayout: true });
+  assert.equal(booking.payout, 479);
+  assert.equal(Object.hasOwn(booking, 'commission'), false);
+  assert.equal(Object.hasOwn(booking, 'pricingAudit'), false);
+  assert.equal(Object.hasOwn(booking, 'fareAudit'), false);
+});
