@@ -1811,7 +1811,7 @@ function TripsPage({ bookings, filter, setFilter, update, onRate, onPay, onTrack
                       )}
                     </div>
                   </>
-                )})}
+                )}
               </div>
             </div>
           ))}
@@ -2466,14 +2466,18 @@ function OTPVerificationModal({ booking, stage, onClose, onSubmit }: any) {
 function LiveAdminPage({ bookings, focus = 'Overview', flash }: any) {
   const [summary, setSummary] = useState<any>({});
   const [filter, setFilter] = useState('All');
-  const [hourlyRate, setHourlyRate] = useState(599);
+  const [pricingValues, setPricingValues] = useState<Record<string, number>>({
+    package4h: 499, package8h: 899, package12h: 1299, extraKm: 12,
+    extraHour: 100, outstationPerKm: 18, airport: 599, night: 200,
+    commission: 20, gst: 5, suvMultiplier: 1.15, luxuryMultiplier: 1.25
+  });
 
   const fetchSummary = async () => {
     try {
       const d = await api('/admin/summary');
       setSummary(d);
-      const h = d.pricing?.find((p: any) => p.key === 'hourly');
-      if (h) setHourlyRate(h.value);
+      const current = Object.fromEntries((d.pricing || []).map((item: any) => [item.key, Number(item.value)]));
+      setPricingValues((previous) => ({ ...previous, ...current, package4h: Number(current.package4h ?? current.hourly ?? previous.package4h) }));
     } catch {}
   };
 
@@ -2481,17 +2485,16 @@ function LiveAdminPage({ bookings, focus = 'Overview', flash }: any) {
     fetchSummary();
   }, [bookings]);
 
+  const updatePricingValue = (key: string, value: number) => setPricingValues((current) => ({ ...current, [key]: value }));
   const savePricing = async () => {
     try {
       await api('/admin/pricing', {
         method: 'PATCH',
-        body: JSON.stringify({ hourly: Number(hourlyRate) })
+        body: JSON.stringify({ ...pricingValues, hourly: pricingValues.package4h })
       });
-      flash?.('Pricing configuration saved.');
+      flash?.('All fare packages and add-on rates were saved to the database.');
       fetchSummary();
-    } catch (e: any) {
-      flash?.(e.message);
-    }
+    } catch (e: any) { flash?.(e.message); }
   };
 
   const t = summary.totals || {};
@@ -2544,27 +2547,29 @@ function LiveAdminPage({ bookings, focus = 'Overview', flash }: any) {
 
       {focus === 'Pricing' ? (
         <section className="panel pricing-panel">
-          <h3>Pricing Engine Configuration</h3>
-          <p>Update base rates and commission stored in Neon DB.</p>
+          <h3>Delhi NCR driver-service tariff</h3>
+          <p>Configurable launch rates for a customer-owned car. Fuel, tolls and parking remain separate customer expenses.</p>
           <div className="pricing-grid">
-            <label className="field-group">
-              <span>Hourly Base Fare (4 Hours) · INR</span>
-              <input
-                type="number"
-                value={hourlyRate}
-                onChange={(e) => setHourlyRate(Number(e.target.value))}
-              />
-            </label>
-            <div className="pricing-breakdown">
-              <div><span>Airport Drop Base</span><b>₹599</b></div>
-              <div><span>Night Surcharge (10PM - 6AM)</span><b>₹120</b></div>
-              <div><span>Platform Commission</span><b>20%</b></div>
-              <div><span>GST Rate</span><b>5%</b></div>
-            </div>
+            {([
+              ['package4h', '4 hours / 40 km package'],
+              ['package8h', '8 hours / 80 km package'],
+              ['package12h', '12 hours / 120 km package'],
+              ['extraKm', 'Extra local distance (₹/km)'],
+              ['extraHour', 'Extra hour (₹)'],
+              ['outstationPerKm', 'Outstation distance (₹/km)'],
+              ['airport', 'Airport package'],
+              ['night', 'Night surcharge (10 PM–6 AM)'],
+              ['commission', 'Platform commission (%)'],
+              ['gst', 'GST (%)']
+            ] as [string, string][]).map(([key, label]) => (
+              <label className="field-group" key={key}>
+                <span>{label}</span>
+                <input type="number" min="0" step="1" value={pricingValues[key] ?? 0} onChange={(e) => updatePricingValue(key, Number(e.target.value))} />
+              </label>
+            ))}
           </div>
-          <button className="primary-btn" onClick={savePricing}>
-            Save New Pricing to Neon DB <Check size={16} />
-          </button>
+          <p className="muted">Vehicle upgrades: SUV {pricingValues.suvMultiplier}× · Luxury {pricingValues.luxuryMultiplier}×. Values can be changed by an authorised admin.</p>
+          <button className="primary-btn" onClick={savePricing}>Save all pricing to Neon DB <Check size={16} /></button>
         </section>
       ) : focus === 'Drivers' ? (
         <section className="panel drivers-admin-panel">
