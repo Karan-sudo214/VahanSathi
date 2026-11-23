@@ -8,10 +8,10 @@ export function normalizePickupTime(value) {
   const input = value.trim();
   if (!input) return null;
 
-  const twentyFourHour = input.match(/^(?:([01]?\\d|2[0-3])):([0-5]\\d)(?::[0-5]\\d)?$/);
+  const twentyFourHour = input.match(/^(?:([01]?\d|2[0-3])):([0-5]\d)(?::[0-5]\d)?$/);
   if (twentyFourHour) return `${String(Number(twentyFourHour[1])).padStart(2, '0')}:${twentyFourHour[2]}`;
 
-  const twelveHour = input.match(/^(1[0-2]|0?[1-9]):([0-5]\\d)\\s*(AM|PM)$/i);
+  const twelveHour = input.match(/^(1[0-2]|0?[1-9]):([0-5]\d)\s*(AM|PM)$/i);
   if (!twelveHour) return null;
   let hour = Number(twelveHour[1]) % 12;
   if (twelveHour[3].toUpperCase() === 'PM') hour += 12;
