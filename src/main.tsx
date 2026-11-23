@@ -1551,14 +1551,14 @@ function BookingPage(p: any) {
 
           <div className="fare-divider" />
 
-          {p.fare?.distanceKm && (
-            <FareLine name={`Estimated Distance (${p.fare.distanceKm} km)`} value={p.fare.distanceCharge || 0} />
+          {p.fare?.distanceKm !== null && p.fare?.distanceKm !== undefined && (
+            <p className="fare-sub">Estimated route: {p.fare.distanceKm} km · {p.fare?.includedKm || 0} km included</p>
           )}
-          <FareLine name="Driver Service" value={p.fare?.base || 0} />
-          {p.fare?.night > 0 && <FareLine name="Night Driving Charge" value={p.fare.night} />}
-          {p.fare?.vehicleExtra > 0 && <FareLine name="Vehicle Class Add-on" value={p.fare.vehicleExtra} />}
-          <FareLine name="Platform & Safety Fee" value={p.fare?.serviceFee || 0} />
-          <FareLine name="GST (5%)" value={p.fare?.gst || 0} />
+          <FareLine name="Driver Service (before GST)" value={p.fare?.base || 0} />
+          {p.fare?.night > 0 && <FareLine name="Night Driving Charge (before GST)" value={p.fare.night} />}
+          {p.fare?.vehicleExtra > 0 && <FareLine name="Vehicle Class Add-on (before GST)" value={p.fare.vehicleExtra} />}
+          {p.fare?.distanceCharge > 0 && <FareLine name={`Extra distance (${p.fare.extraDistanceKm} km, before GST)`} value={p.fare.distanceCharge} />}
+          <FareLine name={`GST (${p.fare?.gstRate ?? 5}%)`} value={p.fare?.gst || 0} />
 
           <div className="fare-divider" />
 
@@ -1571,7 +1571,7 @@ function BookingPage(p: any) {
             <span className="share-icon"><IndianRupee size={16} /></span>
             <div>
               <b>{money(p.fare?.payout || 0)} goes directly to driver</b>
-              <small>80% driver payout share</small>
+              <small>{p.fare?.driverSharePercent ?? 80}% driver payout share · {p.fare?.commissionRate ?? 20}% platform commission</small>
             </div>
           </div>
 
