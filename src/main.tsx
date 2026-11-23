@@ -2075,7 +2075,7 @@ function TripsPage({ bookings, filter, setFilter, update, onRate, onPay, onTrack
                         ? <span className="status-pill done">Paid · {b.payment_method === 'cash' ? 'Cash' : 'Online'}</span>
                         : b.payment_method === 'cash'
                           ? <span className="status-pill">Cash due · Pay your assigned driver directly</span>
-                          : <button className="action-btn pay" onClick={() => onPay(b)}><CreditCard size={16} /> Pay {money(b.total)}</button>}
+                          : <button className="action-btn pay" onClick={() => onPay(b)}><CreditCard size={16} /> Pay {money(b.amountDue ?? b.total)}</button>}
                       {b.payment_method === 'cash' && b.payment_status !== 'Paid · Cash' && (
                         <small className="muted">No cash PIN or customer confirmation is required. The driver marks collection after receiving the trip fare.</small>
                       )}
@@ -2441,7 +2441,7 @@ function DriverPage({ bookings, update, user, onDutyChange, flash, onCashConfirm
                   {b.status === 'Trip completed' && b.payment_method === 'cash' && b.payment_status !== 'Paid · Cash' && (
                     <div className="driver-cash-action">
                       <div><b>Cash collection</b><small>After receiving the agreed fare, mark it as collected. No cash OTP or customer-side verification is required.</small></div>
-                      <button className="primary-btn" style={{width:'100%',justifyContent:'center',background:'#0a7a6e'}} onClick={() => onCashConfirm(b)}><IndianRupee size={17}/> Mark cash collected</button>
+                      <button className="primary-btn" style={{width:'100%',justifyContent:'center',background:'#0a7a6e'}} onClick={() => onCashConfirm(b)}><IndianRupee size={17}/> Mark {money(b.amountDue ?? b.total)} collected</button>
                     </div>
                   )}
                   {b.status === 'Trip started' && (
@@ -4062,8 +4062,8 @@ function CheckoutModal({ booking, onClose, onPay }: any) {
         <h2>Complete Trip Payment</h2>
         <p className="checkout-route">{booking.pickup} → {booking.destination}</p>
         <div className="total-due-banner">
-          <span>Total Fare Amount</span>
-          <b>{money(booking.total)}</b>
+          <span>Trip fare + approved, receipted expenses</span>
+          <b>{money(booking.amountDue ?? booking.total)}</b>
         </div>
         <p className="modal-sub">Pay securely using UPI, cards, or net banking through Razorpay. VaahanSathi records payment only after server verification.</p>
         <button className="primary-btn-wide" onClick={() => onPay(booking)}>
