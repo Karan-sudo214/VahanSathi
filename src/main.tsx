@@ -1798,7 +1798,7 @@ function TripExpensePanel({ booking, role, onRefresh, flash }: any) {
       body: file
     });
     if (!response.ok) throw new Error('The private evidence photo could not be uploaded. Please retry while you have a stable connection.');
-    return { key: ticket.key, mimeType: file.type, sizeBytes: file.size };
+    return { key: ticket.key, mimeType: file.type, sizeBytes: file.size, capturedAt: proof?.capturedAt || null };
   };
 
   const submitRequest = async (event: React.FormEvent) => {
