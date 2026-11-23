@@ -88,6 +88,26 @@ type Booking = {
   payment_method?: string;
   requestedDriverStyle?: string;
   bookingMode?: 'immediate' | 'scheduled' | 'auto';
+  amountDue?: number;
+  expenseTotalDue?: number;
+  expenses?: Array<{
+    id: string;
+    category: string;
+    requestedAmount: number;
+    approvedAmount?: number;
+    actualAmount?: number;
+    reason: string;
+    litres?: number | null;
+    stationName?: string | null;
+    status: string;
+    proofPhotoUrl?: string | null;
+    receiptPhotoUrl?: string | null;
+    gpsSnapshotDataUri?: string;
+    gpsMapUrl?: string;
+    gps?: { lat: number; lng: number; accuracy: number; deviceCapturedAt: string; serverReceivedAt: string };
+    createdAt: string;
+    customerNote?: string | null;
+  }>;
   scheduledStartAt?: string;
   dispatchPriority?: { bucket: string; score: number; label: string; minutesUntilPickup: number };
   grossPayout?: number;
@@ -1626,6 +1646,260 @@ function BookingRow({ booking: b, onClick }: any) {
   );
 }
 
+function TripExpensePanel({ booking, role, onRefresh, flash }: any) {
+  const expenses: any[] = Array.isArray(booking.expenses) ? booking.expenses : [];
+  const [category, setCategory] = useState('fuel');
+  const [amount, setAmount] = useState('');
+  const [reason, setReason] = useState('');
+  const [litres, setLitres] = useState('');
+  const [stationName, setStationName] = useState('');
+  const [nozzlePhoto, setNozzlePhoto] = useState<File | null>(null);
+  const [receipts, setReceipts] = useState<Record<string, File | null>>({});
+  const [actualAmounts, setActualAmounts] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState('');
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+
+  const isDriver = role === 'driver';
+  const canRequest = isDriver && booking.status === 'Trip started' &&
+    !expenses.some((item) => ['pending_customer_approval', 'approved'].includes(item.status));
+
+  const captureDeviceLocation = () => new Promise<GeolocationPosition>((resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject(new Error('This device does not provide GPS location. Please use a phone with location enabled.'));
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      resolve,
+      (gpsError) => reject(new Error(gpsError.code === gpsError.PERMISSION_DENIED
+        ? 'Location permission is blocked. Allow location access for VaahanSathi and try again.'
+        : gpsError.code === gpsError.TIMEOUT
+          ? 'The GPS fix took too long. Move to an area with a clearer GPS signal and retry.'
+          : 'A current GPS fix is not available. Enable device location and retry.')),
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 18000 }
+    );
+  });
+
+  const uploadEvidence = async (file: File, kind: 'nozzle' | 'receipt', expenseId?: string) => {
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) throw new Error('Use a JPEG, PNG or WebP photo.');
+    if (file.size < 1 || file.size > 10 * 1024 * 1024) throw new Error('Each expense photo must be smaller than 10 MB.');
+    const ticket = await api(`/bookings/${booking.id}/expenses/evidence-upload-url`, {
+      method: 'POST',
+      body: JSON.stringify({ kind, expenseId, mimeType: file.type })
+    });
+    const response = await fetch(ticket.uploadUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': file.type },
+      body: file
+    });
+    if (!response.ok) throw new Error('The private evidence photo could not be uploaded. Please retry while you have a stable connection.');
+    return { key: ticket.key, mimeType: file.type, sizeBytes: file.size };
+  };
+
+  const submitRequest = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setBusy('request'); setError(''); setNotice('');
+    try {
+      const requestedAmount = Number(amount);
+      if (!Number.isSafeInteger(requestedAmount) || requestedAmount < 1 || requestedAmount > 50000) {
+        throw new Error('Enter an amount between ₹1 and ₹50,000.');
+      }
+      if (reason.trim().length < 5) throw new Error('Add a short reason for the unexpected expense.');
+      if (category === 'fuel' && !nozzlePhoto) throw new Error('A photo of the fuel nozzle inserted into the car is required for petrol requests.');
+
+      // A fresh device GPS fix is sent through the same authenticated trip-location
+      // endpoint used by background tracking. The expense endpoint reads that server record.
+      const position = await captureDeviceLocation();
+      if (position.coords.accuracy > 150) throw new Error('GPS accuracy is too weak (over 150 m). Please retry where the GPS signal is clearer.');
+      await api(`/bookings/${booking.id}/location`, {
+        method: 'POST',
+        body: JSON.stringify({
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+          accuracy: position.coords.accuracy,
+          heading: position.coords.heading,
+          speed: position.coords.speed,
+          capturedAt: position.timestamp
+        })
+      });
+
+      let uploaded = { key: '', mimeType: '', sizeBytes: 0 };
+      if (nozzlePhoto) uploaded = await uploadEvidence(nozzlePhoto, 'nozzle');
+      await api(`/bookings/${booking.id}/expenses`, {
+        method: 'POST',
+        body: JSON.stringify({
+          category,
+          amount: requestedAmount,
+          reason: reason.trim(),
+          litres: litres ? Number(litres) : null,
+          stationName: stationName.trim(),
+          photoKey: uploaded.key || undefined,
+          mimeType: uploaded.mimeType || undefined,
+          sizeBytes: uploaded.sizeBytes || undefined
+        })
+      });
+      setAmount(''); setReason(''); setLitres(''); setStationName(''); setNozzlePhoto(null);
+      setNotice('Request sent. The customer will see the photo and app-generated GPS proof before approving it.');
+      await onRefresh?.();
+    } catch (submitError: any) {
+      setError(submitError?.message || 'The expense request could not be submitted.');
+    } finally { setBusy(''); }
+  };
+
+  const submitReceipt = async (expense: any) => {
+    const file = receipts[expense.id];
+    const actualAmount = Number(actualAmounts[expense.id] || 0);
+    if (!file) { setError('Select a clear photo of the fuel receipt.'); return; }
+    if (!Number.isSafeInteger(actualAmount) || actualAmount < 1 || actualAmount > Number(expense.approvedAmount || 0)) {
+      setError(`Enter the actual amount, up to the approved limit of ${money(expense.approvedAmount)}.`);
+      return;
+    }
+    setBusy(expense.id); setError(''); setNotice('');
+    try {
+      const uploaded = await uploadEvidence(file, 'receipt', expense.id);
+      await api(`/bookings/${booking.id}/expenses/${expense.id}/receipt`, {
+        method: 'POST',
+        body: JSON.stringify({ actualAmount, receiptKey: uploaded.key, mimeType: uploaded.mimeType, sizeBytes: uploaded.sizeBytes })
+      });
+      setNotice('Receipt submitted. The actual amount is attached to the booking and included in its final payment.');
+      await onRefresh?.();
+    } catch (receiptError: any) {
+      setError(receiptError?.message || 'The receipt could not be submitted.');
+    } finally { setBusy(''); }
+  };
+
+  const decide = async (expense: any, decision: 'approve' | 'decline') => {
+    setBusy(expense.id); setError(''); setNotice('');
+    try {
+      await api(`/bookings/${booking.id}/expenses/${expense.id}/decision`, {
+        method: 'POST', body: JSON.stringify({ decision })
+      });
+      setNotice(decision === 'approve'
+        ? `Approved up to ${money(expense.requestedAmount)}. The driver must upload the fuel receipt after filling.`
+        : 'Expense request declined. No amount has been added to your booking.');
+      await onRefresh?.();
+    } catch (decisionError: any) {
+      setError(decisionError?.message || 'Your decision could not be saved.');
+    } finally { setBusy(''); }
+  };
+
+  if (role === 'customer' && expenses.length === 0) return null;
+  if (role === 'driver' && expenses.length === 0 && !canRequest) return null;
+
+  return (
+    <section className="panel" style={{ padding: 14, marginTop: 14, border: '1px solid var(--slate-200)' }}>
+      <div className="panel-header" style={{ alignItems: 'center' }}>
+        <div>
+          <span className="eyebrow">TRIP EXPENSES</span>
+          <h3 style={{ margin: '3px 0' }}>{isDriver ? 'Request an extra expense' : 'Expense approval & proof'}</h3>
+          <p style={{ margin: 0 }}>{isDriver ? 'Ask the customer before spending. Fuel requests require a live GPS proof and nozzle photo.' : 'Only requests you approve and receipts uploaded afterwards are included in the final amount.'}</p>
+        </div>
+        {Number(booking.expenseTotalDue || 0) > 0 && <span className="status-pill">{money(booking.expenseTotalDue)} added</span>}
+      </div>
+
+      {expenses.map((expense: any) => (
+        <div key={expense.id} style={{ borderTop: '1px solid var(--slate-200)', paddingTop: 12, marginTop: 12 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+            <b>{({ fuel: 'Petrol / fuel', toll: 'Toll', parking: 'Parking', other: 'Other expense' } as any)[expense.category] || 'Trip expense'}</b>
+            <span className="status-pill">{String(expense.status || '').replace(/_/g, ' ')}</span>
+          </div>
+          <p style={{ margin: '6px 0' }}>{expense.reason}</p>
+          <p style={{ margin: '4px 0' }}><b>Requested:</b> {money(expense.requestedAmount)}{expense.litres ? ` · ${expense.litres} L` : ''}{expense.stationName ? ` · ${expense.stationName}` : ''}</p>
+          {expense.proofPhotoUrl && (
+            <div style={{ marginTop: 10 }}>
+              <small className="eyebrow">DRIVER PHOTO EVIDENCE</small>
+              <img src={expense.proofPhotoUrl} alt="Driver uploaded fuel nozzle and vehicle evidence" style={{ width: '100%', maxHeight: 250, objectFit: 'contain', background: '#f1f5f9', borderRadius: 10, marginTop: 6 }} />
+            </div>
+          )}
+          {expense.gpsSnapshotDataUri && (
+            <div style={{ marginTop: 10 }}>
+              <small className="eyebrow">SYSTEM-CAPTURED GPS SNAPSHOT</small>
+              <img src={expense.gpsSnapshotDataUri} alt="VaahanSathi system-generated GPS location proof" style={{ width: '100%', maxHeight: 210, objectFit: 'contain', background: '#f1f5f9', borderRadius: 10, marginTop: 6 }} />
+              {expense.gpsMapUrl && <a href={expense.gpsMapUrl} target="_blank" rel="noreferrer" className="link-btn-inline">Open captured coordinates in OpenStreetMap</a>}
+              {expense.gps && <small style={{ display: 'block', color: 'var(--slate-500)' }}>GPS accuracy ±{Math.round(expense.gps.accuracy)} m · Server time {new Date(expense.gps.serverReceivedAt).toLocaleString('en-IN')}</small>}
+            </div>
+          )}
+
+          {role === 'customer' && expense.status === 'pending_customer_approval' && (
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
+              <button className="primary-btn" disabled={busy === expense.id} onClick={() => decide(expense, 'approve')}>Approve up to {money(expense.requestedAmount)}</button>
+              <button className="secondary-btn" disabled={busy === expense.id} onClick={() => decide(expense, 'decline')}>Decline request</button>
+            </div>
+          )}
+          {role === 'customer' && expense.status === 'approved' && <small className="muted">Approved up to {money(expense.approvedAmount)}. Waiting for the driver’s final pump receipt.</small>}
+          {expense.receiptPhotoUrl && (
+            <div style={{ marginTop: 10 }}>
+              <small className="eyebrow">FINAL FUEL RECEIPT</small>
+              <img src={expense.receiptPhotoUrl} alt="Uploaded petrol station receipt" style={{ width: '100%', maxHeight: 220, objectFit: 'contain', background: '#f1f5f9', borderRadius: 10, marginTop: 6 }} />
+            </div>
+          )}
+          {['confirmed', 'paid'].includes(expense.status) && (
+            <p style={{ margin: '8px 0' }}><b>Actual amount:</b> {money(expense.actualAmount)} {expense.status === 'paid' ? '· included in paid booking amount' : '· added to final booking payment'}</p>
+          )}
+          {role === 'driver' && expense.status === 'approved' && (
+            <div style={{ display: 'grid', gap: 8, marginTop: 10 }}>
+              <label className="field-group"><span>Actual amount on fuel receipt (up to {money(expense.approvedAmount)})</span>
+                <input type="number" min="1" max={expense.approvedAmount} step="1" value={actualAmounts[expense.id] || ''} onChange={(e) => setActualAmounts((current) => ({ ...current, [expense.id]: e.target.value }))} placeholder="Enter actual amount in rupees" />
+              </label>
+              <label className="field-group"><span>Upload fuel station receipt photo</span>
+                <input type="file" accept="image/jpeg,image/png,image/webp" capture="environment" onChange={(e) => setReceipts((current) => ({ ...current, [expense.id]: e.target.files?.[0] || null }))} />
+              </label>
+              <button className="primary-btn" disabled={busy === expense.id || !receipts[expense.id] || !actualAmounts[expense.id]} onClick={() => submitReceipt(expense)}>
+                {busy === expense.id ? 'Uploading receipt…' : 'Submit fuel receipt & actual amount'}
+              </button>
+            </div>
+          )}
+          {expense.status === 'declined' && <small className="muted">Customer declined this request. No expense has been charged.</small>}
+        </div>
+      ))}
+
+      {canRequest && (
+        <form onSubmit={submitRequest} style={{ display: 'grid', gap: 10, marginTop: 12, borderTop: '1px solid var(--slate-200)', paddingTop: 12 }}>
+          <label className="field-group"><span>Expense type</span>
+            <select value={category} onChange={(e) => setCategory(e.target.value)}>
+              <option value="fuel">Petrol / fuel</option>
+              <option value="toll">Toll</option>
+              <option value="parking">Parking</option>
+              <option value="other">Other unexpected expense</option>
+            </select>
+          </label>
+          <label className="field-group"><span>Amount requested (₹)</span>
+            <input type="number" min="1" max="50000" step="1" required value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="Enter exact amount you need" />
+          </label>
+          {category === 'fuel' && (
+            <>
+              <label className="field-group"><span>Fuel amount (litres, optional)</span>
+                <input type="number" min="0.1" max="200" step="0.1" value={litres} onChange={(e) => setLitres(e.target.value)} placeholder="Example: 8.5" />
+              </label>
+              <label className="field-group"><span>Petrol station (optional)</span>
+                <input maxLength={120} value={stationName} onChange={(e) => setStationName(e.target.value)} placeholder="Station name / area" />
+              </label>
+              <label className="field-group"><span>Photo of the car’s fuel nozzle</span>
+                <input type="file" accept="image/jpeg,image/png,image/webp" capture="environment" required onChange={(e) => setNozzlePhoto(e.target.files?.[0] || null)} />
+              </label>
+              <small className="muted">Take a fresh photo at the petrol station with the nozzle inserted into the car’s fuel inlet and the vehicle visible. The app captures GPS separately; do not upload a screenshot as location proof.</small>
+            </>
+          )}
+          {category !== 'fuel' && (
+            <label className="field-group"><span>Supporting photo (optional)</span>
+              <input type="file" accept="image/jpeg,image/png,image/webp" capture="environment" onChange={(e) => setNozzlePhoto(e.target.files?.[0] || null)} />
+            </label>
+          )}
+          <label className="field-group"><span>Why is this expense needed?</span>
+            <textarea rows={2} required maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Briefly explain why this extra spend is needed during the trip." />
+          </label>
+          <button className="primary-btn-wide" type="submit" disabled={busy === 'request' || !amount || reason.trim().length < 5 || (category === 'fuel' && !nozzlePhoto)}>
+            {busy === 'request' ? 'Capturing GPS & submitting…' : 'Send expense request for customer approval'}
+          </button>
+        </form>
+      )}
+
+      {notice && <p className="tripguard-status" role="status">{notice}</p>}
+      {error && <p className="tripguard-error" role="alert">{error}</p>}
+    </section>
+  );
+}
+
 // ----------------- Trips Page -----------------
 function TripsPage({ bookings, filter, setFilter, update, onRate, onPay, onTrack, onBook, receipts, onReportDriver, onRefresh, cashRewardsPoints = 0 }: any) {
   const filters = ['Upcoming', 'Completed', 'Cancelled'];
@@ -1971,7 +2245,8 @@ function DriverPage({ bookings, update, user, onDutyChange, flash, onCashConfirm
         sending = true;
         const payload = {
           lat, lng, accuracy: position.coords.accuracy,
-          heading: position.coords.heading, speed: position.coords.speed
+          heading: position.coords.heading, speed: position.coords.speed,
+          capturedAt: position.timestamp
         };
         Promise.all(active.map((booking: Booking) => api(`/bookings/${booking.id}/location`, {
           method: 'POST', body: JSON.stringify(payload)
