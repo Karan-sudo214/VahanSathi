@@ -908,7 +908,8 @@ function verifyFareQuote(token, expectedInput) {
   let payload;
   try { payload = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8')); }
   catch { throw new Error('The fare confirmation is invalid. Please refresh the estimate.'); }
-  if (!payload.expiresAt || Date.now() > Date.parse(payload.expiresAt)) throw new Error('This fare estimate has expired. Please refresh it to confirm the current price.');
+  const expiryMs = Date.parse(payload.expiresAt || '');
+  if (!Number.isFinite(expiryMs) || Date.now() > expiryMs) throw new Error('This fare estimate has expired. Please refresh it to confirm the current price.');
   const input = payload.input || {};
   for (const key of ['tripType', 'pickup', 'destination', 'city', 'vehicle', 'date', 'time']) {
     if (String(input[key] ?? '') !== String(expectedInput[key] ?? '')) throw new Error('Your trip details changed after the fare was calculated. Please refresh the estimate.');
@@ -1898,6 +1899,9 @@ app.post(
     if (req.body?.fareQuoteToken) {
       try {
         const quote = verifyFareQuote(req.body.fareQuoteToken, normalizedInput);
+        if (data.bookings.some((existing) => existing.fareQuoteId && existing.fareQuoteId === quote.quoteId)) {
+          return res.status(409).json({ error: 'This fare quote has already been used for a booking. Please refresh your estimate for another booking.' });
+        }
         route = quote.route; f = quote.fare;
         quoteId = quote.quoteId; quoteIssuedAt = quote.issuedAt; quoteExpiresAt = quote.expiresAt;
       } catch (error) {
