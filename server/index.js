@@ -1326,6 +1326,12 @@ app.post('/api/bookings/:id/expenses/evidence-upload-url', auth, roles('driver')
   }
   const evidenceId = expense?.id || randomUUID();
   const key = `trip-expenses/${booking.id}/${evidenceId}/${kind}-${randomUUID()}.${extension}`;
+  booking.expenseUploadTickets = Array.isArray(booking.expenseUploadTickets) ? booking.expenseUploadTickets : [];
+  const ticket = { key, kind, expenseId: expense?.id || null, createdAt: new Date().toISOString(), usedAt: null };
+  booking.expenseUploadTickets.push(ticket);
+  booking.expenseUploadTickets = booking.expenseUploadTickets.slice(-30);
+  await persistItem('app_bookings', booking.id, booking);
+  await save();
   res.json({ uploadUrl: r2Presign('PUT', key, 600), key, expiresIn: 600, mimeType });
 }));
 
@@ -1357,9 +1363,13 @@ app.post('/api/bookings/:id/expenses', auth, roles('driver'), asyncRoute(async (
   if (category !== 'fuel' && photoKey && (!validPhotoKey || !expenseImageTypes[mimeType] || !Number.isSafeInteger(sizeBytes) || sizeBytes < 1 || sizeBytes > 10 * 1024 * 1024)) {
     return res.status(400).json({ error: 'The uploaded expense photo is invalid or exceeds 10 MB.' });
   }
+  if (category === 'fuel' && !photoKey) return res.status(400).json({ error: 'A nozzle photo is required for petrol expenses.' });
   if (photoKey) {
+    const ticket = (booking.expenseUploadTickets || []).find((item) => item.key === photoKey && item.kind === 'nozzle' && !item.usedAt);
+    if (!ticket || Date.now() - Date.parse(ticket.createdAt) > 10 * 60 * 1000) return res.status(400).json({ error: 'The photo upload ticket is missing or expired. Upload a fresh photo.' });
     verifiedPhoto = await verifyExpenseImageInR2(photoKey, mimeType);
     if (!verifiedPhoto) return res.status(400).json({ error: 'The photo was not found in private storage or its type/size could not be verified. Please upload it again.' });
+    ticket.usedAt = new Date().toISOString();
   }
   const enteredLitres = category === 'fuel' && req.body?.litres !== undefined && req.body?.litres !== '' ? Number(req.body.litres) : null;
   if (enteredLitres !== null && (!Number.isFinite(enteredLitres) || enteredLitres < 0.1 || enteredLitres > 200)) {
@@ -1453,10 +1463,13 @@ app.post('/api/bookings/:id/expenses/:expenseId/receipt', auth, roles('driver'),
   const validReceiptKey = receiptKey.startsWith(`trip-expenses/${booking.id}/${expense.id}/receipt-`) &&
     Object.values(expenseImageTypes).some((ext) => receiptKey.endsWith(`.${ext}`));
   if (!validReceiptKey || !expenseImageTypes[receiptMimeType] || !Number.isSafeInteger(receiptSizeBytes) || receiptSizeBytes < 1 || receiptSizeBytes > 10 * 1024 * 1024) {
-    return res.status(400).json({ error: 'A valid fuel receipt photo under 10 MB is required.' });
+    return res.status(400).json({ error: 'A valid expense receipt photo under 10 MB is required.' });
   }
+  const receiptTicket = (booking.expenseUploadTickets || []).find((item) => item.key === receiptKey && item.kind === 'receipt' && item.expenseId === expense.id && !item.usedAt);
+  if (!receiptTicket || Date.now() - Date.parse(receiptTicket.createdAt) > 10 * 60 * 1000) return res.status(400).json({ error: 'The receipt upload ticket is missing or expired. Upload a fresh receipt.' });
   const verifiedReceipt = await verifyExpenseImageInR2(receiptKey, receiptMimeType);
   if (!verifiedReceipt) return res.status(400).json({ error: 'The receipt was not found in private storage or its type/size could not be verified. Please upload it again.' });
+  receiptTicket.usedAt = new Date().toISOString();
   const now = new Date().toISOString();
   expense.actualAmount = actualAmount;
   expense.receiptPhotoKey = receiptKey;
