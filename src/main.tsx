@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
   Activity,
+  Camera,
   CreditCard,
   ArrowDownUp,
   ArrowLeft,
@@ -102,9 +103,11 @@ type Booking = {
     status: string;
     proofPhotoUrl?: string | null;
     receiptPhotoUrl?: string | null;
+    proofPhotoCapturedAt?: string | null;
     gpsSnapshotDataUri?: string;
     gpsMapUrl?: string;
-    gps?: { lat: number; lng: number; accuracy: number; deviceCapturedAt: string; serverReceivedAt: string };
+    gpsEmbedUrl?: string;
+    gps?: { lat: number; lng: number; accuracy: number; deviceCapturedAt: string; serverReceivedAt: string; signature?: string };
     createdAt: string;
     customerNote?: string | null;
   }>;
@@ -1654,6 +1657,12 @@ function TripExpensePanel({ booking, role, onRefresh, flash }: any) {
   const [litres, setLitres] = useState('');
   const [stationName, setStationName] = useState('');
   const [nozzlePhoto, setNozzlePhoto] = useState<File | null>(null);
+  const [nozzlePhotoCapturedAt, setNozzlePhotoCapturedAt] = useState<string | null>(null);
+  const [nozzlePhotoPreviewUrl, setNozzlePhotoPreviewUrl] = useState('');
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [cameraError, setCameraError] = useState('');
+  const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
+  const cameraStreamRef = useRef<MediaStream | null>(null);
   const [receipts, setReceipts] = useState<Record<string, File | null>>({});
   const [actualAmounts, setActualAmounts] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState('');
@@ -1663,6 +1672,92 @@ function TripExpensePanel({ booking, role, onRefresh, flash }: any) {
   const isDriver = role === 'driver';
   const canRequest = isDriver && booking.status === 'Trip started' &&
     !expenses.some((item) => ['pending_customer_approval', 'approved'].includes(item.status));
+
+  const stopNozzleCamera = () => {
+    cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
+    cameraStreamRef.current = null;
+    setCameraOpen(false);
+  };
+
+  useEffect(() => {
+    if (!cameraOpen || !cameraVideoRef.current || !cameraStreamRef.current) return;
+    const video = cameraVideoRef.current;
+    video.srcObject = cameraStreamRef.current;
+    video.play().catch(() => setCameraError('The camera preview could not start. Close it and allow camera access.'));
+  }, [cameraOpen]);
+
+  useEffect(() => () => {
+    cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
+    if (nozzlePhotoPreviewUrl) URL.revokeObjectURL(nozzlePhotoPreviewUrl);
+  }, [booking.id, nozzlePhotoPreviewUrl]);
+
+  const openNozzleCamera = async () => {
+    setCameraError('');
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCameraError('Live camera capture is not supported by this browser. Use the latest Chrome or Safari on a secure connection.');
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: {
+          facingMode: { ideal: 'environment' },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 }
+        }
+      });
+      cameraStreamRef.current = stream;
+      setCameraOpen(true);
+    } catch (cameraFailure: any) {
+      setCameraError(cameraFailure?.name === 'NotAllowedError'
+        ? 'Camera permission is blocked. Allow camera access for VaahanSathi and try again.'
+        : cameraFailure?.name === 'NotFoundError'
+          ? 'No rear-facing camera was found on this device.'
+          : 'The camera could not be opened. Check camera permissions and try again.');
+    }
+  };
+
+  const captureNozzlePhoto = () => {
+    const video = cameraVideoRef.current;
+    if (!video || video.readyState < 2 || !video.videoWidth || !video.videoHeight) {
+      setCameraError('The live camera is not ready yet. Wait for the preview and try again.');
+      return;
+    }
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const context = canvas.getContext('2d');
+    if (!context) {
+      setCameraError('Could not capture the camera frame. Please retry.');
+      return;
+    }
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        setCameraError('The nozzle photo could not be created. Please retry.');
+        return;
+      }
+      const capturedAt = new Date().toISOString();
+      const photo = new File([blob], `vaahansathi-fuel-nozzle-${booking.id}-${Date.now()}.jpg`, {
+        type: 'image/jpeg',
+        lastModified: Date.now()
+      });
+      if (nozzlePhotoPreviewUrl) URL.revokeObjectURL(nozzlePhotoPreviewUrl);
+      setNozzlePhoto(photo);
+      setNozzlePhotoCapturedAt(capturedAt);
+      setNozzlePhotoPreviewUrl(URL.createObjectURL(photo));
+      setCameraError('');
+      stopNozzleCamera();
+    }, 'image/jpeg', 0.9);
+  };
+
+  const retakeNozzlePhoto = () => {
+    if (nozzlePhotoPreviewUrl) URL.revokeObjectURL(nozzlePhotoPreviewUrl);
+    setNozzlePhotoPreviewUrl('');
+    setNozzlePhoto(null);
+    setNozzlePhotoCapturedAt(null);
+    void openNozzleCamera();
+  };
 
   const captureDeviceLocation = () => new Promise<GeolocationPosition>((resolve, reject) => {
     if (!navigator.geolocation) {
@@ -1680,12 +1775,22 @@ function TripExpensePanel({ booking, role, onRefresh, flash }: any) {
     );
   });
 
-  const uploadEvidence = async (file: File, kind: 'nozzle' | 'receipt', expenseId?: string) => {
+  const uploadEvidence = async (
+    file: File,
+    kind: 'nozzle' | 'receipt',
+    expenseId?: string,
+    proof?: { category?: string; captureMode?: string; capturedAt?: string | null }
+  ) => {
     if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) throw new Error('Use a JPEG, PNG or WebP photo.');
     if (file.size < 1 || file.size > 10 * 1024 * 1024) throw new Error('Each expense photo must be smaller than 10 MB.');
     const ticket = await api(`/bookings/${booking.id}/expenses/evidence-upload-url`, {
       method: 'POST',
-      body: JSON.stringify({ kind, expenseId, mimeType: file.type })
+      body: JSON.stringify({
+        kind, expenseId, mimeType: file.type,
+        category: proof?.category || (kind === 'receipt' ? 'fuel' : 'other'),
+        captureMode: proof?.captureMode || undefined,
+        capturedAt: proof?.capturedAt || undefined
+      })
     });
     const response = await fetch(ticket.uploadUrl, {
       method: 'PUT',
@@ -1705,12 +1810,14 @@ function TripExpensePanel({ booking, role, onRefresh, flash }: any) {
         throw new Error('Enter an amount between ₹1 and ₹50,000.');
       }
       if (reason.trim().length < 5) throw new Error('Add a short reason for the unexpected expense.');
-      if (category === 'fuel' && !nozzlePhoto) throw new Error('A photo of the fuel nozzle inserted into the car is required for petrol requests.');
+      if (category === 'fuel' && (!nozzlePhoto || !nozzlePhotoCapturedAt || !nozzlePhotoPreviewUrl)) {
+        throw new Error('Capture a fresh photo from the in-app rear camera. Gallery photos are not accepted for petrol requests.');
+      }
 
-      // A fresh device GPS fix is sent through the same authenticated trip-location
-      // endpoint used by background tracking. The expense endpoint reads that server record.
+      // Obtain a fresh high-accuracy fix after the camera capture. The backend
+      // timestamps and signs the GPS evidence card before it is shown to the customer.
       const position = await captureDeviceLocation();
-      if (position.coords.accuracy > 150) throw new Error('GPS accuracy is too weak (over 150 m). Please retry where the GPS signal is clearer.');
+      if (position.coords.accuracy > 100) throw new Error('GPS accuracy is too weak (over 100 m). Please retry where the GPS signal is clearer.');
       await api(`/bookings/${booking.id}/location`, {
         method: 'POST',
         body: JSON.stringify({
@@ -1723,8 +1830,15 @@ function TripExpensePanel({ booking, role, onRefresh, flash }: any) {
         })
       });
 
-      let uploaded = { key: '', mimeType: '', sizeBytes: 0 };
-      if (nozzlePhoto) uploaded = await uploadEvidence(nozzlePhoto, 'nozzle');
+      let uploaded = { key: '', mimeType: '', sizeBytes: 0, capturedAt: null as string | null };
+      if (nozzlePhoto) {
+        uploaded = await uploadEvidence(nozzlePhoto, 'nozzle', undefined, {
+          category,
+          captureMode: category === 'fuel' ? 'live_camera' : 'file_picker',
+          capturedAt: category === 'fuel' ? nozzlePhotoCapturedAt : null
+        });
+        uploaded.capturedAt = category === 'fuel' ? nozzlePhotoCapturedAt : null;
+      }
       await api(`/bookings/${booking.id}/expenses`, {
         method: 'POST',
         body: JSON.stringify({
@@ -1735,10 +1849,14 @@ function TripExpensePanel({ booking, role, onRefresh, flash }: any) {
           stationName: stationName.trim(),
           photoKey: uploaded.key || undefined,
           mimeType: uploaded.mimeType || undefined,
-          sizeBytes: uploaded.sizeBytes || undefined
+          sizeBytes: uploaded.sizeBytes || undefined,
+          photoCapturedAt: uploaded.capturedAt || undefined
         })
       });
-      setAmount(''); setReason(''); setLitres(''); setStationName(''); setNozzlePhoto(null);
+      setAmount(''); setReason(''); setLitres(''); setStationName('');
+      setNozzlePhoto(null); setNozzlePhotoCapturedAt(null);
+      if (nozzlePhotoPreviewUrl) URL.revokeObjectURL(nozzlePhotoPreviewUrl);
+      setNozzlePhotoPreviewUrl('');
       setNotice('Request sent. The customer will see the photo and app-generated GPS proof before approving it.');
       await onRefresh?.();
     } catch (submitError: any) {
@@ -1814,7 +1932,16 @@ function TripExpensePanel({ booking, role, onRefresh, flash }: any) {
           {expense.gpsSnapshotDataUri && (
             <div style={{ marginTop: 10 }}>
               <small className="eyebrow">SYSTEM-CAPTURED GPS SNAPSHOT</small>
-              <img src={expense.gpsSnapshotDataUri} alt="VaahanSathi system-generated GPS location proof" style={{ width: '100%', maxHeight: 210, objectFit: 'contain', background: '#f1f5f9', borderRadius: 10, marginTop: 6 }} />
+              <img src={expense.gpsSnapshotDataUri} alt="VaahanSathi system-generated GPS location proof with server timestamp and signature" style={{ width: '100%', maxHeight: 230, objectFit: 'contain', background: '#f1f5f9', borderRadius: 10, marginTop: 6 }} />
+              {expense.gpsEmbedUrl && (
+                <iframe
+                  title="System-captured fuel expense GPS map"
+                  src={expense.gpsEmbedUrl}
+                  loading="lazy"
+                  referrerPolicy="no-referrer"
+                  style={{ width: '100%', height: 220, border: 0, borderRadius: 10, marginTop: 8 }}
+                />
+              )}
               {expense.gpsMapUrl && <a href={expense.gpsMapUrl} target="_blank" rel="noreferrer" className="link-btn-inline">Open captured coordinates in OpenStreetMap</a>}
               {expense.gps && <small style={{ display: 'block', color: 'var(--slate-500)' }}>GPS accuracy ±{Math.round(expense.gps.accuracy)} m · Server time {new Date(expense.gps.serverReceivedAt).toLocaleString('en-IN')}</small>}
             </div>
@@ -1835,6 +1962,11 @@ function TripExpensePanel({ booking, role, onRefresh, flash }: any) {
           )}
           {['confirmed', 'paid'].includes(expense.status) && (
             <p style={{ margin: '8px 0' }}><b>Actual amount:</b> {money(expense.actualAmount)} {expense.status === 'paid' ? '· included in paid booking amount' : '· added to final booking payment'}</p>
+          )}
+          {role === 'driver' && expense.status === 'pending_customer_approval' && (
+            <div className="carcare-waiting" style={{ marginTop: 10 }}>
+              <Clock3 size={15} /> Do not refuel yet. Wait until the customer approves this exact amount.
+            </div>
           )}
           {role === 'driver' && expense.status === 'approved' && (
             <div style={{ display: 'grid', gap: 8, marginTop: 10 }}>
@@ -1874,10 +2006,41 @@ function TripExpensePanel({ booking, role, onRefresh, flash }: any) {
               <label className="field-group"><span>Petrol station (optional)</span>
                 <input maxLength={120} value={stationName} onChange={(e) => setStationName(e.target.value)} placeholder="Station name / area" />
               </label>
-              <label className="field-group"><span>Photo of the car’s fuel nozzle</span>
-                <input type="file" accept="image/jpeg,image/png,image/webp" capture="environment" required onChange={(e) => setNozzlePhoto(e.target.files?.[0] || null)} />
-              </label>
-              <small className="muted">Take a fresh photo at the petrol station with the nozzle inserted into the car’s fuel inlet and the vehicle visible. The app captures GPS separately; do not upload a screenshot as location proof.</small>
+              <div className="field-group">
+                <span>Live photo of the petrol nozzle (required)</span>
+                {!cameraOpen && !nozzlePhotoPreviewUrl && (
+                  <button type="button" className="secondary-btn" onClick={openNozzleCamera}>
+                    <Camera size={16} /> Open rear camera & capture nozzle
+                  </button>
+                )}
+                {cameraOpen && (
+                  <div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
+                    <video
+                      ref={cameraVideoRef}
+                      autoPlay
+                      muted
+                      playsInline
+                      aria-label="Live rear camera preview for fuel nozzle proof"
+                      style={{ width: '100%', maxHeight: 320, objectFit: 'cover', background: '#0f172a', borderRadius: 12 }}
+                    />
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      <button type="button" className="primary-btn" onClick={captureNozzlePhoto}><Camera size={15} /> Capture live photo</button>
+                      <button type="button" className="secondary-btn" onClick={stopNozzleCamera}>Cancel camera</button>
+                    </div>
+                  </div>
+                )}
+                {nozzlePhotoPreviewUrl && (
+                  <div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
+                    <img src={nozzlePhotoPreviewUrl} alt="Fresh in-app camera capture of the car's petrol nozzle" style={{ width: '100%', maxHeight: 260, objectFit: 'contain', borderRadius: 10, background: '#0f172a' }} />
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+                      <small className="muted">Captured by VaahanSathi camera · {nozzlePhotoCapturedAt ? new Date(nozzlePhotoCapturedAt).toLocaleString('en-IN') : ''}</small>
+                      <button type="button" className="secondary-btn" onClick={retakeNozzlePhoto}>Retake photo</button>
+                    </div>
+                  </div>
+                )}
+                {cameraError && <small className="tripguard-error">{cameraError}</small>}
+              </div>
+              <small className="muted">Use the live rear camera. Keep the car’s fuel inlet, nozzle and pump area visible. The app attaches a fresh GPS fix, timestamp and system-generated location evidence. Do not use a saved gallery image.</small>
             </>
           )}
           {category !== 'fuel' && (
@@ -1888,8 +2051,8 @@ function TripExpensePanel({ booking, role, onRefresh, flash }: any) {
           <label className="field-group"><span>Why is this expense needed?</span>
             <textarea rows={2} required maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Briefly explain why this extra spend is needed during the trip." />
           </label>
-          <button className="primary-btn-wide" type="submit" disabled={busy === 'request' || !amount || reason.trim().length < 5 || (category === 'fuel' && !nozzlePhoto)}>
-            {busy === 'request' ? 'Capturing GPS & submitting…' : 'Send expense request for customer approval'}
+          <button className="primary-btn-wide" type="submit" disabled={busy === 'request' || cameraOpen || !amount || reason.trim().length < 5 || (category === 'fuel' && (!nozzlePhoto || !nozzlePhotoCapturedAt))}>
+            {busy === 'request' ? 'Capturing GPS & submitting…' : 'Send proof for customer approval'}
           </button>
         </form>
       )}
