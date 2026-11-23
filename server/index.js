@@ -2536,6 +2536,16 @@ app.post('/api/support/tickets/:id/attachments/upload-url', auth, asyncRoute(asy
     return res.status(400).json({ error: 'Attach a JPG, PNG or WebP image up to 5 MB.' });
   }
   const key = 'support-tickets/' + ticket.id + '/' + randomUUID() + '.' + extension;
+  ticket.attachmentUploadTickets = Array.isArray(ticket.attachmentUploadTickets) ? ticket.attachmentUploadTickets : [];
+  ticket.attachmentUploadTickets.push({
+    key, mimeType, sizeBytes,
+    createdAt: new Date().toISOString(),
+    createdBy: req.user.id,
+    usedAt: null
+  });
+  ticket.attachmentUploadTickets = ticket.attachmentUploadTickets.slice(-20);
+  await persistItem('app_support_tickets', ticket.id, ticket);
+  await save();
   res.json({ uploadUrl: r2Presign('PUT', key, 600), key, mimeType, expiresIn: 600 });
 }));
 
@@ -2556,8 +2566,18 @@ app.post('/api/support/tickets/:id/messages', auth, asyncRoute(async (req, res) 
     if (!key.startsWith('support-tickets/' + ticket.id + '/') || !expenseImageTypes[mimeType] || !Number.isSafeInteger(sizeBytes) || sizeBytes < 1 || sizeBytes > 5 * 1024 * 1024) {
       return res.status(400).json({ error: 'The support evidence attachment is invalid.' });
     }
+    const uploadTicket = (ticket.attachmentUploadTickets || []).find((item) =>
+      item.key === key && item.mimeType === mimeType && item.sizeBytes === sizeBytes &&
+      item.createdBy === req.user.id && !item.usedAt
+    );
+    if (!uploadTicket || Date.now() - Date.parse(uploadTicket.createdAt) > 10 * 60 * 1000) {
+      return res.status(400).json({ error: 'The support evidence upload ticket is missing, expired or already used. Upload the image again.' });
+    }
     const verified = await verifyExpenseImageInR2(key, mimeType);
-    if (!verified || verified.sizeBytes !== sizeBytes) return res.status(400).json({ error: 'The support evidence image could not be verified in secure storage. Upload it again.' });
+    if (!verified || verified.sizeBytes !== sizeBytes || verified.sizeBytes > 5 * 1024 * 1024) {
+      return res.status(400).json({ error: 'The support evidence image could not be verified in secure storage. Upload it again.' });
+    }
+    uploadTicket.usedAt = new Date().toISOString();
     verifiedAttachment = { attachmentKey: key, attachmentMimeType: verified.mimeType, attachmentSizeBytes: verified.sizeBytes };
   }
   const now = new Date().toISOString();
