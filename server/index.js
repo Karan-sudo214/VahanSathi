@@ -1375,6 +1375,7 @@ app.post('/api/bookings/:id/expenses', auth, roles('driver'), asyncRoute(async (
   const validPhotoKey = photoKey.startsWith(`trip-expenses/${booking.id}/`) &&
     Object.values(expenseImageTypes).some((ext) => photoKey.endsWith(`.${ext}`));
   let verifiedPhoto = null;
+  let uploadTicket = null;
   if (category === 'fuel' && (!validPhotoKey || !expenseImageTypes[mimeType] || !Number.isSafeInteger(sizeBytes) || sizeBytes < 1 || sizeBytes > 10 * 1024 * 1024)) {
     return res.status(400).json({ error: 'Fuel requests require a fuel-nozzle photo smaller than 10 MB.' });
   }
@@ -1386,6 +1387,7 @@ app.post('/api/bookings/:id/expenses', auth, roles('driver'), asyncRoute(async (
     const ticket = (booking.expenseUploadTickets || []).find((item) => item.key === photoKey && item.kind === 'nozzle' && !item.usedAt);
     if (!ticket || Date.now() - Date.parse(ticket.createdAt) > 10 * 60 * 1000) return res.status(400).json({ error: 'The photo upload ticket is missing or expired. Upload a fresh photo.' });
     if (ticket.expenseCategory && ticket.expenseCategory !== category) return res.status(400).json({ error: 'The uploaded photo was prepared for a different expense category.' });
+    uploadTicket = ticket;
     if (category === 'fuel') {
       const capturedMs = Date.parse(ticket.photoCapturedAt || '');
       const ageMs = Date.now() - capturedMs;
@@ -1438,8 +1440,8 @@ app.post('/api/bookings/:id/expenses', auth, roles('driver'), asyncRoute(async (
     proofPhotoKey: photoKey || null,
     proofPhotoMimeType: verifiedPhoto?.mimeType || null,
     proofPhotoSizeBytes: verifiedPhoto?.sizeBytes || null,
-    proofPhotoCapturedAt: ticket?.photoCapturedAt || null,
-    proofCaptureMode: ticket?.captureMode || null,
+    proofPhotoCapturedAt: uploadTicket?.photoCapturedAt || null,
+    proofCaptureMode: uploadTicket?.captureMode || null,
     gps: {
       lat: Number(position.lat), lng: Number(position.lng),
       accuracy: Number(position.accuracy),
