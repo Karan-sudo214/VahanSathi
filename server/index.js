@@ -7,6 +7,7 @@ import { randomUUID, randomInt, createHmac, createHash, timingSafeEqual, createP
 import fs from 'node:fs';
 import path from 'node:path';
 import pg from 'pg';
+import { normalizePickupTime } from '../shared/time.js';
 
 const { Pool } = pg;
 const app = express();
@@ -1147,10 +1148,12 @@ app.post('/api/fare/estimate', asyncRoute(async (req, res) => {
   if (!pickup || !destination || pickup.length > 250 || destination.length > 250 || !['Delhi', 'Gurugram'].includes(city)) {
     return res.status(400).json({ error: 'Choose Delhi or Gurugram and enter both route locations.' });
   }
+  const normalizedTime = normalizePickupTime(req.body?.time || '08:00');
+  if (!normalizedTime) return res.status(400).json({ error: 'Enter a valid pickup time (for example, 08:00 AM).' });
   const input = {
     tripType: String(req.body?.tripType || 'Hourly'), pickup, destination, city,
     vehicle: String(req.body?.vehicle || 'Sedan'), date: String(req.body?.date || ''),
-    time: String(req.body?.time || '08:00'), hours: Number(req.body?.hours || 4)
+    time: normalizedTime, hours: Number(req.body?.hours || 4)
   };
   if (!Number.isFinite(input.hours) || input.hours < 1 || input.hours > 24) return res.status(400).json({ error: 'Choose a trip duration between 1 and 24 hours.' });
   const route = await routeDistance(pickup, destination, city);
@@ -1905,14 +1908,15 @@ app.post(
       return res.status(400).json({ error: 'VaahanSathi is currently operational in Delhi and Gurugram.' });
     }
 
+    const normalizedTime = normalizePickupTime(time);
+    if (!normalizedTime) return res.status(400).json({ error: 'Enter a valid pickup time (for example, 08:00 AM).' });
     const normalizedInput = {
       tripType: String(tripType), pickup: String(pickup).trim(), destination: String(destination).trim(),
-      city: String(city), vehicle: String(vehicle), date: String(date), time: String(time), hours: Number(hours)
+      city: String(city), vehicle: String(vehicle), date: String(date), time: normalizedTime, hours: Number(hours)
     };
     if (!['Hourly', 'Airport', 'Night driver', 'Full day', 'Outstation'].includes(normalizedInput.tripType)) return res.status(400).json({ error: 'Choose a supported driver service type.' });
     if (!['Sedan', 'SUV', 'Luxury'].includes(normalizedInput.vehicle)) return res.status(400).json({ error: 'Choose a supported vehicle class.' });
     if (!Number.isFinite(normalizedInput.hours) || normalizedInput.hours < 1 || normalizedInput.hours > 24) return res.status(400).json({ error: 'Trip duration must be between 1 and 24 hours.' });
-    if (!/^([01]\\d|2[0-3]):[0-5]\\d$/.test(normalizedInput.time)) return res.status(400).json({ error: 'Enter a valid pickup time.' });
     let route, f, quoteId = null, quoteIssuedAt = null, quoteExpiresAt = null;
     if (!req.body?.fareQuoteToken) {
       return res.status(409).json({ error: 'A verified fare quote is required. Please estimate and review the exact fare before booking.' });
@@ -1940,7 +1944,7 @@ app.post(
     // modes are retained so the driver queue can prioritize urgent work without losing reservations.
     const requestedMode = String(req.body?.bookingMode || 'auto');
     if (!['auto', 'immediate', 'scheduled'].includes(requestedMode)) return res.status(400).json({ error: 'Choose immediate or scheduled booking.' });
-    const localStart = Date.parse(`${date}T${time}:00+05:30`);
+    const localStart = Date.parse(`${normalizedInput.date}T${normalizedInput.time}:00+05:30`);
     if (!Number.isFinite(localStart)) return res.status(400).json({ error: 'Enter a valid booking date and time.' });
     const bookingMode = requestedMode === 'auto'
       ? (localStart <= Date.now() + 90 * 60 * 1000 ? 'immediate' : 'scheduled')
@@ -1964,7 +1968,7 @@ app.post(
       city,
       vehicle,
       date,
-      time,
+      time: normalizedInput.time,
       hours: Number(hours),
       ...route,
       ...f,
