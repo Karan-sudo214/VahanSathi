@@ -22,21 +22,50 @@ const dataPath = path.resolve(process.env.DATA_PATH || './data/app.json');
 fs.mkdirSync(path.dirname(dataPath), { recursive: true });
 
 const DEFAULT_PRICING = Object.freeze({
-  version: 2, hourly: 499, package4h: 499, package8h: 899, package12h: 1299,
+  version: 2, revision: 1, hourly: 499, package4h: 499, package8h: 899, package12h: 1299,
   extraKm: 12, extraHour: 100, outstationPerKm: 18, night: 200, airport: 599,
   commission: 20, gst: 5, suvMultiplier: 1.15, luxuryMultiplier: 1.25
 });
 function normalizePricing(pricing = {}) {
-  if (Number(pricing.version) === 2) return { ...DEFAULT_PRICING, ...pricing };
+  if (Number(pricing.version) === 2) return { ...DEFAULT_PRICING, ...pricing, revision: Math.max(1, Number(pricing.revision) || 1) };
   return {
     ...DEFAULT_PRICING,
     commission: Number.isFinite(Number(pricing.commission)) ? Number(pricing.commission) : DEFAULT_PRICING.commission,
     gst: Number.isFinite(Number(pricing.gst)) ? Number(pricing.gst) : DEFAULT_PRICING.gst
   };
 }
+
+const MARKET_RATE_GUARDS = Object.freeze({
+  package4h: { min: 399, max: 800, label: '4-hour / 40-km package' },
+  package8h: { min: 699, max: 1400, label: '8-hour / 80-km package' },
+  package12h: { min: 999, max: 1900, label: '12-hour / 120-km package' }
+});
+
+function validatePricingConfiguration(pricing) {
+  const errors = [];
+  const integerFields = ['package4h', 'package8h', 'package12h', 'extraKm', 'extraHour', 'outstationPerKm', 'night', 'airport', 'commission', 'gst'];
+  for (const key of integerFields) {
+    const value = Number(pricing[key]);
+    if (!Number.isFinite(value) || value < 0 || !Number.isInteger(value)) errors.push(key + ' must be a non-negative whole number.');
+  }
+  if (!(pricing.package4h > 0 && pricing.package4h < pricing.package8h && pricing.package8h < pricing.package12h)) {
+    errors.push('Package rates must increase in order: 4-hour, 8-hour, then 12-hour.');
+  }
+  for (const [key, band] of Object.entries(MARKET_RATE_GUARDS)) {
+    const value = Number(pricing[key]);
+    if (Number.isFinite(value) && value > band.max) errors.push(band.label + ' exceeds the smart market guardrail of ₹' + band.max + '.');
+  }
+  const caps = [['extraKm', 100], ['extraHour', 1000], ['outstationPerKm', 150], ['night', 2000], ['airport', 2500], ['commission', 40], ['gst', 28]];
+  for (const [key, cap] of caps) if (Number(pricing[key]) > cap) errors.push(key + ' exceeds the allowed validation limit of ' + cap + '.');
+  for (const [key, minimum, maximum] of [['suvMultiplier', 1, 2], ['luxuryMultiplier', 1, 3]]) {
+    const value = Number(pricing[key]);
+    if (!Number.isFinite(value) || value < minimum || value > maximum) errors.push(key + ' must be between ' + minimum + ' and ' + maximum + '.');
+  }
+  return errors;
+}
 const blank = () => ({
   users: [], bookings: [], ratings: [], history: [], auditLogs: [],
-  disputes: [], payments: [], payouts: [], pricing: { ...DEFAULT_PRICING }
+  disputes: [], supportTickets: [], payments: [], payouts: [], pricing: { ...DEFAULT_PRICING }
 });
 
 let data;
@@ -80,6 +109,7 @@ const postgresTables = {
   history: 'app_history',
   auditLogs: 'app_audit_logs',
   disputes: 'app_disputes',
+  supportTickets: 'app_support_tickets',
   payments: 'app_payments',
   payouts: 'app_payouts',
 };
@@ -744,44 +774,85 @@ async function routeDistance(pickup, destination, city) {
   const lat = rad(b[0] - a[0]);
   const lon = rad(b[1] - a[1]);
   const x = Math.sin(lat / 2) ** 2 + Math.cos(rad(a[0])) * Math.cos(rad(b[0])) * Math.sin(lon / 2) ** 2;
-  const distanceKm = Math.max(1, Math.round(6371 * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x)) * 1.35));
+  const approximateKm = Math.max(1, Math.round(6371 * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x)) * 1.35));
+  const routingBase = String(process.env.ROUTING_URL || '').trim().replace(/\/$/, '');
+  if (routingBase) {
+    try {
+      const routeUrl = routingBase + '/route/v1/driving/' + a[1] + ',' + a[0] + ';' + b[1] + ',' + b[0] + '?overview=false&alternatives=false&steps=false';
+      const response = await fetch(routeUrl, { signal: AbortSignal.timeout(5000) });
+      if (response.ok) {
+        const result = await response.json();
+        const best = result?.code === 'Ok' && Array.isArray(result.routes) ? result.routes[0] : null;
+        const routedKm = Number(best?.distance) / 1000;
+        const durationMinutes = Number(best?.duration) / 60;
+        if (Number.isFinite(routedKm) && routedKm >= 0.5 && routedKm <= 5000 && Number.isFinite(durationMinutes) && durationMinutes > 0) {
+          return { distanceKm: Number(routedKm.toFixed(1)), duration: Math.max(1, Math.round(durationMinutes)) + ' mins', routeDurationMinutes: Math.round(durationMinutes), distanceSource: 'Configured OSRM-compatible driving route', distanceConfidence: 'road_route' };
+        }
+      }
+    } catch (error) {
+      console.warn('Configured routing provider unavailable; using labelled distance estimate:', error.message);
+    }
+  }
   return {
-    distanceKm,
-    duration: `${Math.max(1, Math.round((distanceKm / 28) * 60))} mins`,
-    distanceSource: `${city} approximate road distance based on OpenStreetMap location data`
+    distanceKm: approximateKm,
+    duration: Math.max(1, Math.round((approximateKm / 28) * 60)) + ' mins',
+    routeDurationMinutes: Math.max(1, Math.round((approximateKm / 28) * 60)),
+    distanceSource: city + ' approximate road distance based on OpenStreetMap location data',
+    distanceConfidence: 'approximate'
   };
 }
 
-function calculateFare({ tripType = 'Hourly', hours = 4, time = '08:00', vehicle = 'Sedan', distanceKm = null, distanceSource = null }) {
+function verifyFareCalculation(fare, pricing) {
+  const components = ['base', 'night', 'vehicleExtra', 'distanceCharge', 'gst', 'total', 'commission', 'payout'];
+  const finiteNonNegative = components.every((key) => Number.isSafeInteger(Number(fare[key])) && Number(fare[key]) >= 0);
+  const taxableSubtotal = Number(fare.base) + Number(fare.night) + Number(fare.vehicleExtra) + Number(fare.distanceCharge);
+  const expectedGst = Math.round(taxableSubtotal * Number(pricing.gst) / 100);
+  const expectedTotal = taxableSubtotal + expectedGst;
+  const expectedCommission = Math.round(expectedTotal * Number(pricing.commission) / 100);
+  const arithmeticChecks = {
+    componentsAreWholeRupees: finiteNonNegative,
+    subtotalMatches: Number(fare.subtotal) === taxableSubtotal,
+    gstMatches: Number(fare.gst) === expectedGst,
+    totalMatches: Number(fare.total) === expectedTotal,
+    payoutAndCommissionReconcile: Number(fare.payout) + Number(fare.commission) === Number(fare.total) && Number(fare.commission) === expectedCommission
+  };
+  const arithmeticVerified = Object.values(arithmeticChecks).every(Boolean);
+  const marketChecks = Object.entries(MARKET_RATE_GUARDS).map(([key, band]) => ({
+    key, label: band.label, configuredPrice: Number(pricing[key]),
+    referenceLow: band.min, referenceHigh: band.max,
+    withinReferenceBand: Number(pricing[key]) >= band.min && Number(pricing[key]) <= band.max,
+    aboveGuardrail: Number(pricing[key]) > band.max
+  }));
+  const warnings = marketChecks.filter((item) => !item.withinReferenceBand && !item.aboveGuardrail)
+    .map((item) => item.label + ' is below the observed comparison range; confirm the margin and driver payout.');
+  if (fare.distanceConfidence !== 'road_route') warnings.push('Route distance is an approximate estimate; configure an OSRM-compatible routing provider for road-route distance.');
+  const verified = arithmeticVerified && !marketChecks.some((item) => item.aboveGuardrail);
+  return {
+    verified, arithmeticVerified, status: verified ? 'verified' : 'review_required',
+    arithmeticChecks, marketChecks, warnings,
+    checkedAt: new Date().toISOString(), pricingRevision: Number(pricing.revision) || 1
+  };
+}
+
+function calculateFare({ tripType = 'Hourly', hours = 4, time = '08:00', vehicle = 'Sedan', distanceKm = null, distanceSource = null, distanceConfidence = 'approximate', routeDurationMinutes = null }) {
   const pricing = normalizePricing(data.pricing);
+  const configErrors = validatePricingConfiguration(pricing);
+  if (configErrors.length) throw Object.assign(new Error('Pricing configuration failed validation: ' + configErrors.join(' ')), { statusCode: 503 });
   const h = Math.max(1, Math.min(24, Number(hours) || 1));
   const km = Number.isFinite(Number(distanceKm)) ? Math.max(0, Number(distanceKm)) : 0;
   const taxRate = Math.max(0, Number(pricing.gst) || 0) / 100;
   const toPreTax = (value) => Math.round(Number(value || 0) / (1 + taxRate));
   let packagePrice = 0;
   let includedKm = 0;
+  if (tripType === 'Outstation') packagePrice = 0;
+  else if (tripType === 'Airport') { packagePrice = Number(pricing.airport); includedKm = 40; }
+  else if (tripType === 'Night driver') { packagePrice = Number(pricing.package8h); includedKm = 80; }
+  else if (tripType === 'Full day') { packagePrice = Number(pricing.package12h); includedKm = 120; }
+  else if (h <= 4) { packagePrice = Number(pricing.package4h); includedKm = 40; }
+  else if (h <= 8) { packagePrice = Number(pricing.package8h); includedKm = 80; }
+  else if (h <= 12) { packagePrice = Number(pricing.package12h); includedKm = 120; }
+  else { packagePrice = Number(pricing.package12h) + (h - 12) * Number(pricing.extraHour); includedKm = 120 + (h - 12) * 10; }
 
-  if (tripType === 'Outstation') {
-    packagePrice = 0;
-  } else if (tripType === 'Airport') {
-    packagePrice = Number(pricing.airport); includedKm = 40;
-  } else if (tripType === 'Night driver') {
-    packagePrice = Number(pricing.package8h); includedKm = 80;
-  } else if (tripType === 'Full day') {
-    packagePrice = Number(pricing.package12h); includedKm = 120;
-  } else if (h <= 4) {
-    packagePrice = Number(pricing.package4h); includedKm = 40;
-  } else if (h <= 8) {
-    packagePrice = Number(pricing.package8h); includedKm = 80;
-  } else if (h <= 12) {
-    packagePrice = Number(pricing.package12h); includedKm = 120;
-  } else {
-    packagePrice = Number(pricing.package12h) + (h - 12) * Number(pricing.extraHour);
-    includedKm = 120 + (h - 12) * 10;
-  }
-
-  // Public package rates are GST-inclusive. Convert each displayed component to
-  // its taxable amount so the customer-facing itemisation adds up exactly.
   const extraDistanceKm = tripType === 'Outstation' ? km : Math.max(0, km - includedKm);
   const ratePerKm = tripType === 'Outstation' ? Number(pricing.outstationPerKm) : Number(pricing.extraKm);
   const distanceChargeGross = Math.round(extraDistanceKm * ratePerKm);
@@ -789,7 +860,6 @@ function calculateFare({ tripType = 'Hourly', hours = 4, time = '08:00', vehicle
   const nightGross = hour >= 22 || hour < 6 || tripType === 'Night driver' ? Number(pricing.night) : 0;
   const multiplier = vehicle === 'SUV' ? Number(pricing.suvMultiplier) : vehicle === 'Luxury' ? Number(pricing.luxuryMultiplier) : 1;
   const vehicleExtraGross = Math.round(packagePrice * Math.max(0, multiplier - 1));
-
   const base = toPreTax(packagePrice);
   const night = toPreTax(nightGross);
   const vehicleExtra = toPreTax(vehicleExtraGross);
@@ -800,16 +870,53 @@ function calculateFare({ tripType = 'Hourly', hours = 4, time = '08:00', vehicle
   const total = subtotal + gst;
   const commissionRate = Math.max(0, Math.min(100, Number(pricing.commission) || 0));
   const commission = Math.round(total * commissionRate / 100);
-  return {
+  const fare = {
     base, night, airport: tripType === 'Airport' ? base : 0,
     outstation: tripType === 'Outstation' ? distanceCharge : 0,
     vehicleExtra, distanceKm: distanceKm ?? null, includedKm, extraDistanceKm,
-    distanceCharge, serviceFee: 0, gst, gstRate, total,
+    distanceCharge, serviceFee: 0, subtotal, gst, gstRate, total,
     payout: total - commission, commission, commissionRate,
-    driverSharePercent: 100 - commissionRate,
-    currency: 'INR', pricingVersion: 2,
-    distanceSource: distanceSource || 'calculated'
+    driverSharePercent: 100 - commissionRate, currency: 'INR',
+    pricingVersion: 2, pricingRevision: Number(pricing.revision) || 1,
+    distanceSource: distanceSource || 'calculated',
+    distanceConfidence: distanceConfidence || 'approximate',
+    routeDurationMinutes: Number.isFinite(Number(routeDurationMinutes)) ? Number(routeDurationMinutes) : null,
+    priceFactors: {
+      package: packagePrice, bookedHours: h, bookedVehicle: vehicle,
+      includedDistanceKm: includedKm, extraDistanceKm, extraDistanceRate: ratePerKm,
+      nightCharge: nightGross, vehicleMultiplier: multiplier, gstPercent: gstRate
+    }
   };
+  fare.pricingAudit = verifyFareCalculation(fare, pricing);
+  if (!fare.pricingAudit.verified) throw Object.assign(new Error('The fare failed an independent price verification. Please refresh the estimate or contact support.'), { statusCode: 409 });
+  return fare;
+}
+
+function signFareQuote(payload) {
+  const encoded = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  const signature = createHmac('sha256', secret).update(encoded).digest('base64url');
+  return encoded + '.' + signature;
+}
+
+function verifyFareQuote(token, expectedInput) {
+  const parts = String(token || '').split('.');
+  if (parts.length !== 2) throw new Error('Your fare confirmation is missing. Please refresh the estimate.');
+  const expectedSignature = createHmac('sha256', secret).update(parts[0]).digest();
+  let receivedSignature;
+  try { receivedSignature = Buffer.from(parts[1], 'base64url'); } catch { receivedSignature = Buffer.alloc(0); }
+  if (receivedSignature.length !== expectedSignature.length || !timingSafeEqual(receivedSignature, expectedSignature)) throw new Error('The fare confirmation could not be verified. Please refresh the estimate.');
+  let payload;
+  try { payload = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8')); }
+  catch { throw new Error('The fare confirmation is invalid. Please refresh the estimate.'); }
+  if (!payload.expiresAt || Date.now() > Date.parse(payload.expiresAt)) throw new Error('This fare estimate has expired. Please refresh it to confirm the current price.');
+  const input = payload.input || {};
+  for (const key of ['tripType', 'pickup', 'destination', 'city', 'vehicle', 'date', 'time']) {
+    if (String(input[key] ?? '') !== String(expectedInput[key] ?? '')) throw new Error('Your trip details changed after the fare was calculated. Please refresh the estimate.');
+  }
+  if (Number(input.hours) !== Number(expectedInput.hours) || Number(payload.pricingRevision) !== Number(data.pricing.revision || 1)) throw new Error('The price list or trip duration changed. Please refresh the estimate to see the latest verified fare.');
+  const rechecked = calculateFare({ ...input, ...payload.route });
+  if (rechecked.total !== Number(payload.fare?.total) || JSON.stringify(rechecked.priceFactors) !== JSON.stringify(payload.fare?.priceFactors)) throw new Error('The fare did not pass the second calculation check. Please refresh the estimate.');
+  return { route: payload.route, fare: rechecked, quoteId: payload.quoteId, issuedAt: payload.issuedAt, expiresAt: payload.expiresAt };
 }
 
 // Authenticated Server-Sent Events: notify dashboards immediately after persisted changes.
@@ -853,6 +960,7 @@ app.get('/api/health', (_, res) => {
       databaseConfigured: !!neonPool,
       videoStorageConfigured: r2Ready(),
       razorpay: !!(process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET),
+      grievanceContactConfigured: Boolean(process.env.GRIEVANCE_OFFICER_NAME && process.env.GRIEVANCE_OFFICER_DESIGNATION && (process.env.GRIEVANCE_OFFICER_EMAIL || process.env.GRIEVANCE_OFFICER_PHONE)),
       voice: true,
       voiceMode: 'browser-native'
     }
@@ -1024,8 +1132,19 @@ app.post('/api/fare/estimate', asyncRoute(async (req, res) => {
   if (!pickup || !destination || pickup.length > 250 || destination.length > 250 || !['Delhi', 'Gurugram'].includes(city)) {
     return res.status(400).json({ error: 'Choose Delhi or Gurugram and enter both route locations.' });
   }
+  const input = {
+    tripType: String(req.body?.tripType || 'Hourly'), pickup, destination, city,
+    vehicle: String(req.body?.vehicle || 'Sedan'), date: String(req.body?.date || ''),
+    time: String(req.body?.time || '08:00'), hours: Number(req.body?.hours || 4)
+  };
+  if (!Number.isFinite(input.hours) || input.hours < 1 || input.hours > 24) return res.status(400).json({ error: 'Choose a trip duration between 1 and 24 hours.' });
   const route = await routeDistance(pickup, destination, city);
-  res.json(calculateFare({ ...req.body, ...route }));
+  const fare = calculateFare({ ...input, ...route });
+  const issuedAt = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + 8 * 60 * 1000).toISOString();
+  const quoteId = 'FQ-' + Date.now() + '-' + randomInt(10000, 99999);
+  const quoteToken = signFareQuote({ quoteId, issuedAt, expiresAt, input, route, fare, pricingRevision: Number(data.pricing.revision) || 1 });
+  res.json({ ...fare, quoteId, issuedAt, expiresAt, quoteToken });
 }));
 
 // Bookings
@@ -1771,12 +1890,27 @@ app.post(
       return res.status(400).json({ error: 'VaahanSathi is currently operational in Delhi and Gurugram.' });
     }
 
-    const route = await routeDistance(String(pickup).trim(), String(destination).trim(), city);
+    const normalizedInput = {
+      tripType: String(tripType), pickup: String(pickup).trim(), destination: String(destination).trim(),
+      city: String(city), vehicle: String(vehicle), date: String(date), time: String(time), hours: Number(hours)
+    };
+    let route, f, quoteId = null, quoteIssuedAt = null, quoteExpiresAt = null;
+    if (req.body?.fareQuoteToken) {
+      try {
+        const quote = verifyFareQuote(req.body.fareQuoteToken, normalizedInput);
+        route = quote.route; f = quote.fare;
+        quoteId = quote.quoteId; quoteIssuedAt = quote.issuedAt; quoteExpiresAt = quote.expiresAt;
+      } catch (error) {
+        return res.status(409).json({ error: error.message || 'Fare verification failed. Please refresh the quote.' });
+      }
+    } else {
+      route = await routeDistance(normalizedInput.pickup, normalizedInput.destination, normalizedInput.city);
+      f = calculateFare({ ...normalizedInput, ...route });
+    }
     const [pickupCoordinates, destinationCoordinates] = await Promise.all([
       resolveLocation(city, String(pickup).trim()),
       resolveLocation(city, String(destination).trim())
     ]);
-    const f = calculateFare({ tripType, hours, time, vehicle, ...route });
     const customerUser = data.users.find((u) => u.id === req.user.id);
 
     // Create every customer request as an open dispatch offer. Explicit immediate and scheduled
@@ -1809,7 +1943,13 @@ app.post(
       date,
       time,
       hours: Number(hours),
+      ...route,
       ...f,
+      fareQuoteId: quoteId,
+      fareQuotedAt: quoteIssuedAt,
+      fareQuoteExpiresAt: quoteExpiresAt,
+      farePricingRevision: Number(f.pricingRevision || data.pricing.revision || 1),
+      fareAudit: f.pricingAudit,
       pickupCoordinates,
       destinationCoordinates,
       requestedDriverStyle: driverStyle,
@@ -2207,7 +2347,10 @@ app.get('/api/admin/summary', auth, roles('admin'), (_, res) => {
     failedPayments: data.payments.filter((p) => p.status === 'failed').length,
     history: data.history.slice(0, 50),
     auditLogs: data.auditLogs.slice(0, 50),
-    pricing: Object.entries(data.pricing).map(([key, value]) => ({ key, value }))
+    pricing: Object.entries(data.pricing).map(([key, value]) => ({ key, value })),
+    pricingRevision: Number(data.pricing.revision) || 1,
+    pricingValidation: { ok: validatePricingConfiguration(data.pricing).length === 0, issues: validatePricingConfiguration(data.pricing), marketGuards: MARKET_RATE_GUARDS },
+    openSupportTickets: (data.supportTickets || []).filter((ticket) => !['resolved', 'closed'].includes(ticket.status)).length
   });
 });
 
@@ -2236,16 +2379,27 @@ app.patch(
   roles('admin'),
   asyncRoute(async (req, res) => {
     const allowed = ['package4h', 'package8h', 'package12h', 'extraKm', 'extraHour', 'outstationPerKm', 'night', 'airport', 'commission', 'gst', 'suvMultiplier', 'luxuryMultiplier'];
+    const reason = String(req.body?.pricingReason || '').trim().slice(0, 300);
+    if (reason.length < 8) return res.status(400).json({ error: 'Add a short reason for this pricing change so it can be audited.' });
+    const previousPricing = { ...data.pricing };
+    const candidate = { ...data.pricing };
     for (const key of allowed) {
-      if (req.body[key] !== undefined && Number.isFinite(Number(req.body[key])) && Number(req.body[key]) >= 0) data.pricing[key] = Number(req.body[key]);
+      if (req.body[key] !== undefined) {
+        const value = Number(req.body[key]);
+        if (!Number.isFinite(value)) return res.status(400).json({ error: key + ' must be a valid number.' });
+        candidate[key] = value;
+      }
     }
-    if (req.body.hourly !== undefined && Number.isFinite(Number(req.body.hourly)) && Number(req.body.hourly) >= 0) data.pricing.package4h = Number(req.body.hourly);
-    data.pricing.hourly = data.pricing.package4h;
-    data.pricing.version = 2;
-    data.pricing = normalizePricing(data.pricing);
+    if (req.body.hourly !== undefined) candidate.package4h = Number(req.body.hourly);
+    candidate.hourly = candidate.package4h;
+    candidate.version = 2;
+    const validationErrors = validatePricingConfiguration(candidate);
+    if (validationErrors.length) return res.status(400).json({ error: 'Pricing change blocked by the Smart Fare guardrails.', details: validationErrors });
+    candidate.revision = (Number(data.pricing.revision) || 1) + 1;
+    data.pricing = normalizePricing(candidate);
     await persistPricing(data.pricing);
-    await audit(req, 'pricing_updated', 'pricing', 'current', null, data.pricing, 'Pricing configuration updated');
-    res.json({ ok: true, pricing: data.pricing });
+    await audit(req, 'pricing_updated', 'pricing', 'current', previousPricing, data.pricing, reason);
+    res.json({ ok: true, pricing: data.pricing, marketGuards: MARKET_RATE_GUARDS, validation: { ok: true, checkedAt: new Date().toISOString(), reason } });
   })
 );
 
@@ -2274,6 +2428,99 @@ app.patch('/api/me', auth, asyncRoute(async (req, res) => {
   await persistItem('app_users', u.id, u);
   await save();
   res.json({ user: safe(u) });
+}));
+
+// ----------------- Customer Support Desk -----------------
+const SUPPORT_CATEGORIES = ['Booking', 'Fare & pricing', 'Payment & refund', 'Driver behaviour', 'Safety concern', 'App / technical', 'Other'];
+const SUPPORT_STATUSES = ['received', 'in_progress', 'waiting_for_customer', 'resolved', 'closed', 'escalated'];
+const addHours = (timestamp, hours) => new Date(Date.parse(timestamp) + hours * 60 * 60 * 1000).toISOString();
+const addDays = (timestamp, days) => new Date(Date.parse(timestamp) + days * 24 * 60 * 60 * 1000).toISOString();
+
+app.get('/api/support/config', (req, res) => {
+  const config = {
+    supportEmail: process.env.SUPPORT_EMAIL || '',
+    supportPhone: process.env.SUPPORT_PHONE || '',
+    grievanceOfficerName: process.env.GRIEVANCE_OFFICER_NAME || '',
+    grievanceOfficerDesignation: process.env.GRIEVANCE_OFFICER_DESIGNATION || '',
+    grievanceOfficerEmail: process.env.GRIEVANCE_OFFICER_EMAIL || '',
+    grievanceOfficerPhone: process.env.GRIEVANCE_OFFICER_PHONE || '',
+    firstResponseTargetHours: 48,
+    resolutionTargetDays: 30
+  };
+  config.grievanceContactConfigured = Boolean(config.grievanceOfficerName && config.grievanceOfficerDesignation && (config.grievanceOfficerEmail || config.grievanceOfficerPhone));
+  res.json(config);
+});
+
+app.post('/api/support/tickets', auth, roles('customer', 'driver'), asyncRoute(async (req, res) => {
+  const category = String(req.body?.category || 'Other');
+  const subject = String(req.body?.subject || '').trim().slice(0, 140);
+  const description = String(req.body?.description || '').trim().slice(0, 3000);
+  const bookingId = String(req.body?.bookingId || '').trim() || null;
+  if (!SUPPORT_CATEGORIES.includes(category)) return res.status(400).json({ error: 'Choose a valid support category.' });
+  if (subject.length < 5 || description.length < 15) return res.status(400).json({ error: 'Enter a subject and at least 15 characters describing the issue.' });
+  if (bookingId) {
+    const booking = data.bookings.find((item) => item.id === bookingId);
+    if (!booking) return res.status(404).json({ error: 'The linked booking could not be found.' });
+    const participant = req.user.role === 'customer' ? booking.userId === req.user.id : booking.driverId === req.user.id;
+    if (!participant) return res.status(403).json({ error: 'You can only link support tickets to your own bookings.' });
+  }
+  const now = new Date().toISOString();
+  const priority = category === 'Safety concern' ? 'urgent'
+    : ['Payment & refund', 'Driver behaviour', 'Fare & pricing'].includes(category) ? 'high' : 'normal';
+  const ticket = {
+    id: 'VS-HELP-' + new Date().getFullYear() + '-' + randomInt(100000, 999999),
+    userId: req.user.id, userRole: req.user.role, userName: req.user.name || 'Account user',
+    category, subject, description, bookingId, priority,
+    status: 'received', createdAt: now, updatedAt: now,
+    acknowledgedAt: now, firstResponseDueAt: addHours(now, 48), firstResponseAt: null,
+    resolutionDueAt: addDays(now, 30), resolvedAt: null, assignedTo: null,
+    messages: [{ id: randomUUID(), senderId: req.user.id, senderRole: req.user.role, senderName: req.user.name || 'Account user', message: description, createdAt: now }]
+  };
+  data.supportTickets = Array.isArray(data.supportTickets) ? data.supportTickets : [];
+  data.supportTickets.unshift(ticket);
+  await persistItem('app_support_tickets', ticket.id, ticket);
+  await audit(req, 'support_ticket_created', 'support', ticket.id, null, { bookingId, category, priority }, 'Support ticket created and acknowledged automatically');
+  await save();
+  res.status(201).json({ ticket, message: 'Your ticket has been registered and acknowledged. Keep the ticket number for updates.' });
+}));
+
+app.get('/api/support/tickets', auth, asyncRoute(async (req, res) => {
+  const isAdmin = req.user.role === 'admin';
+  const tickets = (data.supportTickets || [])
+    .filter((ticket) => isAdmin || ticket.userId === req.user.id)
+    .sort((a, b) => String(b.updatedAt || b.createdAt).localeCompare(String(a.updatedAt || a.createdAt)));
+  res.json({ tickets });
+}));
+
+app.post('/api/support/tickets/:id/messages', auth, asyncRoute(async (req, res) => {
+  const ticket = (data.supportTickets || []).find((item) => item.id === req.params.id);
+  if (!ticket) return res.status(404).json({ error: 'Support ticket not found.' });
+  const isAdmin = req.user.role === 'admin';
+  if (!isAdmin && ticket.userId !== req.user.id) return res.status(404).json({ error: 'Support ticket not found.' });
+  if (['resolved', 'closed'].includes(ticket.status) && !isAdmin) return res.status(409).json({ error: 'This ticket is closed. Open a new ticket if the problem continues.' });
+  const message = String(req.body?.message || '').trim().slice(0, 3000);
+  if (message.length < 3) return res.status(400).json({ error: 'Enter a little more detail in your reply.' });
+  const now = new Date().toISOString();
+  const item = {
+    id: randomUUID(), senderId: req.user.id, senderRole: isAdmin ? 'support' : req.user.role,
+    senderName: isAdmin ? (req.user.name || 'VaahanSathi Support') : (req.user.name || 'Account user'),
+    message, createdAt: now
+  };
+  ticket.messages = Array.isArray(ticket.messages) ? ticket.messages : [];
+  ticket.messages.push(item);
+  if (isAdmin && !ticket.firstResponseAt) ticket.firstResponseAt = now;
+  if (isAdmin) {
+    ticket.status = SUPPORT_STATUSES.includes(req.body?.status) ? req.body.status : 'in_progress';
+    ticket.lastSupportResponseAt = now;
+  } else if (ticket.status === 'waiting_for_customer') {
+    ticket.status = 'in_progress';
+  }
+  ticket.resolvedAt = ['resolved', 'closed'].includes(ticket.status) ? now : null;
+  ticket.updatedAt = now;
+  await persistItem('app_support_tickets', ticket.id, ticket);
+  if (isAdmin) await audit(req, 'support_ticket_updated', 'support', ticket.id, null, { status: ticket.status }, 'Support agent replied to a ticket');
+  await save();
+  res.json({ ticket });
 }));
 
 // â”€â”€ Customer dispute filing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
