@@ -1574,6 +1574,16 @@ app.get('/api/bookings', auth, (req, res) => {
       start_otp: req.user.role === 'customer' && b.userId === req.user.id && b.status === 'Driver arriving' && b.carCarePassport?.videoKey && b.carCarePassport?.customerConfirmedAt && b.carCarePassport?.driverConfirmedAt ? b.start_otp : undefined,
       end_otp: req.user.role === 'customer' && b.userId === req.user.id && b.status === 'Trip started' ? b.end_otp : undefined,
       cashEvents: req.user.role === 'admin' ? (b.cashEvents || []) : undefined,
+      expenses: (Array.isArray(b.expenses) ? b.expenses : []).map((expense) => {
+        const { proofPhotoKey, receiptPhotoKey, ...safeExpense } = expense;
+        return {
+          ...safeExpense,
+          proofPhotoUrl: proofPhotoKey && r2Ready() ? r2Presign('GET', proofPhotoKey, 300) : null,
+          receiptPhotoUrl: receiptPhotoKey && r2Ready() ? r2Presign('GET', receiptPhotoKey, 300) : null
+        };
+      }),
+      expenseTotalDue: confirmedExpenseTotal(b),
+      amountDue: bookingAmountDue(b),
       driver: driverUser ? driverUser.name : b.driver || null,
       customer: customerUser ? customerUser.name : b.customer || null,
       ...(req.user.role === 'driver' ? (() => {
