@@ -1896,20 +1896,18 @@ app.post(
       city: String(city), vehicle: String(vehicle), date: String(date), time: String(time), hours: Number(hours)
     };
     let route, f, quoteId = null, quoteIssuedAt = null, quoteExpiresAt = null;
-    if (req.body?.fareQuoteToken) {
-      try {
-        const quote = verifyFareQuote(req.body.fareQuoteToken, normalizedInput);
-        if (data.bookings.some((existing) => existing.fareQuoteId && existing.fareQuoteId === quote.quoteId)) {
-          return res.status(409).json({ error: 'This fare quote has already been used for a booking. Please refresh your estimate for another booking.' });
-        }
-        route = quote.route; f = quote.fare;
-        quoteId = quote.quoteId; quoteIssuedAt = quote.issuedAt; quoteExpiresAt = quote.expiresAt;
-      } catch (error) {
-        return res.status(409).json({ error: error.message || 'Fare verification failed. Please refresh the quote.' });
+    if (!req.body?.fareQuoteToken) {
+      return res.status(409).json({ error: 'A verified fare quote is required. Please estimate and review the exact fare before booking.' });
+    }
+    try {
+      const quote = verifyFareQuote(req.body.fareQuoteToken, normalizedInput);
+      if (data.bookings.some((existing) => existing.fareQuoteId && existing.fareQuoteId === quote.quoteId)) {
+        return res.status(409).json({ error: 'This fare quote has already been used for a booking. Please refresh your estimate for another booking.' });
       }
-    } else {
-      route = await routeDistance(normalizedInput.pickup, normalizedInput.destination, normalizedInput.city);
-      f = calculateFare({ ...normalizedInput, ...route });
+      route = quote.route; f = quote.fare;
+      quoteId = quote.quoteId; quoteIssuedAt = quote.issuedAt; quoteExpiresAt = quote.expiresAt;
+    } catch (error) {
+      return res.status(409).json({ error: error.message || 'Fare verification failed. Please refresh the quote.' });
     }
     const [pickupCoordinates, destinationCoordinates] = await Promise.all([
       resolveLocation(city, String(pickup).trim()),
