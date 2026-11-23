@@ -41,6 +41,7 @@ import {
   Car
 } from 'lucide-react';
 import './style.css';
+import { normalizePickupTime } from '../shared/time.js';
 import { LanguageSwitcher } from './i18n';
 import {
   firebaseCustomerCreate,
@@ -340,6 +341,12 @@ function App() {
   };
 
   const estimateFare = async () => {
+    const normalizedTime = normalizePickupTime(time);
+    if (!normalizedTime) {
+      setFare(null);
+      setFareError('Choose a valid pickup time before checking the fare.');
+      return;
+    }
     const requestId = ++fareRequestId.current;
     setFare(null);
     setFareError('');
@@ -348,7 +355,7 @@ function App() {
       const response = await fetch('/api/fare/estimate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tripType, hours, date, time, vehicle, pickup, destination, city })
+        body: JSON.stringify({ tripType, hours, date, time: normalizedTime, vehicle, pickup, destination, city })
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'Unable to estimate this route.');
@@ -561,12 +568,17 @@ function App() {
       setModal('auth');
       return;
     }
+    const normalizedTime = normalizePickupTime(time);
+    if (!normalizedTime) {
+      flash('Choose a valid pickup time before confirming the booking.');
+      return;
+    }
     setBusy(true);
     try {
       if (!fare?.quoteToken) throw new Error('Please refresh your verified fare before confirming this booking.');
       const d = await api('/bookings', {
         method: 'POST',
-        body: JSON.stringify({ tripType, pickup, destination, date, time, hours, vehicle, city, paymentMethod, driverStyle, bookingMode, fareQuoteToken: fare.quoteToken })
+        body: JSON.stringify({ tripType, pickup, destination, date, time: normalizedTime, hours, vehicle, city, paymentMethod, driverStyle, bookingMode, fareQuoteToken: fare.quoteToken })
       });
       // Refresh immediately so both customer and driver see the new booking without waiting
       await refresh();
@@ -606,12 +618,14 @@ function App() {
     }
     setBusy(true);
     try {
+      const normalizedTime = normalizePickupTime(intent.time || time);
+      if (!normalizedTime) throw new Error('The pickup time from the voice request is unclear. Please choose a time in the booking form.');
       const voiceInput = {
         tripType: intent.tripType || tripType,
         pickup: intent.pickup || pickup,
         destination: intent.destination || destination,
         date: intent.date || date,
-        time: intent.time || time,
+        time: normalizedTime,
         hours: Number(intent.hours || hours),
         vehicle,
         city: intent.city || city

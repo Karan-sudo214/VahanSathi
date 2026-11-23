@@ -8,6 +8,7 @@ on:
       - feature/cash-complaints-pricing-dispatch
       - feature/smart-fare-customer-support
       - fix/application-audit-and-booking-permissions
+      - fix/pickup-time-normalization
   pull_request:
     branches:
       - main
@@ -27,5 +28,7 @@ jobs:
         run: npm ci --include=dev
       - name: Validate backend JavaScript syntax
         run: node --check server/index.js
+      - name: Test shared validation utilities
+        run: npm test
       - name: Build frontend
         run: npm run build
