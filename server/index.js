@@ -1428,7 +1428,8 @@ app.post('/api/bookings/:id/expenses', auth, roles('driver'), asyncRoute(async (
 app.post('/api/bookings/:id/expenses/:expenseId/decision', auth, roles('customer'), asyncRoute(async (req, res) => {
   const booking = data.bookings.find((item) => item.id === req.params.id && item.userId === req.user.id);
   if (!booking) return res.status(404).json({ error: 'Booking not found.' });
-  if (!['Driver assigned', 'Driver arriving', 'Trip started'].includes(booking.status)) return res.status(409).json({ error: 'Expense approval is available only during the active trip.' });
+  if (!['Driver assigned', 'Driver arriving', 'Trip started', 'Trip completed', 'Rated'].includes(booking.status)) return res.status(409).json({ error: 'Expense approval is not available for this booking state.' });
+  if (['Paid', 'Paid · Cash'].includes(booking.payment_status)) return res.status(409).json({ error: 'This booking has already been paid. Contact support to review a late expense request.' });
   const expense = (booking.expenses || []).find((item) => item.id === req.params.expenseId);
   if (!expense) return res.status(404).json({ error: 'Expense request not found.' });
   if (expense.status !== 'pending_customer_approval') return res.status(409).json({ error: 'This expense request has already been reviewed.' });
