@@ -1826,7 +1826,8 @@ function TripExpensePanel({ booking, role, onRefresh, flash }: any) {
           accuracy: position.coords.accuracy,
           heading: position.coords.heading,
           speed: position.coords.speed,
-          capturedAt: position.timestamp
+          capturedAt: position.timestamp,
+          source: 'expense_capture'
         })
       });
 
