@@ -761,7 +761,7 @@ async function resolveLocation(city, location) {
   return findLandmark(city, location) || geocodeLocation(city, location);
 }
 
-async async function routeDistance(pickup, destination, city) {
+async function routeDistance(pickup, destination, city) {
   const a = await resolveLocation(city, pickup);
   const b = await resolveLocation(city, destination);
   if (!a || !b) {
