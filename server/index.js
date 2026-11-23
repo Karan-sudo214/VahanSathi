@@ -548,6 +548,58 @@ function tripGuardParticipant(req, booking) {
     (req.user.role === 'driver' && booking.driverId === req.user.id);
 }
 
+function confirmedExpenseTotal(booking) {
+  return (Array.isArray(booking.expenses) ? booking.expenses : [])
+    .filter((expense) => expense.status === 'confirmed')
+    .reduce((sum, expense) => sum + Math.max(0, Number(expense.actualAmount || 0)), 0);
+}
+
+function bookingAmountDue(booking) {
+  return Math.max(0, Number(booking.total || 0)) + confirmedExpenseTotal(booking);
+}
+
+function xmlEscape(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (char) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;'
+  })[char]);
+}
+
+function buildGpsExpenseSnapshot({ bookingId, lat, lng, accuracy, capturedAt, serverReceivedAt }) {
+  const latText = Number(lat).toFixed(6);
+  const lngText = Number(lng).toFixed(6);
+  const mapUrl = `https://www.openstreetmap.org/?mlat=${encodeURIComponent(latText)}&mlon=${encodeURIComponent(lngText)}#map=17/${encodeURIComponent(latText)}/${encodeURIComponent(lngText)}`;
+  const captured = new Date(capturedAt || serverReceivedAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'medium' });
+  const received = new Date(serverReceivedAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'medium' });
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="960" height="560" viewBox="0 0 960 560">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f0fdfa"/><stop offset="1" stop-color="#e8eef7"/></linearGradient>
+    <pattern id="grid" width="44" height="44" patternUnits="userSpaceOnUse"><path d="M44 0H0V44" fill="none" stroke="#bfd1d6" stroke-width="1.5"/></pattern>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="7" stdDeviation="8" flood-color="#15323b" flood-opacity=".15"/></filter>
+  </defs>
+  <rect width="960" height="560" rx="28" fill="url(#bg)"/>
+  <rect x="20" y="20" width="920" height="520" rx="22" fill="#f8fafc" stroke="#cbd5e1" stroke-width="2"/>
+  <rect x="40" y="106" width="880" height="230" rx="15" fill="#e8f1ef"/>
+  <rect x="40" y="106" width="880" height="230" rx="15" fill="url(#grid)" opacity=".9"/>
+  <path d="M50 278 C170 222 245 258 350 195 S590 220 710 145 S830 163 910 120" fill="none" stroke="#fff" stroke-width="18" stroke-linecap="round"/>
+  <path d="M50 278 C170 222 245 258 350 195 S590 220 710 145 S830 163 910 120" fill="none" stroke="#b5c8cc" stroke-width="3" stroke-dasharray="12 9" stroke-linecap="round"/>
+  <path d="M232 112 L306 332 M540 112 L590 332 M770 110 L810 335" fill="none" stroke="#fff" stroke-width="12"/>
+  <g transform="translate(480 220)" filter="url(#shadow)">
+    <circle r="48" fill="#0f766e" opacity=".16"/>
+    <path d="M0 -42 C-24 -42 -41 -24 -41 0 C-41 30 0 66 0 66 S41 30 41 0 C41 -24 24 -42 0 -42Z" fill="#dc2626" stroke="#fff" stroke-width="5"/>
+    <circle cy="-2" r="13" fill="#fff"/>
+  </g>
+  <rect x="58" y="40" width="12" height="34" rx="6" fill="#0f766e"/>
+  <text x="88" y="62" font-family="Arial,sans-serif" font-size="25" font-weight="700" fill="#0f172a">VAAHANSATHI · AUTO-CAPTURED GPS PROOF</text>
+  <text x="60" y="372" font-family="Arial,sans-serif" font-size="18" font-weight="700" fill="#0f766e">DEVICE LOCATION CAPTURED BY THE APP</text>
+  <text x="60" y="412" font-family="Arial,sans-serif" font-size="25" font-weight="700" fill="#0f172a">Latitude: ${latText}    Longitude: ${lngText}</text>
+  <text x="60" y="447" font-family="Arial,sans-serif" font-size="20" fill="#334155">GPS accuracy: ±${Math.round(Number(accuracy) || 0)} metres</text>
+  <text x="60" y="480" font-family="Arial,sans-serif" font-size="17" fill="#334155">Device capture: ${xmlEscape(captured)}</text>
+  <text x="60" y="507" font-family="Arial,sans-serif" font-size="17" fill="#334155">Server received: ${xmlEscape(received)} · Booking: ${xmlEscape(bookingId)}</text>
+  <text x="60" y="528" font-family="Arial,sans-serif" font-size="12" fill="#64748b">System-generated evidence card. Select the map link in VaahanSathi to inspect the coordinates.</text>
+</svg>`;
+  return { svg, mapUrl };
+}
+
 const adminOnly = roles('admin', 'super_admin', 'operations_admin');
 
 const cityLandmarks = {
