@@ -611,7 +611,9 @@ function buildGpsExpenseSnapshot({ bookingId, lat, lng, accuracy, capturedAt, se
   <text x="60" y="507" font-family="Arial,sans-serif" font-size="17" fill="#334155">Server received: ${xmlEscape(received)} · Booking: ${xmlEscape(bookingId)}</text>
   <text x="60" y="528" font-family="Arial,sans-serif" font-size="12" fill="#64748b">System-generated evidence card. Select the map link in VaahanSathi to inspect the coordinates.</text>
 </svg>`;
-  return { svg, mapUrl };
+  const delta = 0.006;
+  const mapEmbedUrl = `https://www.openstreetmap.org/export/embed.html?bbox=${lng-delta}%2C${lat-delta}%2C${lng+delta}%2C${lat+delta}&layer=mapnik&marker=${latText}%2C${lngText}`;
+  return { svg, mapUrl, mapEmbedUrl };
 }
 
 const adminOnly = roles('admin', 'super_admin', 'operations_admin');
@@ -1319,6 +1321,17 @@ app.post('/api/bookings/:id/expenses/evidence-upload-url', auth, roles('driver')
   const mimeType = String(req.body?.mimeType || '').toLowerCase();
   const extension = expenseImageTypes[mimeType];
   if (!extension) return res.status(400).json({ error: 'Upload a JPEG, PNG or WebP photo.' });
+  const expenseCategory = String(req.body?.category || 'fuel');
+  if (!['fuel', 'toll', 'parking', 'other'].includes(expenseCategory)) return res.status(400).json({ error: 'Choose a valid expense category.' });
+  const captureMode = String(req.body?.captureMode || '');
+  const photoCapturedAt = String(req.body?.capturedAt || '');
+  if (kind === 'nozzle' && expenseCategory === 'fuel') {
+    const capturedMs = Date.parse(photoCapturedAt);
+    const ageMs = Date.now() - capturedMs;
+    if (captureMode !== 'live_camera' || !Number.isFinite(capturedMs) || ageMs < -30000 || ageMs > 5 * 60 * 1000) {
+      return res.status(400).json({ error: 'Fuel nozzle proof must be captured from the live in-app camera immediately before the request.' });
+    }
+  }
   let expense = null;
   if (kind === 'receipt') {
     expense = (booking.expenses || []).find((item) => item.id === String(req.body?.expenseId || '') && item.driverId === req.user.id);
@@ -1327,7 +1340,12 @@ app.post('/api/bookings/:id/expenses/evidence-upload-url', auth, roles('driver')
   const evidenceId = expense?.id || randomUUID();
   const key = `trip-expenses/${booking.id}/${evidenceId}/${kind}-${randomUUID()}.${extension}`;
   booking.expenseUploadTickets = Array.isArray(booking.expenseUploadTickets) ? booking.expenseUploadTickets : [];
-  const ticket = { key, kind, expenseId: expense?.id || null, createdAt: new Date().toISOString(), usedAt: null };
+  const ticket = {
+    key, kind, expenseId: expense?.id || null,
+    expenseCategory, captureMode: captureMode || null,
+    photoCapturedAt: photoCapturedAt || null,
+    createdAt: new Date().toISOString(), usedAt: null
+  };
   booking.expenseUploadTickets.push(ticket);
   booking.expenseUploadTickets = booking.expenseUploadTickets.slice(-30);
   await persistItem('app_bookings', booking.id, booking);
@@ -1367,6 +1385,15 @@ app.post('/api/bookings/:id/expenses', auth, roles('driver'), asyncRoute(async (
   if (photoKey) {
     const ticket = (booking.expenseUploadTickets || []).find((item) => item.key === photoKey && item.kind === 'nozzle' && !item.usedAt);
     if (!ticket || Date.now() - Date.parse(ticket.createdAt) > 10 * 60 * 1000) return res.status(400).json({ error: 'The photo upload ticket is missing or expired. Upload a fresh photo.' });
+    if (ticket.expenseCategory && ticket.expenseCategory !== category) return res.status(400).json({ error: 'The uploaded photo was prepared for a different expense category.' });
+    if (category === 'fuel') {
+      const capturedMs = Date.parse(ticket.photoCapturedAt || '');
+      const ageMs = Date.now() - capturedMs;
+      if (ticket.captureMode !== 'live_camera' || !Number.isFinite(capturedMs) || ageMs < -30000 || ageMs > 10 * 60 * 1000 ||
+          String(req.body?.photoCapturedAt || '') !== ticket.photoCapturedAt) {
+        return res.status(400).json({ error: 'A fresh live-camera nozzle photo is required. Gallery uploads are not accepted for petrol requests.' });
+      }
+    }
     verifiedPhoto = await verifyExpenseImageInR2(photoKey, mimeType);
     if (!verifiedPhoto) return res.status(400).json({ error: 'The photo was not found in private storage or its type/size could not be verified. Please upload it again.' });
     ticket.usedAt = new Date().toISOString();
@@ -1382,13 +1409,18 @@ app.post('/api/bookings/:id/expenses', auth, roles('driver'), asyncRoute(async (
   const receivedAt = Date.now();
   const positionAgeMs = position?.updatedAt ? receivedAt - Date.parse(position.updatedAt) : Infinity;
   const deviceCaptureMs = position?.deviceCapturedAt ? Date.parse(position.deviceCapturedAt) : NaN;
-  if (!position || !Number.isFinite(positionAgeMs) || positionAgeMs < 0 || positionAgeMs > 45000 ||
-      !Number.isFinite(Number(position.accuracy)) || Number(position.accuracy) > 150 ||
-      !Number.isFinite(deviceCaptureMs) || Math.abs(receivedAt - deviceCaptureMs) > 90000) {
-    return res.status(409).json({ error: 'A fresh, accurate device GPS fix is required. Keep location enabled and try again.' });
+  if (!position || !Number.isFinite(positionAgeMs) || positionAgeMs < 0 || positionAgeMs > 30000 ||
+      !Number.isFinite(Number(position.accuracy)) || Number(position.accuracy) > 100 ||
+      !Number.isFinite(deviceCaptureMs) || Math.abs(receivedAt - deviceCaptureMs) > 60000) {
+    return res.status(409).json({ error: 'A fresh GPS fix with accuracy within 100 metres is required. Keep location enabled and try again.' });
   }
 
   const serverReceivedAt = new Date(receivedAt).toISOString();
+  const gpsEvidencePayload = [
+    booking.id, Number(position.lat).toFixed(6), Number(position.lng).toFixed(6),
+    Number(position.accuracy).toFixed(1), String(position.deviceCapturedAt), serverReceivedAt
+  ].join('|');
+  const gpsProofSignature = createHmac('sha256', secret).update(gpsEvidencePayload).digest('hex');
   const gpsSnapshot = buildGpsExpenseSnapshot({
     bookingId: booking.id,
     lat: position.lat,
@@ -1406,14 +1438,18 @@ app.post('/api/bookings/:id/expenses', auth, roles('driver'), asyncRoute(async (
     proofPhotoKey: photoKey || null,
     proofPhotoMimeType: verifiedPhoto?.mimeType || null,
     proofPhotoSizeBytes: verifiedPhoto?.sizeBytes || null,
+    proofPhotoCapturedAt: ticket?.photoCapturedAt || null,
+    proofCaptureMode: ticket?.captureMode || null,
     gps: {
       lat: Number(position.lat), lng: Number(position.lng),
       accuracy: Number(position.accuracy),
       deviceCapturedAt: position.deviceCapturedAt,
-      serverReceivedAt
+      serverReceivedAt,
+      signature: gpsProofSignature
     },
-    gpsSnapshotDataUri: `data:image/svg+xml;base64,${Buffer.from(gpsSnapshot.svg, 'utf8').toString('base64')}`,
+    gpsSnapshotDataUri: `data:image/svg+xml;base64,${Buffer.from(gpsSnapshot.svg.replace('</svg>', `<text x="60" y="548" font-family="Arial,sans-serif" font-size="9" fill="#64748b">GPS evidence signature: ${gpsProofSignature}</text></svg>`), 'utf8').toString('base64')}`,
     gpsMapUrl: gpsSnapshot.mapUrl,
+    gpsEmbedUrl: gpsSnapshot.mapEmbedUrl,
     status: 'pending_customer_approval',
     createdAt: serverReceivedAt,
     timeline: [{ status: 'pending_customer_approval', at: serverReceivedAt, actorId: req.user.id, actorRole: 'driver' }]
