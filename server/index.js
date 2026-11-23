@@ -37,8 +37,13 @@ function normalizePricing(pricing = {}) {
 
 const MARKET_RATE_GUARDS = Object.freeze({
   package4h: { min: 399, max: 800, label: '4-hour / 40-km package' },
-  package8h: { min: 699, max: 1400, label: '8-hour / 80-km package' },
-  package12h: { min: 999, max: 1900, label: '12-hour / 120-km package' }
+  package8h: { min: 699, max: 1200, label: '8-hour / 80-km package' },
+  package12h: { min: 999, max: 1600, label: '12-hour / 120-km package' },
+  extraKm: { min: 8, max: 20, label: 'Local extra distance per km' },
+  extraHour: { min: 60, max: 200, label: 'Additional driver hour' },
+  outstationPerKm: { min: 10, max: 30, label: 'Outstation distance per km' },
+  night: { min: 100, max: 500, label: 'Night surcharge' },
+  airport: { min: 399, max: 1200, label: 'Airport package' }
 });
 
 function validatePricingConfiguration(pricing) {
@@ -55,7 +60,7 @@ function validatePricingConfiguration(pricing) {
     const value = Number(pricing[key]);
     if (Number.isFinite(value) && value > band.max) errors.push(band.label + ' exceeds the smart market guardrail of ₹' + band.max + '.');
   }
-  const caps = [['extraKm', 100], ['extraHour', 1000], ['outstationPerKm', 150], ['night', 2000], ['airport', 2500], ['commission', 40], ['gst', 28]];
+  const caps = [['extraKm', 20], ['extraHour', 200], ['outstationPerKm', 30], ['night', 500], ['airport', 1200], ['commission', 40], ['gst', 28]];
   for (const [key, cap] of caps) if (Number(pricing[key]) > cap) errors.push(key + ' exceeds the allowed validation limit of ' + cap + '.');
   for (const [key, minimum, maximum] of [['suvMultiplier', 1, 2], ['luxuryMultiplier', 1, 3]]) {
     const value = Number(pricing[key]);
