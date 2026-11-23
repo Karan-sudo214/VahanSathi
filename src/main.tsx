@@ -606,17 +606,31 @@ function App() {
     }
     setBusy(true);
     try {
+      const voiceInput = {
+        tripType: intent.tripType || tripType,
+        pickup: intent.pickup || pickup,
+        destination: intent.destination || destination,
+        date: intent.date || date,
+        time: intent.time || time,
+        hours: Number(intent.hours || hours),
+        vehicle,
+        city: intent.city || city
+      };
+      const quote = await api('/fare/estimate', {
+        method: 'POST',
+        body: JSON.stringify(voiceInput)
+      });
+      if (!quote?.quoteToken || !quote?.pricingAudit?.verified) {
+        throw new Error('The voice trip could not receive a verified fare. Please review the trip details and try again.');
+      }
       const d = await api('/bookings', {
         method: 'POST',
         body: JSON.stringify({
-          tripType: intent.tripType || tripType,
-          pickup: intent.pickup || pickup,
-          destination: intent.destination || destination,
-          date: intent.date || date,
-          time: intent.time || time,
-          hours: Number(intent.hours || hours),
-          vehicle,
-          city: intent.city || city
+          ...voiceInput,
+          paymentMethod,
+          driverStyle,
+          bookingMode,
+          fareQuoteToken: quote.quoteToken
         })
       });
       await refresh();
