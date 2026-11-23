@@ -18,6 +18,7 @@ VaahanSathi is an on-demand driver booking platform for Indian car owners. Custo
 - **Cash Collection**: cash trips complete with the normal trip end OTP; the assigned driver then marks cash collected. There is no separate cash PIN, customer-side cash confirmation, or cash handover OTP.
 - **Customer Care & Driver Accountability**: customers can report a driver demanding extra money; reports are tied to a booking, appear in the driver's dashboard for a response, and can be investigated by admins. An earnings adjustment is recorded only after a complaint is substantiated.
 - **Smart Dispatch Priority**: immediate and scheduled requests are separated; immediate long trips rank ahead of future scheduled requests, while server-side overlap checks protect trips a driver has already accepted.
+- **Customer-Approved Trip Expenses**: during an active trip, drivers can request unexpected fuel, toll, parking or other expenses. Petrol requests require a fresh nozzle-at-fuel-inlet photo, app-captured GPS with accuracy/timestamps, and a server-generated GPS proof snapshot. Customers approve or decline before the driver spends. The driver then uploads the station receipt; only the receipted amount up to the approved limit is added to the final booking payment. Private photos use the existing Cloudflare R2 bucket.
 - **Two-Step OTP Lifecycle**:
   - Secure 4-digit **Start OTP** shared only when entering the vehicle.
   - Secure 4-digit **End OTP** required to conclude the ride.
