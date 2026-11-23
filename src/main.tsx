@@ -1600,7 +1600,7 @@ function BookingPage(p: any) {
           )}
           {p.fare?.pricingAudit && (
             <div style={{display:'grid',gap:5,margin:'10px 0',padding:'10px 11px',border:'1px solid #cfe8dd',borderRadius:11,background:'#f3fbf7'}}>
-              <b style={{display:'flex',alignItems:'center',gap:7,color:'#18734f',fontSize:11}}><ShieldCheck size={14}/> Independently checked fare</b>
+              <b style={{display:'flex',alignItems:'center',gap:7,color:'#18734f',fontSize:11}}><ShieldCheck size={14}/> Price arithmetic verified</b>
               <small style={{color:'#496b5b'}}>Fare components, configured GST arithmetic, driver payout and platform share reconcile. Quote {p.fare.quoteId || ''} · valid until {p.fare.expiresAt ? new Date(p.fare.expiresAt).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'}) : 'refresh required'}</small>
               {p.fare.pricingAudit.warnings?.map((warning: string, index: number) => <small key={index} style={{color:'#8a641f'}}>{warning}</small>)}
             </div>
@@ -3746,7 +3746,7 @@ function HelpPage({ flash, onDispute, bookings = [] }: any) {
       <section className="panel faq-card" style={{marginTop:14}}>
         <h3>Grievance contact & response targets</h3>
         {supportConfig.operatorDetailsConfigured && <p><b>{supportConfig.legalEntityName}</b><br/>{supportConfig.legalEntityAddress}<br/>{supportConfig.websiteDomain}</p>}
-        {supportConfig.supportContactConfigured && <p>Customer Care: {supportConfig.supportEmail} {supportConfig.supportPhone}</p>}
+        {supportConfig.supportContactConfigured && <p>Customer Care:{' '}{supportConfig.supportEmail && <a href={'mailto:' + supportConfig.supportEmail}>{supportConfig.supportEmail}</a>}{supportConfig.supportEmail && supportConfig.supportPhone ? ' · ' : ''}{supportConfig.supportPhone && <a href={'tel:' + supportConfig.supportPhone}>{supportConfig.supportPhone}</a>}</p>}
         {supportConfig.grievanceContactConfigured ? <p><b>{supportConfig.grievanceOfficerName}</b> · {supportConfig.grievanceOfficerDesignation}<br/>{supportConfig.grievanceOfficerEmail} {supportConfig.grievanceOfficerPhone}</p> : <p className="muted">Official grievance officer contact details are not yet configured. The operator must add and publish them in Render settings; the ticket desk alone is not a substitute for publishing monitored grievance contacts.</p>}
         <p>Ticket acknowledgement: immediate system registration. Grievance acknowledgement target: within 48 hours. Target grievance resolution: within one month. A copy of your submitted complaint can be downloaded from each ticket.</p>
       </section>
