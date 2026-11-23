@@ -831,9 +831,13 @@ function verifyFareCalculation(fare, pricing) {
   const warnings = marketChecks.filter((item) => !item.withinReferenceBand && !item.aboveGuardrail)
     .map((item) => item.label + ' is below the observed comparison range; confirm the margin and driver payout.');
   if (fare.distanceConfidence !== 'road_route') warnings.push('Route distance is an approximate estimate; configure an OSRM-compatible routing provider for road-route distance.');
+  const taxConfigurationReviewed = String(process.env.GST_RATE_APPROVED || '').toLowerCase() === 'true';
+  if (!taxConfigurationReviewed) warnings.push('GST arithmetic is checked at the configured rate, but the tax classification/rate for the platform and independent-driver model has not been confirmed by a tax adviser.');
   const verified = arithmeticVerified && !marketChecks.some((item) => item.aboveGuardrail);
   return {
-    verified, arithmeticVerified, status: verified ? 'verified' : 'review_required',
+    verified, arithmeticVerified, taxConfigurationReviewed,
+    configuredGstRate: Number(pricing.gst) || 0,
+    status: verified ? 'verified' : 'review_required',
     arithmeticChecks, marketChecks, warnings,
     checkedAt: new Date().toISOString(), pricingRevision: Number(pricing.revision) || 1
   };
@@ -971,6 +975,7 @@ app.get('/api/health', (_, res) => {
       grievanceContactConfigured: Boolean(process.env.GRIEVANCE_OFFICER_NAME && process.env.GRIEVANCE_OFFICER_DESIGNATION && (process.env.GRIEVANCE_OFFICER_EMAIL || process.env.GRIEVANCE_OFFICER_PHONE)),
       supportContactConfigured: Boolean(process.env.SUPPORT_EMAIL || process.env.SUPPORT_PHONE),
       operatorDetailsConfigured: Boolean(process.env.LEGAL_ENTITY_NAME && process.env.LEGAL_ENTITY_ADDRESS && process.env.WEBSITE_DOMAIN),
+      taxConfigurationReviewed: String(process.env.GST_RATE_APPROVED || '').toLowerCase() === 'true',
       voice: true,
       voiceMode: 'browser-native'
     }
@@ -2369,6 +2374,7 @@ app.get('/api/admin/summary', auth, roles('admin'), (_, res) => {
     pricing: Object.entries(data.pricing).map(([key, value]) => ({ key, value })),
     pricingRevision: Number(data.pricing.revision) || 1,
     pricingValidation: { ok: validatePricingConfiguration(data.pricing).length === 0, issues: validatePricingConfiguration(data.pricing), marketGuards: MARKET_RATE_GUARDS },
+    taxConfigurationReviewed: String(process.env.GST_RATE_APPROVED || '').toLowerCase() === 'true',
     openSupportTickets: (data.supportTickets || []).filter((ticket) => !['resolved', 'closed'].includes(ticket.status)).length
   });
 });
