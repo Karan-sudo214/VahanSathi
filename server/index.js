@@ -3,7 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { randomUUID, randomInt, randomBytes, createCipheriv, createDecipheriv, createHmac, createHash, timingSafeEqual, createPublicKey, verify as verifySignature } from 'node:crypto';
+import { randomUUID, randomInt, createHmac, createHash, timingSafeEqual, createPublicKey, verify as verifySignature } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import pg from 'pg';
@@ -13,24 +13,6 @@ const app = express();
 const port = process.env.PORT || 4000;
 const secret = process.env.JWT_SECRET || (process.env.NODE_ENV === 'production' ? null : 'local-development-secret-change-before-deploy');
 
-const cashPinKey = createHmac('sha256', secret || 'local-development-secret-change-before-deploy').update('vaahansathi-cash-pin-encryption-v1').digest();
-function encryptCashPin(pin) {
-  const iv = randomBytes(12);
-  const cipher = createCipheriv('aes-256-gcm', cashPinKey, iv);
-  const ciphertext = Buffer.concat([cipher.update(String(pin), 'utf8'), cipher.final()]);
-  return [iv.toString('hex'), cipher.getAuthTag().toString('hex'), ciphertext.toString('hex')].join('.');
-}
-function decryptCashPin(payload) {
-  if (!payload) return null;
-  const [ivHex, tagHex, ciphertextHex] = String(payload).split('.');
-  if (!ivHex || !tagHex || !ciphertextHex) return null;
-  const decipher = createDecipheriv('aes-256-gcm', cashPinKey, Buffer.from(ivHex, 'hex'));
-  decipher.setAuthTag(Buffer.from(tagHex, 'hex'));
-  return Buffer.concat([decipher.update(Buffer.from(ciphertextHex, 'hex')), decipher.final()]).toString('utf8');
-}
-function hashCashPin(pin) {
-  return createHmac('sha256', secret).update(String(pin)).digest('hex');
-}
 if (!secret) throw new Error('JWT_SECRET must be configured before production startup.');
 
 app.use(cors({ origin: process.env.CLIENT_ORIGIN || '*' }));
@@ -1930,7 +1912,8 @@ app.post('/api/disputes', auth, roles('customer', 'admin'), asyncRoute(async (re
 app.get('/api/driver/complaints', auth, roles('driver'), (req, res) => {
   const complaints = data.disputes.filter((item) => item.driverId === req.user.id)
     .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
-  res.json({ complaints });
+  const adjustments = data.payouts.filter((item) => item.driverId === req.user.id && item.type === 'complaint_adjustment' && item.status === 'approved');
+  res.json({ complaints, adjustments });
 });
 
 app.patch('/api/driver/complaints/:id', auth, roles('driver'), asyncRoute(async (req, res) => {
