@@ -87,13 +87,17 @@ type Booking = {
   payment_status: string;
   payment_method?: string;
   requestedDriverStyle?: string;
+  bookingMode?: 'immediate' | 'scheduled' | 'auto';
+  scheduledStartAt?: string;
+  dispatchPriority?: { bucket: string; score: number; label: string; minutesUntilPickup: number };
+  grossPayout?: number;
+  earningsAdjustment?: number;
   smartMatch?: { score: number; tier: string; reasons: string[]; distanceKm: number | null; rank: number; poolSize: number } | null;
   driverMatch?: { score: number; tier: string; reasons: string[] } | null;
   carCarePassport?: { videoKey?: string; videoMimeType?: string; videoSizeBytes?: number; videoUploadedAt?: string; customerConfirmedAt?: string | null; driverConfirmedAt?: string | null } | null;
   driverLocation?: { lat: number; lng: number; accuracy?: number; heading?: number | null; speed?: number | null; updatedAt?: string };
   pickupCoordinates?: [number, number];
   destinationCoordinates?: [number, number];
-  cashCustomerConfirmed?: boolean;
   cashCollectedAt?: string;
   cashCollectedBy?: string;
   cashRewardPoints?: number;
@@ -1054,7 +1058,7 @@ function App() {
           )}
 
           {page === 'Requests' && <DriverPage bookings={bookings} update={updateStatus} user={user} onDutyChange={(v: boolean) => setUser((u: any) => u ? {...u, available: v} : u)} flash={flash} onCashConfirm={markCashCollected} onRefresh={refresh} />}
-          {page === 'My trips' && <TripsPage bookings={bookings} filter={filter} setFilter={setFilter} update={updateStatus} onRate={(b: Booking) => setModal('rate:' + b.id)} onPay={(b: Booking) => setModal('payment:' + b.id)} onTrack={(b: Booking) => setModal('track:' + b.id)} onBook={() => setPage('Book a driver')} receipts={receipts} onReportDriver={(b: Booking) => setModal('dispute:' + b.id)} cashRewardsPoints={Number(user?.cashRewardsPoints || 0)} onRefresh={refresh} />}
+          {page === 'My trips' && <TripsPage bookings={bookings} filter={filter} setFilter={setFilter} update={updateStatus} onRate={(b: Booking) => setModal('rate:' + b.id)} onPay={(b: Booking) => setModal('payment:' + b.id)} onTrack={(b: Booking) => setModal('track:' + b.id)} onBook={() => setPage('Book a driver')} receipts={receipts} cashRewardsPoints={Number(user?.cashRewardsPoints || 0)} onRefresh={refresh} />}
           {page === 'Earnings' && <EarningsPage bookings={bookings} />}
           {page === 'Wallet' && <WalletPage receipts={receipts} bookings={bookings} onReceipt={downloadReceipt} />}
           {page === 'Help' && <HelpPage flash={flash} onDispute={() => setModal('dispute')} />}
@@ -1646,7 +1650,7 @@ function TripsPage({ bookings, filter, setFilter, update, onRate, onPay, onTrack
         </button>
       </div>
 
-      <div className="cashcircle-summary"><span className="cashcircle-icon">₹</span><div><b>CashCircle rewards</b><small>{cashRewardsPoints} points earned from confirmed cash trips</small></div></div>
+      <div className="cashcircle-summary"><span className="cashcircle-icon">₹</span><div><b>CashCircle rewards</b><small>{cashRewardsPoints} points earned from cash trips marked as collected</small></div></div>
       <div className="tabs-row">
         {filters.map((f) => (
           <button
@@ -1781,6 +1785,11 @@ function TripsPage({ bookings, filter, setFilter, update, onRate, onPay, onTrack
                       <Navigation size={16} /> Track Driver Route
                     </button>
                   )}
+                  {onReportDriver && b.driverId && !['Trip completed', 'Rated', 'Cancelled'].includes(b.status) && (
+                    <button className="action-btn" onClick={() => onReportDriver(b)}>
+                      <AlertCircle size={15} /> Report an extra-money request
+                    </button>
+                  )}
                 </div>
                 {['Trip completed', 'Rated'].includes(b.status) && (
                   <>
@@ -1796,9 +1805,11 @@ function TripsPage({ bookings, filter, setFilter, update, onRate, onPay, onTrack
                       )}
                     </div>
                     <div className="trip-actions-row">
-                      <button className="action-btn" onClick={() => onReportDriver?.(b)}>
-                        <AlertCircle size={15} /> Report driver asking for extra money
-                      </button>
+                      {onReportDriver && (
+                        <button className="action-btn" onClick={() => onReportDriver(b)}>
+                          <AlertCircle size={15} /> Report driver asking for extra money
+                        </button>
+                      )}
                       <button className="action-btn" onClick={() => downloadInvoice(b)}>
                         <FileText size={15} /> Download Invoice
                       </button>
@@ -1934,7 +1945,7 @@ function DriverPage({ bookings, update, user, onDutyChange, flash, onCashConfirm
     prevSearching.current = count;
   }, [newRequests.length]);
 
-  const completed = bookings.filter((b: Booking) => b.driverId === user?.id && b.status === 'Trip completed');
+  const completed = bookings.filter((b: Booking) => b.driverId === user?.id && ['Trip completed', 'Rated'].includes(b.status));
   const totalEarnings = completed.reduce((s: number, b: Booking) => s + b.payout, 0);
 
   // One GPS watcher per driver. Send meaningful movement at a controlled cadence
@@ -2094,6 +2105,19 @@ function DriverPage({ bookings, update, user, onDutyChange, flash, onCashConfirm
                   </div>
                 </div>
               </div>
+
+              {b.status === 'Searching' && b.dispatchPriority && (
+                <div className="smart-match-card">
+                  <div className="smart-match-topline">
+                    <span className="smart-match-kicker"><Zap size={13}/> DISPATCH PRIORITY</span>
+                    <b>{b.dispatchPriority.label}</b>
+                  </div>
+                  <div className="smart-match-meta">
+                    <span>{b.bookingMode === 'immediate' ? 'Immediate request' : 'Scheduled request'}</span>
+                    <span>{b.dispatchPriority.minutesUntilPickup <= 0 ? 'Pickup time reached' : `Pickup in ${b.dispatchPriority.minutesUntilPickup} min`}</span>
+                  </div>
+                </div>
+              )}
 
               {b.status === 'Searching' && b.smartMatch && (
                 <div className="smart-match-card">
@@ -2967,7 +2991,7 @@ function AdminModulePage({ module, bookings, flash }: { module: string; bookings
 
 // ----------------- Other Support Pages -----------------
 function EarningsPage({ bookings }: any) {
-  const completed = bookings.filter((b: Booking) => b.status === 'Trip completed');
+  const completed = bookings.filter((b: Booking) => ['Trip completed', 'Rated'].includes(b.status));
   const total = completed.reduce((s: number, b: Booking) => s + b.payout, 0);
 
   return (
