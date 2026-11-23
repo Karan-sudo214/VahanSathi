@@ -563,9 +563,10 @@ function App() {
     }
     setBusy(true);
     try {
+      if (!fare?.quoteToken) throw new Error('Please refresh your verified fare before confirming this booking.');
       const d = await api('/bookings', {
         method: 'POST',
-        body: JSON.stringify({ tripType, pickup, destination, date, time, hours, vehicle, city, paymentMethod, driverStyle, bookingMode })
+        body: JSON.stringify({ tripType, pickup, destination, date, time, hours, vehicle, city, paymentMethod, driverStyle, bookingMode, fareQuoteToken: fare.quoteToken })
       });
       // Refresh immediately so both customer and driver see the new booking without waiting
       await refresh();
@@ -605,17 +606,31 @@ function App() {
     }
     setBusy(true);
     try {
+      const voiceInput = {
+        tripType: intent.tripType || tripType,
+        pickup: intent.pickup || pickup,
+        destination: intent.destination || destination,
+        date: intent.date || date,
+        time: intent.time || time,
+        hours: Number(intent.hours || hours),
+        vehicle,
+        city: intent.city || city
+      };
+      const quote = await api('/fare/estimate', {
+        method: 'POST',
+        body: JSON.stringify(voiceInput)
+      });
+      if (!quote?.quoteToken || !quote?.pricingAudit?.verified) {
+        throw new Error('The voice trip could not receive a verified fare. Please review the trip details and try again.');
+      }
       const d = await api('/bookings', {
         method: 'POST',
         body: JSON.stringify({
-          tripType: intent.tripType || tripType,
-          pickup: intent.pickup || pickup,
-          destination: intent.destination || destination,
-          date: intent.date || date,
-          time: intent.time || time,
-          hours: Number(intent.hours || hours),
-          vehicle,
-          city: intent.city || city
+          ...voiceInput,
+          paymentMethod,
+          driverStyle,
+          bookingMode,
+          fareQuoteToken: quote.quoteToken
         })
       });
       await refresh();
@@ -737,9 +752,9 @@ function App() {
 
   const nav =
     user?.role === 'admin'
-      ? ['Overview', 'Live trips', 'Bookings', 'Drivers', 'Customers', 'Payments & Payouts', 'Disputes', 'Pricing & Revenue', 'Analytics', 'Audit Logs', 'Settings']
+      ? ['Overview', 'Live trips', 'Bookings', 'Drivers', 'Customers', 'Payments & Payouts', 'Disputes', 'Support Desk', 'Pricing & Revenue', 'Analytics', 'Audit Logs', 'Settings']
       : user?.role === 'driver'
-      ? ['Requests', 'My trips', 'Earnings', 'Profile']
+      ? ['Requests', 'My trips', 'Earnings', 'Help', 'Profile']
       : ['Home', 'Book a driver', 'Your trips', 'Wallet', 'Help'];
 
   return (
@@ -802,6 +817,7 @@ function App() {
                   {(x === 'Pricing' || x === 'Pricing & Revenue') && <IndianRupee size={18} />}
                   {(x === 'Payments & Payouts' || x === 'Wallet') && <CreditCard size={18} />}
                   {x === 'Disputes' && <Headphones size={18} />}
+                  {x === 'Support Desk' && <Headphones size={18} />}
                   {x === 'Analytics' && <ArrowDownUp size={18} />}
                   {(x === 'Audit Logs' || x === 'Activity') && <Clock3 size={18} />}
                   {x === 'Settings' && <ShieldCheck size={18} />}
@@ -1084,7 +1100,7 @@ function App() {
           {page === 'My trips' && <TripsPage bookings={bookings} filter={filter} setFilter={setFilter} update={updateStatus} onRate={(b: Booking) => setModal('rate:' + b.id)} onPay={(b: Booking) => setModal('payment:' + b.id)} onTrack={(b: Booking) => setModal('track:' + b.id)} onBook={() => setPage('Book a driver')} receipts={receipts} cashRewardsPoints={Number(user?.cashRewardsPoints || 0)} onRefresh={refresh} />}
           {page === 'Earnings' && <EarningsPage bookings={bookings} />}
           {page === 'Wallet' && <WalletPage receipts={receipts} bookings={bookings} onReceipt={downloadReceipt} />}
-          {page === 'Help' && <HelpPage flash={flash} onDispute={() => setModal('dispute')} />}
+          {page === 'Help' && <HelpPage bookings={bookings} flash={flash} onDispute={user?.role === 'customer' ? () => setModal('dispute') : undefined} />}
           {page === 'Profile' && <DriverProfile user={user} onUpdate={(u: any) => { setUser(u); localStorage.setItem('vs_user', JSON.stringify(u)); }} flash={flash} />}
           {page === 'Overview' && <LiveAdminPage bookings={bookings} focus="Overview" flash={flash} />}
           {page === 'Live trips' && <LiveAdminPage bookings={bookings} focus="Trips" flash={flash} />}
@@ -1093,6 +1109,7 @@ function App() {
           {page === 'Customers' && <AdminModulePage module="customers" bookings={bookings} flash={flash} />}
           {page === 'Payments & Payouts' && <AdminModulePage module="payments" bookings={bookings} flash={flash} />}
           {page === 'Disputes' && <AdminModulePage module="disputes" bookings={bookings} flash={flash} />}
+          {page === 'Support Desk' && <SupportDeskPage flash={flash} />}
           {page === 'Pricing & Revenue' && <LiveAdminPage bookings={bookings} focus="Pricing" flash={flash} />}
           {page === 'Analytics' && <AdminModulePage module="analytics" bookings={bookings} flash={flash} />}
           {page === 'Audit Logs' && <AdminModulePage module="audit" bookings={bookings} flash={flash} />}
@@ -1188,6 +1205,7 @@ function App() {
                 { label: 'Rides', icon: 'rides', page: 'Requests', badge: bookings.filter(b => b.status === 'Searching').length },
                 { label: 'History', icon: 'trips', page: 'My trips' },
                 { label: 'Earnings', icon: 'earnings', page: 'Earnings' },
+                { label: 'Help', icon: 'help', page: 'Help' },
                 { label: 'Profile', icon: 'profile', page: 'Profile' },
               ]
             : [
@@ -1575,7 +1593,17 @@ function BookingPage(p: any) {
           <div className="fare-divider" />
 
           {p.fare?.distanceKm !== null && p.fare?.distanceKm !== undefined && (
-            <p className="fare-sub">Estimated route: {p.fare.distanceKm} km · {p.fare?.includedKm || 0} km included</p>
+            <p className="fare-sub">
+              {p.fare.distanceConfidence === 'road_route' ? 'Routed distance' : 'Approximate distance'}: {p.fare.distanceKm} km · {p.fare?.includedKm || 0} km included
+              {p.fare.routeDurationMinutes ? ' · about ' + p.fare.routeDurationMinutes + ' min' : ''}
+            </p>
+          )}
+          {p.fare?.pricingAudit && (
+            <div style={{display:'grid',gap:5,margin:'10px 0',padding:'10px 11px',border:'1px solid #cfe8dd',borderRadius:11,background:'#f3fbf7'}}>
+              <b style={{display:'flex',alignItems:'center',gap:7,color:'#18734f',fontSize:11}}><ShieldCheck size={14}/> Price arithmetic verified</b>
+              <small style={{color:'#496b5b'}}>Fare components, configured GST arithmetic, driver payout and platform share reconcile. Quote {p.fare.quoteId || ''} · valid until {p.fare.expiresAt ? new Date(p.fare.expiresAt).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'}) : 'refresh required'}</small>
+              {p.fare.pricingAudit.warnings?.map((warning: string, index: number) => <small key={index} style={{color:'#8a641f'}}>{warning}</small>)}
+            </div>
           )}
           <FareLine name="Driver Service (before GST)" value={p.fare?.base || 0} />
           {p.fare?.night > 0 && <FareLine name="Night Driving Charge (before GST)" value={p.fare.night} />}
@@ -1601,7 +1629,7 @@ function BookingPage(p: any) {
           <button
             className="primary-btn-wide"
             onClick={p.user ? p.onBook : p.onAuth}
-            disabled={p.busy || p.fareBusy || !p.fare}
+            disabled={p.busy || p.fareBusy || !p.fare?.quoteToken}
           >
             {p.busy ? 'Dispatching driver...' : p.user ? 'Confirm & Book Driver' : 'Sign in to Book Driver'} <ArrowRight size={17} />
           </button>
@@ -3015,6 +3043,7 @@ function LiveAdminPage({ bookings, focus = 'Overview', flash }: any) {
     extraHour: 100, outstationPerKm: 18, airport: 599, night: 200,
     commission: 20, gst: 5, suvMultiplier: 1.15, luxuryMultiplier: 1.25
   });
+  const [pricingReason, setPricingReason] = useState('');
 
   const fetchSummary = async () => {
     try {
@@ -3034,9 +3063,10 @@ function LiveAdminPage({ bookings, focus = 'Overview', flash }: any) {
     try {
       await api('/admin/pricing', {
         method: 'PATCH',
-        body: JSON.stringify({ ...pricingValues, hourly: pricingValues.package4h })
+        body: JSON.stringify({ ...pricingValues, hourly: pricingValues.package4h, pricingReason })
       });
-      flash?.('All fare packages and add-on rates were saved to the database.');
+      setPricingReason('');
+      flash?.('Pricing saved after the Smart Fare guardrails passed. Existing quotes will be refreshed against the new tariff.');
       fetchSummary();
     } catch (e: any) { flash?.(e.message); }
   };
@@ -3092,7 +3122,24 @@ function LiveAdminPage({ bookings, focus = 'Overview', flash }: any) {
       {focus === 'Pricing' ? (
         <section className="panel pricing-panel">
           <h3>Delhi NCR driver-service tariff</h3>
-          <p>Configurable launch rates for a customer-owned car. Fuel, tolls and parking remain separate customer expenses.</p>
+          <p>Smart Fare uses verified trip inputs, a versioned tariff, independent arithmetic checks and market guardrails. It does not add hidden demand surcharges. Fuel, tolls and parking remain separate customer expenses.</p>
+          {!summary.taxConfigurationReviewed && <p className="tripguard-error">Tax review required: the configured GST rate is used for arithmetic only. Confirm the correct GST treatment for the independent-driver / customer-owned-car model with your tax adviser before relying on production invoices.</p>}
+          <div style={{display:'flex',gap:8,flexWrap:'wrap',margin:'10px 0'}}>
+            <span className="status-pill">Revision {summary.pricingRevision || 1}</span>
+            <span className="status-pill">{summary.pricingValidation?.ok ? 'Tariff checks passed' : 'Review tariff settings'}</span>
+          </div>
+          {summary.pricingValidation?.issues?.length > 0 && <p className="tripguard-error">{summary.pricingValidation.issues.join(' ')}</p>}
+          {summary.pricingValidation?.marketGuards && (
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))',gap:8,margin:'10px 0'}}>
+              {Object.entries(summary.pricingValidation.marketGuards).map(([key, band]: [string, any]) => (
+                <div key={key} style={{padding:9,border:'1px solid var(--slate-200)',borderRadius:9}}>
+                  <small className="muted">{band.label}</small>
+                  <b style={{display:'block',fontSize:12}}>₹{band.min}–₹{band.max}</b>
+                  <small className="muted">Current: ₹{pricingValues[key] ?? 0}</small>
+                </div>
+              ))}
+            </div>
+          )}
           <div className="pricing-grid">
             {([
               ['package4h', '4 hours / 40 km package'],
@@ -3112,8 +3159,9 @@ function LiveAdminPage({ bookings, focus = 'Overview', flash }: any) {
               </label>
             ))}
           </div>
-          <p className="muted">Vehicle upgrades: SUV {pricingValues.suvMultiplier}× · Luxury {pricingValues.luxuryMultiplier}×. Values can be changed by an authorised admin.</p>
-          <button className="primary-btn" onClick={savePricing}>Save all pricing to Neon DB <Check size={16} /></button>
+          <p className="muted">Vehicle upgrades: SUV {pricingValues.suvMultiplier}× · Luxury {pricingValues.luxuryMultiplier}×. Invalid GST/commission values, non-monotonic packages and rates above market guardrails are blocked by the server.</p>
+          <label className="field-group"><span>Reason for tariff change (audit note)</span><textarea value={pricingReason} onChange={(e) => setPricingReason(e.target.value)} rows={2} maxLength={300} placeholder="Example: tariff review against current Delhi NCR driver rates" /></label>
+          <button className="primary-btn" onClick={savePricing} disabled={pricingReason.trim().length < 8}>Save verified tariff to Neon DB <Check size={16} /></button>
         </section>
       ) : focus === 'Drivers' ? (
         <section className="panel drivers-admin-panel">
@@ -3522,55 +3570,186 @@ function WalletPage({ receipts, bookings, onReceipt }: any) {
   );
 }
 
-function HelpPage({ flash, onDispute }: any) {
+function SupportDeskPage({ flash }: any) {
+  const [tickets, setTickets] = useState<any[]>([]);
+  const [selectedId, setSelectedId] = useState('');
+  const [reply, setReply] = useState('');
+  const [nextStatus, setNextStatus] = useState('in_progress');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const load = async () => {
+    try {
+      const data = await api('/support/tickets');
+      setTickets(data.tickets || []);
+      if (!selectedId && data.tickets?.length) setSelectedId(data.tickets[0].id);
+    } catch (e: any) { setError(e.message || 'Support tickets could not be loaded.'); }
+  };
+  useEffect(() => {
+    load();
+    const timer = window.setInterval(load, 15000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const selected = tickets.find((ticket) => ticket.id === selectedId) || null;
+  const send = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!selected || reply.trim().length < 3) return;
+    setBusy(true); setError('');
+    try {
+      await api('/support/tickets/' + encodeURIComponent(selected.id) + '/messages', { method: 'POST', body: JSON.stringify({ message: reply.trim(), status: nextStatus }) });
+      setReply('');
+      flash?.('Support ticket ' + selected.id + ' updated.');
+      await load();
+    } catch (e: any) { setError(e.message || 'Support response could not be sent.'); }
+    finally { setBusy(false); }
+  };
+  const openCount = tickets.filter((ticket) => !['resolved','closed'].includes(ticket.status)).length;
+  return (
+    <div className="admin-view">
+      <div className="section-head"><div><span className="eyebrow">CUSTOMER EXPERIENCE OPERATIONS</span><h1>Support Desk</h1><p>Review booking-linked tickets, respond, and track response and resolution targets.</p></div><span className="status-pill">{openCount} open tickets</span></div>
+      <div style={{display:'grid',gridTemplateColumns:'minmax(240px, .8fr) minmax(320px, 1.5fr)',gap:14,alignItems:'start'}}>
+        <section className="panel" style={{padding:14}}>
+          <div className="panel-header"><div><h3>Incoming tickets</h3><p>Refreshes every 15 seconds</p></div><button className="secondary-btn" onClick={load}>Refresh</button></div>
+          {!tickets.length && <p className="muted">No support tickets have been received.</p>}
+          {tickets.map((ticket) => <button key={ticket.id} onClick={() => {setSelectedId(ticket.id);setNextStatus(ticket.status === 'received' ? 'in_progress' : ticket.status);}} style={{width:'100%',textAlign:'left',padding:12,marginTop:8,border:selectedId === ticket.id ? '1px solid #168477' : '1px solid var(--slate-200)',borderRadius:11,background:selectedId === ticket.id ? '#f0faf6' : '#fff',cursor:'pointer'}}><b style={{display:'block',fontSize:12,color:'#183a55'}}>{ticket.id}</b><span style={{display:'block',fontSize:11,marginTop:4}}>{ticket.subject}</span><small className="muted">{ticket.userName} · {ticket.priority} · {ticket.status.replace(/_/g,' ')}</small></button>)}
+        </section>
+        <section className="panel" style={{padding:16}}>
+          {!selected ? <p className="muted">Select a ticket to view the conversation.</p> : <>
+            <div className="panel-header"><div><span className="eyebrow">{selected.category} · {selected.priority} priority</span><h3>{selected.subject}</h3><p>{selected.id} · {selected.userName} · {selected.userRole}</p></div><span className="status-pill">{selected.status.replace(/_/g,' ')}</span></div>
+            {selected.bookingId && <p className="muted">Booking: {selected.bookingId}</p>}
+            <div style={{display:'flex',gap:14,flexWrap:'wrap',padding:'10px 0',borderTop:'1px solid var(--slate-200)',borderBottom:'1px solid var(--slate-200)'}}><small>Grievance officer acknowledgement due: {selected.firstResponseDueAt ? new Date(selected.firstResponseDueAt).toLocaleString('en-IN') : 'within 48 hours'}</small><small>{selected.grievanceOfficerAcknowledgedAt ? 'Officer acknowledgement recorded: ' + new Date(selected.grievanceOfficerAcknowledgedAt).toLocaleString('en-IN') : 'Officer acknowledgement pending'}</small><small>Resolution target: {selected.resolutionDueAt ? new Date(selected.resolutionDueAt).toLocaleDateString('en-IN') : '30 days'}</small><small>Received: {new Date(selected.createdAt).toLocaleString('en-IN')}</small></div>
+            <div style={{display:'grid',gap:9,maxHeight:390,overflowY:'auto',padding:'12px 0'}}>
+              {(selected.messages || []).map((message: any) => <div key={message.id} style={{padding:11,borderRadius:10,background:message.senderRole === 'support' ? '#edf7f3' : '#f4f7fa'}}><b style={{fontSize:11}}>{message.senderName}</b>{message.message && <p style={{fontSize:12,margin:'5px 0'}}>{message.message}</p>}{message.attachmentUrl && <a href={message.attachmentUrl} target="_blank" rel="noreferrer"><img src={message.attachmentUrl} alt="Support evidence" style={{display:'block',maxWidth:'100%',maxHeight:260,objectFit:'contain',marginTop:6,borderRadius:8}}/></a>}<small className="muted">{new Date(message.createdAt).toLocaleString('en-IN')}</small></div>)}
+            </div>
+            <form onSubmit={send} style={{display:'grid',gap:9,borderTop:'1px solid var(--slate-200)',paddingTop:12}}>
+              <label className="field-group"><span>Update ticket status</span><select value={nextStatus} onChange={(e) => setNextStatus(e.target.value)}><option value="in_progress">In progress</option><option value="waiting_for_customer">Waiting for customer</option><option value="escalated">Escalated</option><option value="resolved">Resolved</option><option value="closed">Closed</option></select></label>
+              <label className="field-group"><span>Reply to customer / partner</span><textarea rows={4} value={reply} onChange={(e) => setReply(e.target.value)} maxLength={3000} placeholder="Explain what was checked, the next action, or the resolution…"/></label>
+              <button className="primary-btn-wide" disabled={busy || reply.trim().length < 3}>{busy ? 'Sending response…' : 'Send reply & update ticket'}</button>
+            </form>
+          </>}
+          {error && <p className="tripguard-error" role="alert">{error}</p>}
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function HelpPage({ flash, onDispute, bookings = [] }: any) {
+  const [tickets, setTickets] = useState<any[]>([]);
+  const [supportConfig, setSupportConfig] = useState<any>({});
+  const [category, setCategory] = useState('Booking');
+  const [bookingId, setBookingId] = useState('');
+  const [subject, setSubject] = useState('');
+  const [description, setDescription] = useState('');
+  const [replies, setReplies] = useState<Record<string,string>>({});
+  const [replyFiles, setReplyFiles] = useState<Record<string,File | null>>({});
+  const [busy, setBusy] = useState('');
+  const [error, setError] = useState('');
+
+  const loadTickets = async () => {
+    try {
+      const results = await Promise.all([api('/support/tickets'), api('/support/config')]);
+      setTickets(results[0].tickets || []);
+      setSupportConfig(results[1] || {});
+    } catch (e: any) { setError(e.message || 'Support tickets could not be loaded.'); }
+  };
+  useEffect(() => {
+    loadTickets();
+    const timer = window.setInterval(loadTickets, 20000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const createTicket = async (event: React.FormEvent) => {
+    event.preventDefault(); setBusy('create'); setError('');
+    try {
+      const result = await api('/support/tickets', { method: 'POST', body: JSON.stringify({ category, bookingId: bookingId || undefined, subject, description }) });
+      setSubject(''); setDescription(''); setBookingId('');
+      flash('Support ticket ' + result.ticket.id + ' created and acknowledged.');
+      await loadTickets();
+    } catch (e: any) { setError(e.message || 'Ticket could not be submitted.'); }
+    finally { setBusy(''); }
+  };
+
+  const sendReply = async (ticket: any) => {
+    const message = String(replies[ticket.id] || '').trim();
+    const file = replyFiles[ticket.id];
+    if (message.length < 3 && !file) return;
+    setBusy(ticket.id); setError('');
+    try {
+      let attachment: any = undefined;
+      if (file) {
+        if (!['image/jpeg','image/png','image/webp'].includes(file.type) || file.size > 5 * 1024 * 1024) {
+          throw new Error('Attach a JPG, PNG or WebP image up to 5 MB.');
+        }
+        const upload = await api('/support/tickets/' + encodeURIComponent(ticket.id) + '/attachments/upload-url', {
+          method: 'POST', body: JSON.stringify({ mimeType: file.type, sizeBytes: file.size })
+        });
+        const uploaded = await fetch(upload.uploadUrl, {
+          method: 'PUT', headers: { 'Content-Type': file.type }, body: file
+        });
+        if (!uploaded.ok) throw new Error('Evidence upload failed. Your text update has not been sent.');
+        attachment = { key: upload.key, mimeType: file.type, sizeBytes: file.size };
+      }
+      await api('/support/tickets/' + encodeURIComponent(ticket.id) + '/messages', {
+        method: 'POST', body: JSON.stringify({ message, attachment })
+      });
+      setReplies((current) => ({ ...current, [ticket.id]: '' }));
+      setReplyFiles((current) => ({ ...current, [ticket.id]: null }));
+      flash('Your update was added to ticket ' + ticket.id + '.');
+      await loadTickets();
+    } catch (e: any) { setError(e.message || 'Reply could not be sent.'); }
+    finally { setBusy(''); }
+  };
+
   return (
     <div className="help-view">
       <div className="section-head">
-        <div>
-          <span className="eyebrow">SUPPORT & ASSISTANCE</span>
-          <h1>How Can We Help You?</h1>
-          <p>24x7 safety and ride assistance across all active cities.</p>
-        </div>
+        <div><span className="eyebrow">VAAHANSATHI CUSTOMER CARE</span><h1>Help that follows your trip</h1><p>Submit a booking-linked ticket, keep the reference number, and follow every reply from one place.</p></div>
       </div>
-
       <div className="help-cards-grid">
-        <button className="panel help-action-card" onClick={() => flash('Connecting with priority customer care...')}>
-          <Headphones size={28} />
-          <b>Ride Support</b>
-          <p>Assistance with bookings, route changes, or driver coordination.</p>
-          <span>Contact Support <ArrowRight size={14} /></span>
-        </button>
-
-        <button className="panel help-action-card" onClick={() => window.location.assign('tel:112')}>
-          <ShieldCheck size={28} />
-          <b>Emergency Assistance</b>
-          <p>Immediate connection to 112 national emergency helpline.</p>
-          <span>Call 112 Helpline <ArrowRight size={14} /></span>
-        </button>
-
-        <button className="panel help-action-card" onClick={onDispute}>
-          <AlertCircle size={28} />
-          <b>File a Dispute</b>
-          <p>Report a problem with a trip, fare, or driver behaviour.</p>
-          <span>Raise Ticket <ArrowRight size={14} /></span>
-        </button>
+        <div className="panel help-action-card"><Headphones size={28}/><b>Tracked support tickets</b><p>Every request receives a ticket number and an acknowledgement immediately.</p><span>First human response target: 48 hours</span></div>
+        <button className="panel help-action-card" onClick={() => window.location.assign('tel:112')}><ShieldCheck size={28}/><b>Emergency Assistance</b><p>For immediate danger or a medical or police emergency, call India's 112 helpline.</p><span>Call 112 Helpline <ArrowRight size={14}/></span></button>
+        {onDispute && <button className="panel help-action-card" onClick={onDispute}><AlertCircle size={28}/><b>Report extra money demand</b><p>A report is investigated; it does not automatically reduce a driver's earnings.</p><span>Report a driver <ArrowRight size={14}/></span></button>}
       </div>
-
-      <div className="panel faq-card">
-        <h3>Frequently Asked Questions</h3>
-        <details>
-          <summary>Does VaahanSathi provide the car? <ChevronDown size={16} /></summary>
-          <p>No. VaahanSathi connects car owners with drivers for the customer's own vehicle. Review the assigned driver's details in your booking before the trip.</p>
-        </details>
-        <details>
-          <summary>How are fuel, tolls, and parking handled? <ChevronDown size={16} /></summary>
-          <p>Fuel, fastag tolls, and parking fees are paid directly by the car owner and are never included in driver service billing.</p>
-        </details>
-        <details>
-          <summary>What if I need to cancel my booking? <ChevronDown size={16} /></summary>
-          <p>You can cancel without any charge before a driver partner begins traveling to your pickup location.</p>
-        </details>
-      </div>
+      <section className="panel" style={{padding:18,marginTop:14}}>
+        <h3 style={{marginTop:0}}>Create a support ticket</h3>
+        <p className="muted">Safety issues are prioritised. Include the booking reference and what happened so the team can investigate.</p>
+        <form onSubmit={createTicket} style={{display:'grid',gap:10}}>
+          <label className="field-group"><span>Issue category</span><select value={category} onChange={(e) => setCategory(e.target.value)}><option>Booking</option><option>Fare & pricing</option><option>Payment & refund</option><option>Driver behaviour</option><option>Safety concern</option><option>App / technical</option><option>Other</option></select></label>
+          <label className="field-group"><span>Related booking (optional)</span><select value={bookingId} onChange={(e) => setBookingId(e.target.value)}><option value="">No specific booking</option>{bookings.map((b: any) => <option value={b.id} key={b.id}>{b.id} · {b.pickup.split(',')[0]} → {b.destination.split(',')[0]}</option>)}</select></label>
+          <label className="field-group"><span>Subject</span><input required minLength={5} maxLength={140} value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="A short summary of the problem"/></label>
+          <label className="field-group"><span>Tell us what happened</span><textarea required minLength={15} maxLength={3000} rows={4} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Include the trip stage, time, what you expected, and what happened…"/></label>
+          <button type="submit" className="primary-btn-wide" disabled={busy === 'create' || subject.trim().length < 5 || description.trim().length < 15}>{busy === 'create' ? 'Creating ticket…' : 'Submit support ticket'}</button>
+        </form>
+        {error && <p className="tripguard-error" role="alert">{error}</p>}
+      </section>
+      <section className="panel" style={{padding:18,marginTop:14}}>
+        <div className="panel-header"><div><h3>My support tickets</h3><p>Statuses and replies refresh automatically.</p></div><button className="secondary-btn" onClick={loadTickets}>Refresh</button></div>
+        {!tickets.length && <p className="muted">No support tickets yet. Your requests will appear here after submission.</p>}
+        {tickets.map((ticket) => (
+          <article key={ticket.id} style={{padding:'13px 0',borderTop:'1px solid var(--slate-200)'}}>
+            <div style={{display:'flex',justifyContent:'space-between',gap:10,flexWrap:'wrap'}}><b>{ticket.id} · {ticket.subject}</b><span className="status-pill">{String(ticket.status).replace(/_/g,' ')}</span></div>
+            <small className="muted">{ticket.category} · {ticket.priority} priority · {ticket.bookingId || 'Not linked to a booking'}</small>
+            <p style={{margin:'8px 0'}}>{ticket.description}</p>
+            <small className="muted">System receipt {ticket.acknowledgedAt ? new Date(ticket.acknowledgedAt).toLocaleString('en-IN') : 'recorded'} · Grievance officer acknowledgement {ticket.grievanceOfficerAcknowledgedAt ? 'recorded ' + new Date(ticket.grievanceOfficerAcknowledgedAt).toLocaleString('en-IN') : 'pending (target within 48 hours)'} · Resolution target {ticket.resolutionDueAt ? new Date(ticket.resolutionDueAt).toLocaleDateString('en-IN') : 'within one month'}</small>
+            {(ticket.messages || []).slice(1).map((message: any) => <div key={message.id} style={{marginTop:8,padding:10,borderRadius:10,background:message.senderRole === 'support' ? '#eef7f4' : '#f5f7fa'}}><b style={{fontSize:11}}>{message.senderRole === 'support' ? 'VaahanSathi Support' : message.senderName}</b>{message.message && <p style={{margin:'4px 0',fontSize:12}}>{message.message}</p>}{message.attachmentUrl && <a href={message.attachmentUrl} target="_blank" rel="noreferrer"><img src={message.attachmentUrl} alt="Support evidence attachment" style={{display:'block',width:'100%',maxWidth:320,maxHeight:220,objectFit:'contain',marginTop:6,borderRadius:8,background:'#e8edf2'}}/></a>}<small className="muted">{new Date(message.createdAt).toLocaleString('en-IN')}</small></div>)}
+            <div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:8}}>
+              <button className="secondary-btn" onClick={() => {
+                const content = ['VAAHANSATHI SUPPORT TICKET', ticket.id, ticket.subject, 'Category: ' + ticket.category, 'Status: ' + ticket.status, 'Booking: ' + (ticket.bookingId || 'Not linked'), '', ticket.description].join('\n');
+                const url = URL.createObjectURL(new Blob([content], {type:'text/plain;charset=utf-8'}));
+                const anchor = document.createElement('a'); anchor.href = url; anchor.download = ticket.id + '-complaint-copy.txt'; anchor.click(); URL.revokeObjectURL(url);
+              }}>Download complaint copy</button>
+            </div>
+            {!['resolved','closed'].includes(ticket.status) && <div style={{display:'grid',gap:7,marginTop:10}}><textarea rows={2} value={replies[ticket.id] || ''} onChange={(e) => setReplies((current) => ({...current,[ticket.id]:e.target.value.slice(0,3000)}))} placeholder="Add more information to this ticket…"/><label className="field-group"><span>Attach evidence image (optional, up to 5 MB)</span><input type="file" accept="image/jpeg,image/png,image/webp" disabled={!supportConfig.evidenceStorageConfigured} onChange={(e) => setReplyFiles((current) => ({...current,[ticket.id]:e.target.files?.[0] || null}))}/></label><small className="muted">{supportConfig.evidenceStorageConfigured ? (replyFiles[ticket.id]?.name || 'No image selected') : 'Secure image attachments will become available after private R2 storage is configured. Text support remains available.'}</small><button className="secondary-btn" disabled={busy === ticket.id || (String(replies[ticket.id] || '').trim().length < 3 && !replyFiles[ticket.id])} onClick={() => sendReply(ticket)}>{busy === ticket.id ? 'Sending…' : 'Send update'}</button></div>}
+          </article>
+        ))}
+      </section>
+      <section className="panel faq-card" style={{marginTop:14}}>
+        <h3>Grievance contact & response targets</h3>
+        {supportConfig.operatorDetailsConfigured && <p><b>{supportConfig.legalEntityName}</b><br/>{supportConfig.legalEntityAddress}<br/>{supportConfig.websiteDomain}</p>}
+        {supportConfig.supportContactConfigured && <p>Customer Care:{' '}{supportConfig.supportEmail && <a href={'mailto:' + supportConfig.supportEmail}>{supportConfig.supportEmail}</a>}{supportConfig.supportEmail && supportConfig.supportPhone ? ' · ' : ''}{supportConfig.supportPhone && <a href={'tel:' + supportConfig.supportPhone}>{supportConfig.supportPhone}</a>}</p>}
+        {supportConfig.grievanceContactConfigured ? <p><b>{supportConfig.grievanceOfficerName}</b> · {supportConfig.grievanceOfficerDesignation}<br/>{supportConfig.grievanceOfficerEmail} {supportConfig.grievanceOfficerPhone}</p> : <p className="muted">Official grievance officer contact details are not yet configured. The operator must add and publish them in Render settings; the ticket desk alone is not a substitute for publishing monitored grievance contacts.</p>}
+        <p>Ticket acknowledgement: immediate system registration. Grievance acknowledgement target: within 48 hours. Target grievance resolution: within one month. A copy of your submitted complaint can be downloaded from each ticket.</p>
+      </section>
     </div>
   );
 }
