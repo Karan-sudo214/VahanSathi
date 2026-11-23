@@ -2755,14 +2755,21 @@ function AdminModulePage({ module, bookings, flash }: { module: string; bookings
   };
 
   const resolveDispute = async (disputeId: string, status: string) => {
-    const resolution = prompt('Enter resolution note:');
+    const resolution = prompt('Enter the investigation / resolution note:');
     if (!resolution) return;
+    let penaltyAmount = 0;
+    if (status === 'substantiated') {
+      const rawPenalty = prompt('Optional driver earnings adjustment in INR (enter 0 for no adjustment):', '0');
+      if (rawPenalty === null) return;
+      penaltyAmount = Number(rawPenalty || 0);
+      if (!Number.isSafeInteger(penaltyAmount) || penaltyAmount < 0) { flash?.('Enter a valid whole-rupee adjustment.'); return; }
+    }
     try {
       await api(`/admin/disputes/${disputeId}`, {
         method: 'PATCH',
-        body: JSON.stringify({ status, resolution })
+        body: JSON.stringify({ status, resolution, penaltyAmount })
       });
-      flash?.('Dispute updated.');
+      flash?.(penaltyAmount > 0 ? 'Complaint reviewed and earnings adjustment ledger updated.' : 'Complaint status updated.');
       load();
     } catch (e: any) { flash?.(e.message); }
   };
@@ -2924,16 +2931,18 @@ function AdminModulePage({ module, bookings, flash }: { module: string; bookings
                     ) : module === 'disputes' ? (
                       <tr key={r.id || i}>
                         <td><b>{String(r.id || 'Case').slice(0, 8)}…</b><small>{r.createdAt ? new Date(r.createdAt).toLocaleDateString('en-IN') : '—'}</small></td>
-                        <td>{r.userName || '—'}</td>
-                        <td>{r.subject || 'General complaint'}<small>{r.bookingId || '—'}</small></td>
-                        <td><span className={`status-pill ${r.status === 'resolved' ? 'done' : ''}`}>{r.status || 'open'}</span></td>
+                        <td>{r.userName || '—'}<small>Driver: {r.driverName || r.driverId || 'Not assigned'}</small></td>
+                        <td>{r.subject || 'General complaint'}<small>{r.bookingId || '—'}{r.reportedExtraAmount ? ` · asked ${money(r.reportedExtraAmount)} extra` : ''}</small><small>{r.description || ''}</small>{r.driverResponse && <small><b>Driver response:</b> {r.driverResponse}</small>}</td>
+                        <td><span className={`status-pill ${['resolved','closed','unsubstantiated'].includes(r.status) ? 'done' : ''}`}>{String(r.status || 'open').replace(/_/g, ' ')}</span></td>
                         <td style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                          {r.status === 'open' && (
+                          {!['resolved','closed','unsubstantiated'].includes(r.status) && (
                             <>
-                              <button className="inline-action-btn success" onClick={() => resolveDispute(r.id, 'resolved')}>Resolve</button>
-                              <button className="inline-action-btn danger" onClick={() => resolveDispute(r.id, 'closed')}>Close</button>
+                              <button className="inline-action-btn success" onClick={() => resolveDispute(r.id, 'substantiated')}>Substantiate</button>
+                              <button className="inline-action-btn danger" onClick={() => resolveDispute(r.id, 'unsubstantiated')}>Not substantiated</button>
+                              <button className="inline-action-btn" onClick={() => resolveDispute(r.id, 'escalated')}>Escalate</button>
                             </>
                           )}
+                          {r.earningsAdjustmentAmount > 0 && <small>Ledger adjustment: {money(r.earningsAdjustmentAmount)}</small>}
                         </td>
                       </tr>
                     ) : (
