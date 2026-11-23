@@ -2440,15 +2440,21 @@ const addDays = (timestamp, days) => new Date(Date.parse(timestamp) + days * 24 
 
 app.get('/api/support/config', (req, res) => {
   const config = {
+    legalEntityName: process.env.LEGAL_ENTITY_NAME || '',
+    legalEntityAddress: process.env.LEGAL_ENTITY_ADDRESS || '',
+    websiteDomain: process.env.WEBSITE_DOMAIN || '',
     supportEmail: process.env.SUPPORT_EMAIL || '',
     supportPhone: process.env.SUPPORT_PHONE || '',
     grievanceOfficerName: process.env.GRIEVANCE_OFFICER_NAME || '',
     grievanceOfficerDesignation: process.env.GRIEVANCE_OFFICER_DESIGNATION || '',
     grievanceOfficerEmail: process.env.GRIEVANCE_OFFICER_EMAIL || '',
     grievanceOfficerPhone: process.env.GRIEVANCE_OFFICER_PHONE || '',
-    firstResponseTargetHours: 48,
+    acknowledgementTargetHours: 48,
+    firstHumanResponseTargetHours: 48,
     resolutionTargetDays: 30
   };
+  config.operatorDetailsConfigured = Boolean(config.legalEntityName && config.legalEntityAddress && config.websiteDomain);
+  config.supportContactConfigured = Boolean(config.supportEmail || config.supportPhone);
   config.grievanceContactConfigured = Boolean(config.grievanceOfficerName && config.grievanceOfficerDesignation && (config.grievanceOfficerEmail || config.grievanceOfficerPhone));
   res.json(config);
 });
@@ -2490,8 +2496,32 @@ app.get('/api/support/tickets', auth, asyncRoute(async (req, res) => {
   const isAdmin = req.user.role === 'admin';
   const tickets = (data.supportTickets || [])
     .filter((ticket) => isAdmin || ticket.userId === req.user.id)
-    .sort((a, b) => String(b.updatedAt || b.createdAt).localeCompare(String(a.updatedAt || a.createdAt)));
+    .sort((a, b) => String(b.updatedAt || b.createdAt).localeCompare(String(a.updatedAt || a.createdAt)))
+    .map((ticket) => ({
+      ...ticket,
+      messages: (ticket.messages || []).map((message) => ({
+        ...message,
+        attachmentUrl: message.attachmentKey && r2Ready() ? r2Presign('GET', message.attachmentKey, 900) : null
+      }))
+    }));
   res.json({ tickets });
+}));
+
+app.post('/api/support/tickets/:id/attachments/upload-url', auth, asyncRoute(async (req, res) => {
+  const ticket = (data.supportTickets || []).find((item) => item.id === req.params.id);
+  if (!ticket) return res.status(404).json({ error: 'Support ticket not found.' });
+  const isAdmin = req.user.role === 'admin';
+  if (!isAdmin && ticket.userId !== req.user.id) return res.status(404).json({ error: 'Support ticket not found.' });
+  if (['resolved', 'closed'].includes(ticket.status) && !isAdmin) return res.status(409).json({ error: 'This support ticket is closed.' });
+  if (!r2Ready()) return res.status(503).json({ error: 'Secure evidence storage is temporarily unavailable. You can still send a text update.' });
+  const mimeType = String(req.body?.mimeType || '').toLowerCase();
+  const extension = expenseImageTypes[mimeType];
+  const sizeBytes = Number(req.body?.sizeBytes || 0);
+  if (!extension || !Number.isSafeInteger(sizeBytes) || sizeBytes < 1 || sizeBytes > 5 * 1024 * 1024) {
+    return res.status(400).json({ error: 'Attach a JPG, PNG or WebP image up to 5 MB.' });
+  }
+  const key = 'support-tickets/' + ticket.id + '/' + randomUUID() + '.' + extension;
+  res.json({ uploadUrl: r2Presign('PUT', key, 600), key, mimeType, expiresIn: 600 });
 }));
 
 app.post('/api/support/tickets/:id/messages', auth, asyncRoute(async (req, res) => {
@@ -2501,12 +2531,25 @@ app.post('/api/support/tickets/:id/messages', auth, asyncRoute(async (req, res) 
   if (!isAdmin && ticket.userId !== req.user.id) return res.status(404).json({ error: 'Support ticket not found.' });
   if (['resolved', 'closed'].includes(ticket.status) && !isAdmin) return res.status(409).json({ error: 'This ticket is closed. Open a new ticket if the problem continues.' });
   const message = String(req.body?.message || '').trim().slice(0, 3000);
-  if (message.length < 3) return res.status(400).json({ error: 'Enter a little more detail in your reply.' });
+  const attachment = req.body?.attachment && typeof req.body.attachment === 'object' ? req.body.attachment : null;
+  if (message.length < 3 && !attachment) return res.status(400).json({ error: 'Write a reply or attach an evidence image.' });
+  let verifiedAttachment = null;
+  if (attachment) {
+    const key = String(attachment.key || '');
+    const mimeType = String(attachment.mimeType || '').toLowerCase();
+    const sizeBytes = Number(attachment.sizeBytes || 0);
+    if (!key.startsWith('support-tickets/' + ticket.id + '/') || !expenseImageTypes[mimeType] || !Number.isSafeInteger(sizeBytes) || sizeBytes < 1 || sizeBytes > 5 * 1024 * 1024) {
+      return res.status(400).json({ error: 'The support evidence attachment is invalid.' });
+    }
+    const verified = await verifyExpenseImageInR2(key, mimeType);
+    if (!verified || verified.sizeBytes !== sizeBytes) return res.status(400).json({ error: 'The support evidence image could not be verified in secure storage. Upload it again.' });
+    verifiedAttachment = { attachmentKey: key, attachmentMimeType: verified.mimeType, attachmentSizeBytes: verified.sizeBytes };
+  }
   const now = new Date().toISOString();
   const item = {
     id: randomUUID(), senderId: req.user.id, senderRole: isAdmin ? 'support' : req.user.role,
     senderName: isAdmin ? (req.user.name || 'VaahanSathi Support') : (req.user.name || 'Account user'),
-    message, createdAt: now
+    message, ...(verifiedAttachment || {}), createdAt: now
   };
   ticket.messages = Array.isArray(ticket.messages) ? ticket.messages : [];
   ticket.messages.push(item);
@@ -2522,7 +2565,15 @@ app.post('/api/support/tickets/:id/messages', auth, asyncRoute(async (req, res) 
   await persistItem('app_support_tickets', ticket.id, ticket);
   if (isAdmin) await audit(req, 'support_ticket_updated', 'support', ticket.id, null, { status: ticket.status }, 'Support agent replied to a ticket');
   await save();
-  res.json({ ticket });
+  res.json({
+    ticket: {
+      ...ticket,
+      messages: (ticket.messages || []).map((message) => ({
+        ...message,
+        attachmentUrl: message.attachmentKey && r2Ready() ? r2Presign('GET', message.attachmentKey, 900) : null
+      }))
+    }
+  });
 }));
 
 // â”€â”€ Customer dispute filing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
