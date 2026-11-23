@@ -3670,11 +3670,11 @@ function HelpPage({ flash, onDispute, bookings = [] }: any) {
 
   const sendReply = async (ticket: any) => {
     const message = String(replies[ticket.id] || '').trim();
-    if (message.length < 3) return;
+    const file = replyFiles[ticket.id];
+    if (message.length < 3 && !file) return;
     setBusy(ticket.id); setError('');
     try {
       let attachment: any = undefined;
-      const file = replyFiles[ticket.id];
       if (file) {
         if (!['image/jpeg','image/png','image/webp'].includes(file.type) || file.size > 5 * 1024 * 1024) {
           throw new Error('Attach a JPG, PNG or WebP image up to 5 MB.');
