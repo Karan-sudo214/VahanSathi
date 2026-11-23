@@ -6,6 +6,7 @@ on:
       - main
       - feature/application-language-support
       - feature/cash-complaints-pricing-dispatch
+      - feature/smart-fare-customer-support
       - fix/application-audit-and-booking-permissions
   pull_request:
     branches:
