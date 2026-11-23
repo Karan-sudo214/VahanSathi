@@ -18,12 +18,13 @@ export function toCustomerFareSummary(fare, quoteToken) {
 
 const PRIVATE_FARE_FIELDS = [
   'pricingAudit', 'fareAudit', 'priceFactors', 'commission', 'commissionRate',
-  'payout', 'driverSharePercent', 'fareQuoteId', 'fareQuotedAt',
+  'driverSharePercent', 'fareQuoteId', 'fareQuotedAt',
   'fareQuoteExpiresAt', 'farePricingRevision'
 ];
 
-export function hideInternalFareDetails(booking) {
+export function hideInternalFareDetails(booking, { includeDriverPayout = false } = {}) {
   const customerBooking = { ...booking };
   for (const field of PRIVATE_FARE_FIELDS) delete customerBooking[field];
+  if (!includeDriverPayout) delete customerBooking.payout;
   return customerBooking;
 }
