@@ -1235,11 +1235,17 @@ app.post('/api/bookings/:id/location', auth, roles('driver'), asyncRoute(async (
   if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180 || accuracy > 250) {
     return res.status(400).json({ error: 'A valid GPS position with acceptable accuracy is required.' });
   }
+  const serverReceivedAt = new Date().toISOString();
+  const suppliedCaptureTime = Number(req.body?.capturedAt);
+  const deviceCapturedAt = Number.isFinite(suppliedCaptureTime) && suppliedCaptureTime > 0
+    ? new Date(suppliedCaptureTime).toISOString()
+    : serverReceivedAt;
   booking.driverLocation = {
     lat, lng, accuracy: Math.max(0, accuracy),
     heading: Number.isFinite(Number(req.body?.heading)) ? Number(req.body.heading) : null,
     speed: Number.isFinite(Number(req.body?.speed)) ? Number(req.body.speed) : null,
-    updatedAt: new Date().toISOString()
+    deviceCapturedAt,
+    updatedAt: serverReceivedAt
   };
   await persistItem('app_bookings', booking.id, booking);
   // Neon is the production source of truth; avoid a synchronous full-file write for every GPS ping.
@@ -1261,6 +1267,166 @@ app.get('/api/bookings/:id/location', auth, asyncRoute(async (req, res) => {
     status: booking.status,
     updatedAt: booking.driverLocation?.updatedAt || null
   });
+}));
+
+
+const expenseImageTypes = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp'
+};
+
+app.post('/api/bookings/:id/expenses/evidence-upload-url', auth, roles('driver'), asyncRoute(async (req, res) => {
+  const booking = data.bookings.find((item) => item.id === req.params.id);
+  if (!booking || booking.driverId !== req.user.id) return res.status(404).json({ error: 'Assigned booking not found.' });
+  if (booking.status !== 'Trip started') return res.status(409).json({ error: 'Unexpected expenses can be requested only while the trip is active.' });
+  if (!r2Ready()) return res.status(503).json({ error: 'Private evidence storage is not configured. Please contact VaahanSathi support.' });
+  const kind = String(req.body?.kind || 'nozzle');
+  if (!['nozzle', 'receipt'].includes(kind)) return res.status(400).json({ error: 'Choose a valid expense evidence type.' });
+  const mimeType = String(req.body?.mimeType || '').toLowerCase();
+  const extension = expenseImageTypes[mimeType];
+  if (!extension) return res.status(400).json({ error: 'Upload a JPEG, PNG or WebP photo.' });
+  let expense = null;
+  if (kind === 'receipt') {
+    expense = (booking.expenses || []).find((item) => item.id === String(req.body?.expenseId || '') && item.driverId === req.user.id);
+    if (!expense || expense.status !== 'approved') return res.status(409).json({ error: 'The customer must approve this request before a fuel receipt can be uploaded.' });
+  }
+  const evidenceId = expense?.id || randomUUID();
+  const key = `trip-expenses/${booking.id}/${evidenceId}/${kind}-${randomUUID()}.${extension}`;
+  res.json({ uploadUrl: r2Presign('PUT', key, 600), key, expiresIn: 600, mimeType });
+}));
+
+app.post('/api/bookings/:id/expenses', auth, roles('driver'), asyncRoute(async (req, res) => {
+  const booking = data.bookings.find((item) => item.id === req.params.id);
+  if (!booking || booking.driverId !== req.user.id) return res.status(404).json({ error: 'Assigned booking not found.' });
+  if (booking.status !== 'Trip started') return res.status(409).json({ error: 'An expense request can be raised only during an active trip.' });
+  if (!r2Ready()) return res.status(503).json({ error: 'Private evidence storage is not configured.' });
+
+  const category = String(req.body?.category || 'fuel');
+  if (!['fuel', 'toll', 'parking', 'other'].includes(category)) return res.status(400).json({ error: 'Choose fuel, toll, parking or other.' });
+  const amount = Number(req.body?.amount);
+  if (!Number.isSafeInteger(amount) || amount < 1 || amount > 50000) return res.status(400).json({ error: 'Enter an expense amount from ₹1 to ₹50,000 in whole rupees.' });
+  const reason = String(req.body?.reason || '').trim().slice(0, 500);
+  if (reason.length < 5) return res.status(400).json({ error: 'Add a short reason for the extra expense.' });
+
+  const activeRequest = (booking.expenses || []).some((item) => ['pending_customer_approval', 'approved'].includes(item.status));
+  if (activeRequest) return res.status(409).json({ error: 'This trip already has an expense awaiting approval or its receipt. Complete it before creating another request.' });
+
+  const photoKey = String(req.body?.photoKey || '');
+  const mimeType = String(req.body?.mimeType || '');
+  const sizeBytes = Number(req.body?.sizeBytes || 0);
+  const validPhotoKey = photoKey.startsWith(`trip-expenses/${booking.id}/`) &&
+    Object.values(expenseImageTypes).some((ext) => photoKey.endsWith(`.${ext}`));
+  if (category === 'fuel' && (!validPhotoKey || !expenseImageTypes[mimeType] || !Number.isSafeInteger(sizeBytes) || sizeBytes < 1 || sizeBytes > 10 * 1024 * 1024)) {
+    return res.status(400).json({ error: 'Fuel requests require a fuel-nozzle photo smaller than 10 MB.' });
+  }
+  if (category !== 'fuel' && photoKey && (!validPhotoKey || !expenseImageTypes[mimeType] || !Number.isSafeInteger(sizeBytes) || sizeBytes < 1 || sizeBytes > 10 * 1024 * 1024)) {
+    return res.status(400).json({ error: 'The uploaded expense photo is invalid or exceeds 10 MB.' });
+  }
+
+  // Do not accept coordinates from the expense form. Use the most recent position
+  // already recorded by the trip's background GPS watcher on the server.
+  const position = booking.driverLocation;
+  const receivedAt = Date.now();
+  const positionAgeMs = position?.updatedAt ? receivedAt - Date.parse(position.updatedAt) : Infinity;
+  const deviceCaptureMs = position?.deviceCapturedAt ? Date.parse(position.deviceCapturedAt) : NaN;
+  if (!position || !Number.isFinite(positionAgeMs) || positionAgeMs < 0 || positionAgeMs > 45000 ||
+      !Number.isFinite(Number(position.accuracy)) || Number(position.accuracy) > 150 ||
+      !Number.isFinite(deviceCaptureMs) || Math.abs(receivedAt - deviceCaptureMs) > 90000) {
+    return res.status(409).json({ error: 'A fresh, accurate device GPS fix is required. Keep location enabled and try again.' });
+  }
+
+  const serverReceivedAt = new Date(receivedAt).toISOString();
+  const gpsSnapshot = buildGpsExpenseSnapshot({
+    bookingId: booking.id,
+    lat: position.lat,
+    lng: position.lng,
+    accuracy: position.accuracy,
+    capturedAt: position.deviceCapturedAt,
+    serverReceivedAt
+  });
+  const id = randomUUID();
+  const expense = {
+    id, bookingId: booking.id, customerId: booking.userId, driverId: req.user.id,
+    category, requestedAmount: amount, amount, reason,
+    litres: category === 'fuel' && req.body?.litres !== '' ? Number(req.body?.litres) || null : null,
+    stationName: String(req.body?.stationName || '').trim().slice(0, 120) || null,
+    proofPhotoKey: category === 'fuel' || photoKey ? photoKey : null,
+    proofPhotoMimeType: category === 'fuel' || photoKey ? mimeType : null,
+    proofPhotoSizeBytes: category === 'fuel' || photoKey ? sizeBytes : null,
+    gps: {
+      lat: Number(position.lat), lng: Number(position.lng),
+      accuracy: Number(position.accuracy),
+      deviceCapturedAt: position.deviceCapturedAt,
+      serverReceivedAt
+    },
+    gpsSnapshotDataUri: `data:image/svg+xml;base64,${Buffer.from(gpsSnapshot.svg, 'utf8').toString('base64')}`,
+    gpsMapUrl: gpsSnapshot.mapUrl,
+    status: 'pending_customer_approval',
+    createdAt: serverReceivedAt,
+    timeline: [{ status: 'pending_customer_approval', at: serverReceivedAt, actorId: req.user.id, actorRole: 'driver' }]
+  };
+  booking.expenses = Array.isArray(booking.expenses) ? booking.expenses : [];
+  booking.expenses.unshift(expense);
+  await persistItem('app_bookings', booking.id, booking);
+  await save();
+  res.status(201).json({ expense: { ...expense, proofPhotoKey: undefined }, message: 'Expense request sent to the customer with its uploaded photo and system-generated GPS proof.' });
+}));
+
+app.post('/api/bookings/:id/expenses/:expenseId/decision', auth, roles('customer'), asyncRoute(async (req, res) => {
+  const booking = data.bookings.find((item) => item.id === req.params.id && item.userId === req.user.id);
+  if (!booking) return res.status(404).json({ error: 'Booking not found.' });
+  if (!['Driver assigned', 'Driver arriving', 'Trip started'].includes(booking.status)) return res.status(409).json({ error: 'Expense approval is available only during the active trip.' });
+  const expense = (booking.expenses || []).find((item) => item.id === req.params.expenseId);
+  if (!expense) return res.status(404).json({ error: 'Expense request not found.' });
+  if (expense.status !== 'pending_customer_approval') return res.status(409).json({ error: 'This expense request has already been reviewed.' });
+  const decision = String(req.body?.decision || '');
+  if (!['approve', 'decline'].includes(decision)) return res.status(400).json({ error: 'Choose approve or decline.' });
+  const now = new Date().toISOString();
+  expense.status = decision === 'approve' ? 'approved' : 'declined';
+  expense.approvedAmount = decision === 'approve' ? Number(expense.requestedAmount) : 0;
+  expense.reviewedAt = now;
+  expense.reviewedBy = req.user.id;
+  expense.customerNote = String(req.body?.note || '').trim().slice(0, 300) || null;
+  expense.timeline = Array.isArray(expense.timeline) ? expense.timeline : [];
+  expense.timeline.push({ status: expense.status, at: now, actorId: req.user.id, actorRole: 'customer' });
+  await persistItem('app_bookings', booking.id, booking);
+  await save();
+  res.json({ expense: { id: expense.id, status: expense.status, approvedAmount: expense.approvedAmount } });
+}));
+
+app.post('/api/bookings/:id/expenses/:expenseId/receipt', auth, roles('driver'), asyncRoute(async (req, res) => {
+  const booking = data.bookings.find((item) => item.id === req.params.id && item.driverId === req.user.id);
+  if (!booking) return res.status(404).json({ error: 'Assigned booking not found.' });
+  if (!['Trip started', 'Trip completed', 'Rated'].includes(booking.status)) return res.status(409).json({ error: 'A fuel receipt can be uploaded only for this trip.' });
+  const expense = (booking.expenses || []).find((item) => item.id === req.params.expenseId && item.driverId === req.user.id);
+  if (!expense || expense.status !== 'approved') return res.status(409).json({ error: 'Only a customer-approved expense can be completed with a receipt.' });
+  const actualAmount = Number(req.body?.actualAmount);
+  if (!Number.isSafeInteger(actualAmount) || actualAmount < 1 || actualAmount > Number(expense.approvedAmount || 0)) {
+    return res.status(400).json({ error: `Enter the actual amount up to the approved limit of ₹${Number(expense.approvedAmount || 0)}. Request approval again for any extra amount.` });
+  }
+  const receiptKey = String(req.body?.receiptKey || '');
+  const receiptMimeType = String(req.body?.mimeType || '');
+  const receiptSizeBytes = Number(req.body?.sizeBytes || 0);
+  const validReceiptKey = receiptKey.startsWith(`trip-expenses/${booking.id}/${expense.id}/receipt-`) &&
+    Object.values(expenseImageTypes).some((ext) => receiptKey.endsWith(`.${ext}`));
+  if (!validReceiptKey || !expenseImageTypes[receiptMimeType] || !Number.isSafeInteger(receiptSizeBytes) || receiptSizeBytes < 1 || receiptSizeBytes > 10 * 1024 * 1024) {
+    return res.status(400).json({ error: 'A valid fuel receipt photo under 10 MB is required.' });
+  }
+  const now = new Date().toISOString();
+  expense.actualAmount = actualAmount;
+  expense.receiptPhotoKey = receiptKey;
+  expense.receiptPhotoMimeType = receiptMimeType;
+  expense.receiptPhotoSizeBytes = receiptSizeBytes;
+  expense.status = 'confirmed';
+  expense.confirmedAt = now;
+  expense.paymentStatus = 'due';
+  expense.timeline = Array.isArray(expense.timeline) ? expense.timeline : [];
+  expense.timeline.push({ status: 'confirmed', at: now, actorId: req.user.id, actorRole: 'driver', note: 'Fuel receipt uploaded; amount is within the customer-approved limit.' });
+  booking.expenseTotalDue = confirmedExpenseTotal(booking);
+  await persistItem('app_bookings', booking.id, booking);
+  await save();
+  res.json({ expense: { id: expense.id, status: expense.status, actualAmount: expense.actualAmount }, amountDue: bookingAmountDue(booking) });
 }));
 
 
