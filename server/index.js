@@ -8,6 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import pg from 'pg';
 import { normalizePickupTime } from '../shared/time.js';
+import { hideInternalFareDetails, toCustomerFareSummary } from '../shared/fare-view.js';
 
 const { Pool } = pg;
 const app = express();
@@ -928,7 +929,7 @@ function verifyFareQuote(token, expectedInput) {
   }
   if (Number(input.hours) !== Number(expectedInput.hours) || Number(payload.pricingRevision) !== Number(data.pricing.revision || 1)) throw new Error('The price list or trip duration changed. Please refresh the estimate to see the latest verified fare.');
   const rechecked = calculateFare({ ...input, ...payload.route });
-  if (rechecked.total !== Number(payload.fare?.total) || JSON.stringify(rechecked.priceFactors) !== JSON.stringify(payload.fare?.priceFactors)) throw new Error('The fare did not pass the second calculation check. Please refresh the estimate.');
+  if (!Number.isSafeInteger(Number(payload.fareTotal)) || rechecked.total !== Number(payload.fareTotal)) throw new Error('The fare did not pass the second calculation check. Please refresh the estimate.');
   return { route: payload.route, fare: rechecked, quoteId: payload.quoteId, issuedAt: payload.issuedAt, expiresAt: payload.expiresAt };
 }
 
@@ -1161,8 +1162,8 @@ app.post('/api/fare/estimate', asyncRoute(async (req, res) => {
   const issuedAt = new Date().toISOString();
   const expiresAt = new Date(Date.now() + 8 * 60 * 1000).toISOString();
   const quoteId = 'FQ-' + Date.now() + '-' + randomInt(10000, 99999);
-  const quoteToken = signFareQuote({ quoteId, issuedAt, expiresAt, input, route, fare, pricingRevision: Number(data.pricing.revision) || 1 });
-  res.json({ ...fare, quoteId, issuedAt, expiresAt, quoteToken });
+  const quoteToken = signFareQuote({ quoteId, issuedAt, expiresAt, input, route, fareTotal: fare.total, pricingRevision: Number(data.pricing.revision) || 1 });
+  res.json(toCustomerFareSummary(fare, quoteToken));
 }));
 
 // Bookings
@@ -1840,8 +1841,11 @@ app.get('/api/bookings', auth, (req, res) => {
     const driverUser = data.users.find((u) => u.id === b.driverId);
     const customerUser = data.users.find((u) => u.id === b.userId);
     const { cashPin, cashPinEncrypted, cashPinHash, cashPinAttempts, cashCustomerAmount, cashDriverAmount, expenseUploadTickets, driverLocationHistory, ...safeBooking } = b;
+    const roleSafeBooking = req.user.role === 'admin'
+      ? safeBooking
+      : hideInternalFareDetails(safeBooking, { includeDriverPayout: req.user.role === 'driver' });
     return {
-      ...safeBooking,
+      ...roleSafeBooking,
       // Legacy cash PIN values are never exposed. Start/end trip OTPs remain stage-gated.
       start_otp: req.user.role === 'customer' && b.userId === req.user.id && b.status === 'Driver arriving' && b.carCarePassport?.videoKey && b.carCarePassport?.customerConfirmedAt && b.carCarePassport?.driverConfirmedAt ? b.start_otp : undefined,
       end_otp: req.user.role === 'customer' && b.userId === req.user.id && b.status === 'Trip started' ? b.end_otp : undefined,
@@ -2004,11 +2008,11 @@ app.post(
     await persistItem('app_history', historyItem.id, historyItem);
     await save();
 
-    const customerBooking = {
+    const customerBooking = hideInternalFareDetails({
       ...b,
       start_otp: undefined,
       end_otp: undefined,
-    };
+    });
     res.status(201).json({
       booking: customerBooking,
       message: 'Your request is now available to verified, online drivers in your city. A driver must accept it before assignment.'
