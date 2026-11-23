@@ -1918,6 +1918,8 @@ app.post(
         return res.status(409).json({ error: 'This fare quote has already been used for a booking. Please refresh your estimate for another booking.' });
       }
       fareQuotesInFlight.add(quote.quoteId);
+      const quoteLockTimer = setTimeout(() => fareQuotesInFlight.delete(quote.quoteId), Math.max(1000, Date.parse(quote.expiresAt) - Date.now()));
+      quoteLockTimer.unref?.();
       route = quote.route; f = quote.fare;
       quoteId = quote.quoteId; quoteIssuedAt = quote.issuedAt; quoteExpiresAt = quote.expiresAt;
     } catch (error) {
@@ -2588,7 +2590,10 @@ app.post('/api/support/tickets/:id/messages', auth, asyncRoute(async (req, res) 
   };
   ticket.messages = Array.isArray(ticket.messages) ? ticket.messages : [];
   ticket.messages.push(item);
-  if (isAdmin && !ticket.firstResponseAt) ticket.firstResponseAt = now;
+  if (isAdmin && !ticket.firstResponseAt) {
+    ticket.firstResponseAt = now;
+    ticket.grievanceOfficerAcknowledgedAt = now;
+  }
   if (isAdmin) {
     ticket.status = SUPPORT_STATUSES.includes(req.body?.status) ? req.body.status : 'in_progress';
     ticket.lastSupportResponseAt = now;
