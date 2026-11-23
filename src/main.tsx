@@ -3617,7 +3617,7 @@ function SupportDeskPage({ flash }: any) {
             {selected.bookingId && <p className="muted">Booking: {selected.bookingId}</p>}
             <div style={{display:'flex',gap:14,flexWrap:'wrap',padding:'10px 0',borderTop:'1px solid var(--slate-200)',borderBottom:'1px solid var(--slate-200)'}}><small>First response due: {selected.firstResponseDueAt ? new Date(selected.firstResponseDueAt).toLocaleString('en-IN') : '48 hours'}</small><small>Resolution target: {selected.resolutionDueAt ? new Date(selected.resolutionDueAt).toLocaleDateString('en-IN') : '30 days'}</small><small>Received: {new Date(selected.createdAt).toLocaleString('en-IN')}</small></div>
             <div style={{display:'grid',gap:9,maxHeight:390,overflowY:'auto',padding:'12px 0'}}>
-              {(selected.messages || []).map((message: any) => <div key={message.id} style={{padding:11,borderRadius:10,background:message.senderRole === 'support' ? '#edf7f3' : '#f4f7fa'}}><b style={{fontSize:11}}>{message.senderName}</b><p style={{fontSize:12,margin:'5px 0'}}>{message.message}</p><small className="muted">{new Date(message.createdAt).toLocaleString('en-IN')}</small></div>)}
+              {(selected.messages || []).map((message: any) => <div key={message.id} style={{padding:11,borderRadius:10,background:message.senderRole === 'support' ? '#edf7f3' : '#f4f7fa'}}><b style={{fontSize:11}}>{message.senderName}</b>{message.message && <p style={{fontSize:12,margin:'5px 0'}}>{message.message}</p>}{message.attachmentUrl && <a href={message.attachmentUrl} target="_blank" rel="noreferrer"><img src={message.attachmentUrl} alt="Support evidence" style={{display:'block',maxWidth:'100%',maxHeight:260,objectFit:'contain',marginTop:6,borderRadius:8}}/></a>}<small className="muted">{new Date(message.createdAt).toLocaleString('en-IN')}</small></div>)}
             </div>
             <form onSubmit={send} style={{display:'grid',gap:9,borderTop:'1px solid var(--slate-200)',paddingTop:12}}>
               <label className="field-group"><span>Update ticket status</span><select value={nextStatus} onChange={(e) => setNextStatus(e.target.value)}><option value="in_progress">In progress</option><option value="waiting_for_customer">Waiting for customer</option><option value="escalated">Escalated</option><option value="resolved">Resolved</option><option value="closed">Closed</option></select></label>
@@ -3640,6 +3640,7 @@ function HelpPage({ flash, onDispute, bookings = [] }: any) {
   const [subject, setSubject] = useState('');
   const [description, setDescription] = useState('');
   const [replies, setReplies] = useState<Record<string,string>>({});
+  const [replyFiles, setReplyFiles] = useState<Record<string,File | null>>({});
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
 
@@ -3672,8 +3673,26 @@ function HelpPage({ flash, onDispute, bookings = [] }: any) {
     if (message.length < 3) return;
     setBusy(ticket.id); setError('');
     try {
-      await api('/support/tickets/' + encodeURIComponent(ticket.id) + '/messages', { method: 'POST', body: JSON.stringify({ message }) });
+      let attachment: any = undefined;
+      const file = replyFiles[ticket.id];
+      if (file) {
+        if (!['image/jpeg','image/png','image/webp'].includes(file.type) || file.size > 5 * 1024 * 1024) {
+          throw new Error('Attach a JPG, PNG or WebP image up to 5 MB.');
+        }
+        const upload = await api('/support/tickets/' + encodeURIComponent(ticket.id) + '/attachments/upload-url', {
+          method: 'POST', body: JSON.stringify({ mimeType: file.type, sizeBytes: file.size })
+        });
+        const uploaded = await fetch(upload.uploadUrl, {
+          method: 'PUT', headers: { 'Content-Type': file.type }, body: file
+        });
+        if (!uploaded.ok) throw new Error('Evidence upload failed. Your text update has not been sent.');
+        attachment = { key: upload.key, mimeType: file.type, sizeBytes: file.size };
+      }
+      await api('/support/tickets/' + encodeURIComponent(ticket.id) + '/messages', {
+        method: 'POST', body: JSON.stringify({ message, attachment })
+      });
       setReplies((current) => ({ ...current, [ticket.id]: '' }));
+      setReplyFiles((current) => ({ ...current, [ticket.id]: null }));
       flash('Your update was added to ticket ' + ticket.id + '.');
       await loadTickets();
     } catch (e: any) { setError(e.message || 'Reply could not be sent.'); }
@@ -3711,15 +3730,24 @@ function HelpPage({ flash, onDispute, bookings = [] }: any) {
             <small className="muted">{ticket.category} · {ticket.priority} priority · {ticket.bookingId || 'Not linked to a booking'}</small>
             <p style={{margin:'8px 0'}}>{ticket.description}</p>
             <small className="muted">Acknowledged {ticket.acknowledgedAt ? new Date(ticket.acknowledgedAt).toLocaleString('en-IN') : 'on receipt'} · Resolution target {ticket.resolutionDueAt ? new Date(ticket.resolutionDueAt).toLocaleDateString('en-IN') : 'within 30 days'}</small>
-            {(ticket.messages || []).slice(1).map((message: any) => <div key={message.id} style={{marginTop:8,padding:10,borderRadius:10,background:message.senderRole === 'support' ? '#eef7f4' : '#f5f7fa'}}><b style={{fontSize:11}}>{message.senderRole === 'support' ? 'VaahanSathi Support' : message.senderName}</b><p style={{margin:'4px 0',fontSize:12}}>{message.message}</p><small className="muted">{new Date(message.createdAt).toLocaleString('en-IN')}</small></div>)}
-            {!['resolved','closed'].includes(ticket.status) && <div style={{display:'grid',gap:7,marginTop:10}}><textarea rows={2} value={replies[ticket.id] || ''} onChange={(e) => setReplies((current) => ({...current,[ticket.id]:e.target.value.slice(0,3000)}))} placeholder="Add more information to this ticket…"/><button className="secondary-btn" disabled={busy === ticket.id || String(replies[ticket.id] || '').trim().length < 3} onClick={() => sendReply(ticket)}>{busy === ticket.id ? 'Sending…' : 'Send update'}</button></div>}
+            {(ticket.messages || []).slice(1).map((message: any) => <div key={message.id} style={{marginTop:8,padding:10,borderRadius:10,background:message.senderRole === 'support' ? '#eef7f4' : '#f5f7fa'}}><b style={{fontSize:11}}>{message.senderRole === 'support' ? 'VaahanSathi Support' : message.senderName}</b>{message.message && <p style={{margin:'4px 0',fontSize:12}}>{message.message}</p>}{message.attachmentUrl && <a href={message.attachmentUrl} target="_blank" rel="noreferrer"><img src={message.attachmentUrl} alt="Support evidence attachment" style={{display:'block',width:'100%',maxWidth:320,maxHeight:220,objectFit:'contain',marginTop:6,borderRadius:8,background:'#e8edf2'}}/></a>}<small className="muted">{new Date(message.createdAt).toLocaleString('en-IN')}</small></div>)}
+            <div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:8}}>
+              <button className="secondary-btn" onClick={() => {
+                const content = ['VAAHANSATHI SUPPORT TICKET', ticket.id, ticket.subject, 'Category: ' + ticket.category, 'Status: ' + ticket.status, 'Booking: ' + (ticket.bookingId || 'Not linked'), '', ticket.description].join('\n');
+                const url = URL.createObjectURL(new Blob([content], {type:'text/plain;charset=utf-8'}));
+                const anchor = document.createElement('a'); anchor.href = url; anchor.download = ticket.id + '-complaint-copy.txt'; anchor.click(); URL.revokeObjectURL(url);
+              }}>Download complaint copy</button>
+            </div>
+            {!['resolved','closed'].includes(ticket.status) && <div style={{display:'grid',gap:7,marginTop:10}}><textarea rows={2} value={replies[ticket.id] || ''} onChange={(e) => setReplies((current) => ({...current,[ticket.id]:e.target.value.slice(0,3000)}))} placeholder="Add more information to this ticket…"/><label className="field-group"><span>Attach evidence image (optional, up to 5 MB)</span><input type="file" accept="image/jpeg,image/png,image/webp" onChange={(e) => setReplyFiles((current) => ({...current,[ticket.id]:e.target.files?.[0] || null}))}/></label><small className="muted">{replyFiles[ticket.id]?.name || 'No image selected'}</small><button className="secondary-btn" disabled={busy === ticket.id || (String(replies[ticket.id] || '').trim().length < 3 && !replyFiles[ticket.id])} onClick={() => sendReply(ticket)}>{busy === ticket.id ? 'Sending…' : 'Send update'}</button></div>}
           </article>
         ))}
       </section>
       <section className="panel faq-card" style={{marginTop:14}}>
         <h3>Grievance contact & response targets</h3>
-        {supportConfig.grievanceContactConfigured ? <p><b>{supportConfig.grievanceOfficerName}</b> · {supportConfig.grievanceOfficerDesignation}<br/>{supportConfig.grievanceOfficerEmail} {supportConfig.grievanceOfficerPhone}</p> : <p className="muted">Official grievance officer contact details are not yet configured. The operator must add and publish them in Render settings; ticket tracking is available meanwhile.</p>}
-        <p>Target acknowledgement: immediate ticket registration. First human response: within 48 hours. Target grievance resolution: within 30 days.</p>
+        {supportConfig.operatorDetailsConfigured && <p><b>{supportConfig.legalEntityName}</b><br/>{supportConfig.legalEntityAddress}<br/>{supportConfig.websiteDomain}</p>}
+        {supportConfig.supportContactConfigured && <p>Customer Care: {supportConfig.supportEmail} {supportConfig.supportPhone}</p>}
+        {supportConfig.grievanceContactConfigured ? <p><b>{supportConfig.grievanceOfficerName}</b> · {supportConfig.grievanceOfficerDesignation}<br/>{supportConfig.grievanceOfficerEmail} {supportConfig.grievanceOfficerPhone}</p> : <p className="muted">Official grievance officer contact details are not yet configured. The operator must add and publish them in Render settings; the ticket desk alone is not a substitute for publishing monitored grievance contacts.</p>}
+        <p>Ticket acknowledgement: immediate system registration. Grievance acknowledgement target: within 48 hours. Target grievance resolution: within one month. A copy of your submitted complaint can be downloaded from each ticket.</p>
       </section>
     </div>
   );
