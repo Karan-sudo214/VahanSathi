@@ -4184,6 +4184,8 @@ function VoiceAgentModal({ onClose, onApply, onBook, city }: { onClose: () => vo
                 if (recognitionRef.current) stopListening();
                 if ('speechSynthesis' in window) window.speechSynthesis.cancel();
                 setLang(option);
+                localStorage.setItem('vs_language', option.srv === 'hi-IN' ? 'hi' : option.srv === 'hi-hinglish' ? 'hinglish' : 'en');
+                document.documentElement.lang = option.srv === 'hi-IN' ? 'hi-IN' : 'en-IN';
                 setMessages(current => current.map((message, index) =>
                   message.role === 'assistant' && index === 0
                     ? { ...message, content: greetingForLanguage(option.srv) }
