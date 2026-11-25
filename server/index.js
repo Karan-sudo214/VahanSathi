@@ -3063,6 +3063,7 @@ app.post('/api/voice/conversation', asyncRoute(async (req, res) => {
   const previous = req.body?.previousIntent && typeof req.body.previousIntent === 'object' ? req.body.previousIntent : {};
   const lastQuestion = String(req.body?.lastQuestion || 'route');
   const language = String(req.body?.language || 'en-IN');
+  const awaitingConfirmation = req.body?.awaitingConfirmation === true;
   const requestedCity = String(req.body?.city || previous.city || 'Delhi');
   const todayIndia = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
 
@@ -3080,7 +3081,8 @@ app.post('/api/voice/conversation', asyncRoute(async (req, res) => {
         'Resolve relative dates using India local date ' + todayIndia + '. Interpret "kal" as tomorrow unless context clearly says otherwise. Do not infer AM/PM when ambiguous; ask.',
         'tripType must be one of Hourly, Airport, Outstation, Night driver, Full day. hours is an integer 1-24; default 4 for Hourly and 8 for Full day when the user did not specify.',
         'Respond in the user language: ' + language + '. Be conversational, concise, and reassuring.',
-        'Return ONLY valid JSON with keys: pickup, destination, city, date, time, tripType, hours, nextQuestionKey, nextQuestion, summary. Use null for unknown pickup/destination/date/time. nextQuestionKey is pickup, destination, date, time, route, or correction.'
+        'The app may ask you to classify the latest user response to a booking summary. awaitingConfirmation=' + String(awaitingConfirmation) + '. When awaitingConfirmation is true, set confirmationIntent to confirm only when the user clearly expresses that all reviewed trip details are correct and gives natural approval to proceed. Understand equivalent natural dialogue in English, Hindi and Hinglish, not just a fixed phrase. Examples include "everything is correct", "all good", "looks perfect", "that is right", "haan sab sahi hai", "sab kuch theek hai", "bilkul theek", "हाँ सब सही है", "ठीक है कर दो". Set it to change if the user asks to edit or correct any detail, reject if they say no/cancel/do not book, and unclear if their meaning is uncertain. If a message combines approval with a correction (for example, "everything is fine but change the time"), classify as change, never confirm.',
+        'Return ONLY valid JSON with keys: pickup, destination, city, date, time, tripType, hours, nextQuestionKey, nextQuestion, summary, confirmationIntent. confirmationIntent must be confirm, change, reject, or unclear. Use null for unknown pickup/destination/date/time. nextQuestionKey is pickup, destination, date, time, route, or correction.'
       ].join(' ');
       const response = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
@@ -3202,9 +3204,17 @@ app.post('/api/voice/conversation', asyncRoute(async (req, res) => {
   const nextQuestion = readyToConfirm
     ? 'I have all the details. Let me read them back so you can check everything.'
     : questionMap[nextQuestionKey] || ai?.nextQuestion || 'Could you clarify that detail for me?';
+  const lowerLatest = latestUser.toLocaleLowerCase('en-IN').replace(/[.,!?।]/g, ' ').replace(/\s+/g, ' ').trim();
+  const changeRequested = /\b(change|edit|correct|update|wrong|incorrect|not right|not correct|different|instead|cancel|don't book|do not book|mat|badal|badalna|galat|nahi|nahin|नहीं|नही|गलत|बदल|रद्द)\b/i.test(lowerLatest);
+  const fallbackConfirmed = /\b(everything is correct|everything correct|all details are correct|all details correct|all good|looks good|looks perfect|that's right|that is right|that's correct|that is correct|perfect|proceed|go ahead|book it|please book|yes|yeah|yep|sure|confirmed|confirm|haan|han|haan ji|bilkul|sab sahi hai|sab kuch sahi|sab theek hai|sab kuch theek|theek hai|kar do|कर दो|बुक कर दो|हाँ|हां|जी|सब सही है|सब ठीक है|बिल्कुल सही|ठीक है)\b/i.test(lowerLatest);
+  let confirmationIntent = ['confirm', 'change', 'reject', 'unclear'].includes(ai?.confirmationIntent)
+    ? ai.confirmationIntent
+    : changeRequested ? 'change' : fallbackConfirmed ? 'confirm' : 'unclear';
+  if (changeRequested) confirmationIntent = 'change';
+  if (!awaitingConfirmation) confirmationIntent = null;
   res.json({
     pickup, destination, city, date, time, tripType, hours,
-    readyToConfirm, missing, nextQuestionKey, nextQuestion, summary,
+    readyToConfirm, missing, nextQuestionKey, nextQuestion, summary, confirmationIntent,
     understandingMode: ai ? 'ai' : 'multilingual-fallback'
   });
 }));
