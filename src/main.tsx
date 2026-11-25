@@ -608,7 +608,25 @@ function App() {
     flash('Trip details understood. Confirm the booking with the voice agent.');
   };
 
-  const bookFromVoice = async (intent: any) => {
+  const estimateVoiceFare = async (intent: any) => {
+    const normalizedTime = normalizePickupTime(intent.time || time);
+    if (!normalizedTime) throw new Error('The pickup time from the voice request is unclear. Please confirm the time before estimating the fare.');
+    return api('/fare/estimate', {
+      method: 'POST',
+      body: JSON.stringify({
+        tripType: intent.tripType || tripType,
+        pickup: intent.pickup || pickup,
+        destination: intent.destination || destination,
+        date: intent.date || date,
+        time: normalizedTime,
+        hours: Number(intent.hours || hours),
+        vehicle,
+        city: intent.city || city
+      })
+    });
+  };
+
+  const bookFromVoice = async (intent: any, fareQuoteToken: string) => {
     if (!user) {
       applyVoiceTrip(intent);
       setVoiceAgentOpen(false);
@@ -630,12 +648,8 @@ function App() {
         vehicle,
         city: intent.city || city
       };
-      const quote = await api('/fare/estimate', {
-        method: 'POST',
-        body: JSON.stringify(voiceInput)
-      });
-      if (!quote?.quoteToken) {
-        throw new Error('The voice trip could not receive a verified fare. Please review the trip details and try again.');
+      if (!fareQuoteToken) {
+        throw new Error('The verified fare estimate is missing. Please review the trip details and calculate the fare again.');
       }
       const d = await api('/bookings', {
         method: 'POST',
@@ -644,7 +658,7 @@ function App() {
           paymentMethod,
           driverStyle,
           bookingMode,
-          fareQuoteToken: quote.quoteToken
+          fareQuoteToken
         })
       });
       await refresh();
@@ -1133,7 +1147,7 @@ function App() {
 
       {/* Modals */}
       {voiceAgentOpen && (
-        <VoiceAgentModal onClose={() => setVoiceAgentOpen(false)} onApply={applyVoiceTrip} onBook={bookFromVoice} city={city} />
+        <VoiceAgentModal onClose={() => setVoiceAgentOpen(false)} onApply={applyVoiceTrip} onEstimate={estimateVoiceFare} onBook={bookFromVoice} city={city} />
       )}
       {modal === 'auth' && (
         <AuthModal
@@ -3870,7 +3884,7 @@ function DriverProfile({ user, onUpdate, flash }: any) {
 }
 
 // ----------------- Interactive Modals -----------------
-function VoiceAgentModal({ onClose, onApply, onBook, city }: { onClose: () => void; onApply: (intent: any) => void; onBook: (intent: any) => void; city: string }) {
+function VoiceAgentModal({ onClose, onApply, onEstimate, onBook, city }: { onClose: () => void; onApply: (intent: any) => void; onEstimate: (intent: any) => Promise<any>; onBook: (intent: any, fareQuoteToken: string) => void; city: string }) {
   type ChatMessage = { role: 'assistant' | 'user'; content: string };
   type Stage = 'idle' | 'listening' | 'processing';
   const [stage, setStage] = useState<Stage>('idle');
@@ -3892,6 +3906,7 @@ function VoiceAgentModal({ onClose, onApply, onBook, city }: { onClose: () => vo
   const [intent, setIntent] = useState<any>({ city, tripType: 'Hourly', hours: 4 });
   const [lastQuestion, setLastQuestion] = useState('route');
   const [awaitingConfirmation, setAwaitingConfirmation] = useState(false);
+  const [fareQuote, setFareQuote] = useState<any>(null);
   const [booking, setBooking] = useState(false);
   const [err, setErr] = useState('');
   const recognitionRef = useRef<any>(null);
@@ -3934,7 +3949,8 @@ function VoiceAgentModal({ onClose, onApply, onBook, city }: { onClose: () => vo
     setErr('');
     if ('speechSynthesis' in window) window.speechSynthesis.cancel();
     try {
-      await onBook(intent);
+      if (!fareQuote?.quoteToken) throw new Error('The verified fare estimate is missing. Please review the trip details again.');
+      await onBook(intent, fareQuote.quoteToken);
     } catch (error: any) {
       setErr(error?.message || 'I could not place the booking. Please try again.');
       setStage('idle');
@@ -3957,6 +3973,7 @@ function VoiceAgentModal({ onClose, onApply, onBook, city }: { onClose: () => vo
     }
     if (awaitingConfirmation && /^(no|nope|not yet|change|edit|नहीं|नही|मत करो)[.! ]*$/i.test(utterance)) {
       setAwaitingConfirmation(false);
+      setFareQuote(null);
       setLastQuestion('correction');
       addAssistantMessage(lang.srv === 'hi-IN'
         ? 'कोई बात नहीं। बताइए, किस जानकारी को बदलना है?'
@@ -3966,6 +3983,7 @@ function VoiceAgentModal({ onClose, onApply, onBook, city }: { onClose: () => vo
       return;
     }
 
+    setFareQuote(null);
     setStage('processing');
     try {
       const result = await api('/voice/conversation', {
@@ -3991,31 +4009,45 @@ function VoiceAgentModal({ onClose, onApply, onBook, city }: { onClose: () => vo
       };
       setIntent(nextIntent);
       if (result.readyToConfirm) {
+        const quote = await onEstimate(nextIntent);
+        if (!quote?.quoteToken || !Number.isFinite(Number(quote.total))) {
+          throw new Error('A verified fare estimate was not returned. Please try again.');
+        }
+        setFareQuote(quote);
         setAwaitingConfirmation(true);
         onApply(nextIntent);
         const summary = result.summary || ('I have your trip from ' + nextIntent.pickup + ' to ' + nextIntent.destination + ' on ' + nextIntent.date + ' at ' + nextIntent.time + '.');
+        const estimatedFare = 'Estimated total fare: ₹' + Number(quote.total).toLocaleString('en-IN') + ' (including GST).';
         const confirmationPrompt = lang.srv === 'hi-IN'
           ? 'क्या सभी जानकारी सही है? बुकिंग करने के लिए “हाँ, बुक कर दो” कहें, या बताएं कि क्या बदलना है।'
           : lang.srv === 'hi-hinglish'
             ? 'Kya saari details sahi hain? Booking ke liye “haan, book kar do” boliye, ya batayein kya change karna hai.'
             : 'Is everything correct? Say “yes, book it” to place the ride, or tell me what needs changing.';
-        addAssistantMessage(summary + ' ' + confirmationPrompt);
+        const localizedFare = lang.srv === 'hi-IN'
+          ? 'अनुमानित कुल किराया: ₹' + Number(quote.total).toLocaleString('en-IN') + ' (GST सहित)।'
+          : lang.srv === 'hi-hinglish'
+            ? 'Estimated total fare: ₹' + Number(quote.total).toLocaleString('en-IN') + ' (GST included).'
+            : estimatedFare;
+        addAssistantMessage(summary + ' ' + localizedFare + ' ' + confirmationPrompt);
       } else {
         setAwaitingConfirmation(false);
         setLastQuestion(result.nextQuestionKey || 'route');
         addAssistantMessage(result.nextQuestion || 'Could you tell me a little more about your pickup, destination, date, or time?');
       }
     } catch (error: any) {
-      setErr(error?.message || (lang.srv === 'hi-IN'
-        ? 'मुझे समझने में परेशानी हुई। कृपया इसे एक बार फिर बताएं।'
+      setAwaitingConfirmation(false);
+      setFareQuote(null);
+      const errorMessage = error?.message || 'I had trouble understanding that. Please say it another way.';
+      setErr(lang.srv === 'hi-IN'
+        ? 'किराये का अनुमान नहीं मिल पाया। कृपया विवरण जाँचकर दोबारा कोशिश करें।'
         : lang.srv === 'hi-hinglish'
-          ? 'Mujhe samajhne mein dikkat hui. Please ek baar phir batayein.'
-          : 'I had trouble understanding that. Please say it another way.'));
+          ? 'Fare estimate nahi mil paaya. Please details check karke dobara try karein.'
+          : errorMessage);
       addAssistantMessage(lang.srv === 'hi-IN'
-        ? 'माफ़ कीजिए, मैं समझ नहीं पाया। क्या आप यह जानकारी दोबारा बता सकते हैं?'
+        ? 'माफ़ कीजिए, अभी किराये का सही अनुमान नहीं मिल पाया। कृपया एक बार फिर कोशिश करें।'
         : lang.srv === 'hi-hinglish'
-          ? 'Sorry, main samajh nahi paaya. Kya aap ye detail dobara bata sakte hain?'
-          : 'Sorry, I missed that. Could you repeat that detail?');
+          ? 'Sorry, abhi fare estimate nahi mil paaya. Please ek baar phir try karein.'
+          : 'Sorry, I could not calculate the estimated fare just now. Please try again.');
     } finally {
       setStage('idle');
     }
