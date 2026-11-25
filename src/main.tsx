@@ -648,9 +648,9 @@ function App() {
         })
       });
       await refresh();
+      setVoiceAgentOpen(false);
       setPage('Your trips');
-      flash(`Voice booking confirmed: ${d.booking.id} · ${money(d.booking.total)}`);
-      return d.booking;
+      flash(`Voice booking confirmed: ${d.booking.id}`);
     } catch (e: any) {
       flash(e.message || 'The booking could not be completed.');
       throw e;
@@ -1133,12 +1133,7 @@ function App() {
 
       {/* Modals */}
       {voiceAgentOpen && (
-        <VoiceAgentModal onClose={() => setVoiceAgentOpen(false)} onApply={applyVoiceTrip} onBook={bookFromVoice}
-          onQuote={async (intent: any) => api('/fare/estimate', { method: 'POST', body: JSON.stringify({
-            tripType: intent.tripType || 'Hourly', pickup: intent.pickup, destination: intent.destination,
-            date: intent.date, time: intent.time, hours: Number(intent.hours || 4),
-            vehicle, city: intent.city || city
-          }) })} city={city} />
+        <VoiceAgentModal onClose={() => setVoiceAgentOpen(false)} onApply={applyVoiceTrip} onBook={bookFromVoice} city={city} />
       )}
       {modal === 'auth' && (
         <AuthModal
@@ -3875,24 +3870,18 @@ function DriverProfile({ user, onUpdate, flash }: any) {
 }
 
 // ----------------- Interactive Modals -----------------
-function VoiceAgentModal({ onClose, onApply, onBook, onQuote, city }: { onClose: () => void; onApply: (intent: any) => void; onBook: (intent: any) => Promise<any>; onQuote: (intent: any) => Promise<any>; city: string }) {
+function VoiceAgentModal({ onClose, onApply, onBook, city }: { onClose: () => void; onApply: (intent: any) => void; onBook: (intent: any) => void; city: string }) {
   type ChatMessage = { role: 'assistant' | 'user'; content: string };
   type Stage = 'idle' | 'listening' | 'processing';
   const [stage, setStage] = useState<Stage>('idle');
-  const greetingFor = (code: string) => code === 'hi-IN'
-    ? 'नमस्ते! वैहानसाथी में आपका स्वागत है। मैं आपके लिए ड्राइवर बुक करने में मदद कर सकता हूँ। आपको कहाँ से पिकअप करना है और कहाँ जाना है?'
-    : code === 'hi-hinglish'
-      ? 'Hi! VaahanSathi mein welcome hai. Main aapke liye driver book karne mein help karunga. Aapko kahan se pickup karna hai aur kahan jaana hai?'
-      : 'Hi! Welcome to VaahanSathi. I can help you book a driver. Where should I pick you up, and where are you headed?';
   const [messages, setMessages] = useState<ChatMessage[]>([
-    { role: 'assistant', content: greetingFor(localStorage.getItem('vs_language') === 'hi' ? 'hi-IN' : localStorage.getItem('vs_language') === 'hinglish' ? 'hi-hinglish' : 'en-IN') }
+    { role: 'assistant', content: 'Hi! Welcome to VaahanSathi. I can help you book a driver. Where should I pick you up, and where are you headed?' }
   ]);
   const [draft, setDraft] = useState('');
   const [intent, setIntent] = useState<any>({ city, tripType: 'Hourly', hours: 4 });
   const [lastQuestion, setLastQuestion] = useState('route');
   const [awaitingConfirmation, setAwaitingConfirmation] = useState(false);
   const [booking, setBooking] = useState(false);
-  const [fareQuote, setFareQuote] = useState<any>(null);
   const [err, setErr] = useState('');
   const [lang, setLang] = useState(() => {
     const saved = localStorage.getItem('vs_language');
@@ -3905,22 +3894,6 @@ function VoiceAgentModal({ onClose, onApply, onBook, onQuote, city }: { onClose:
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const speechTextRef = useRef('');
-
-  useEffect(() => {
-    const handleLanguageChange = (event: Event) => {
-      const selected = (event as CustomEvent<string>).detail || localStorage.getItem('vs_language') || 'en';
-      const option = selected === 'hi' ? { label: 'हिन्दी', code: 'hi-IN', srv: 'hi-IN' }
-        : selected === 'hinglish' ? { label: 'Hinglish', code: 'en-IN', srv: 'hi-hinglish' }
-        : { label: 'English', code: 'en-IN', srv: 'en-IN' };
-      setLang(option);
-      setMessages(current => current.length === 1 && current[0].role === 'assistant'
-        ? [{ role: 'assistant', content: greetingFor(option.srv) }]
-        : current);
-      if ('speechSynthesis' in window) window.speechSynthesis.cancel();
-    };
-    window.addEventListener('vs-language-change', handleLanguageChange);
-    return () => window.removeEventListener('vs-language-change', handleLanguageChange);
-  }, []);
 
   useEffect(() => () => {
     try { recognitionRef.current?.abort(); } catch {}
@@ -3956,17 +3929,7 @@ function VoiceAgentModal({ onClose, onApply, onBook, onQuote, city }: { onClose:
     setErr('');
     if ('speechSynthesis' in window) window.speechSynthesis.cancel();
     try {
-      const verifiedQuote = fareQuote?.quoteToken ? fareQuote : await onQuote(intent);
-      setFareQuote(verifiedQuote);
-      const booked = await onBook(intent);
-      if (booked?.id) {
-        setAwaitingConfirmation(false);
-        addAssistantMessage(lang.srv === 'hi-IN'
-          ? 'आपकी राइड बुक हो गई है। कुल किराया: ' + money(Number(booked.total || verifiedQuote.total)) + '। धन्यवाद!'
-          : lang.srv === 'hi-hinglish'
-            ? 'Aapki ride book ho gayi hai. Total fare: ' + money(Number(booked.total || verifiedQuote.total)) + '. Thank you!'
-            : 'Your ride is booked successfully. Total fare: ' + money(Number(booked.total || verifiedQuote.total)) + '. Thank you!');
-      }
+      await onBook(intent);
     } catch (error: any) {
       setErr(error?.message || 'I could not place the booking. Please try again.');
       setStage('idle');
@@ -3983,38 +3946,16 @@ function VoiceAgentModal({ onClose, onApply, onBook, onQuote, city }: { onClose:
     const nextMessages: ChatMessage[] = [...messages, { role: 'user', content: utterance }];
     setMessages(nextMessages);
 
-    if (awaitingConfirmation) {
-      setStage('processing');
-      try {
-        const decision = await api('/voice/conversation', {
-          method: 'POST',
-          body: JSON.stringify({ messages: nextMessages, previousIntent: intent, lastQuestion: 'confirmation',
-            city, language: lang.srv, awaitingConfirmation: true })
-        });
-        if (decision.confirmationIntent === 'confirm') {
-          await confirmBook();
-          return;
-        }
-        if (decision.confirmationIntent === 'change' || decision.confirmationIntent === 'reject') {
-          setAwaitingConfirmation(false);
-          setLastQuestion('correction');
-          addAssistantMessage(lang.srv === 'hi-IN'
-            ? 'ठीक है। बताइए, किस जानकारी में बदलाव करना है?'
-            : lang.srv === 'hi-hinglish'
-              ? 'Theek hai. Bataiye, kaunsi detail change karni hai?'
-              : 'No problem. Tell me what you would like to change.');
-          return;
-        }
-        addAssistantMessage(lang.srv === 'hi-IN'
-          ? 'क्या आप इस जानकारी के साथ राइड बुक करना चाहते हैं, या कुछ बदलना है?'
-          : lang.srv === 'hi-hinglish'
-            ? 'Kya aap in details ke saath ride book karna chahte hain, ya kuch change karna hai?'
-            : 'Just to be sure: should I book this ride with these details, or would you like to change something?');
-      } catch (error: any) {
-        setErr(error?.message || 'I could not verify your confirmation. Please try again.');
-      } finally {
-        setStage('idle');
-      }
+    if (awaitingConfirmation && /^(yes|yeah|yep|sure|confirm|book it|go ahead|haan|han|जी|हाँ|हां)(?:[, ]+(?:please|book it|go ahead|कर दो|बुक करो))?[.! ]*$/i.test(utterance)) {
+      await confirmBook();
+      return;
+    }
+    if (awaitingConfirmation && /^(no|nope|not yet|change|edit|नहीं|नही|मत करो)[.! ]*$/i.test(utterance)) {
+      setAwaitingConfirmation(false);
+      setLastQuestion('correction');
+      addAssistantMessage(lang.srv === 'hi-IN'
+        ? 'कोई बात नहीं। बताइए, किस जानकारी को बदलना है?'
+        : 'No problem. Tell me what you would like to change, and I will update it.');
       return;
     }
 
@@ -4027,8 +3968,7 @@ function VoiceAgentModal({ onClose, onApply, onBook, onQuote, city }: { onClose:
           previousIntent: intent,
           lastQuestion,
           city,
-          language: lang.srv,
-          awaitingConfirmation: false
+          language: lang.srv
         })
       });
       const nextIntent = {
@@ -4047,27 +3987,9 @@ function VoiceAgentModal({ onClose, onApply, onBook, onQuote, city }: { onClose:
         setAwaitingConfirmation(true);
         onApply(nextIntent);
         const summary = result.summary || ('I have your trip from ' + nextIntent.pickup + ' to ' + nextIntent.destination + ' on ' + nextIntent.date + ' at ' + nextIntent.time + '.');
-        setFareQuote(null);
-        try {
-          const quote = await onQuote(nextIntent);
-          setFareQuote(quote);
-          const fareLine = lang.srv === 'hi-IN' ? ' कुल किराया ' + money(quote.total) + ' है।'
-            : lang.srv === 'hi-hinglish' ? ' Total fare ' + money(quote.total) + ' hai.'
-            : ' The total fare is ' + money(quote.total) + '.';
-          addAssistantMessage(summary + fareLine + (lang.srv === 'hi-IN'
-            ? ' क्या सारी जानकारी सही है? हाँ कहें या बदलाव बताएं।'
-            : lang.srv === 'hi-hinglish'
-              ? ' Kya sab details sahi hain? Aap natural way mein confirm kar sakte hain ya change bata sakte hain.'
-              : ' Is everything correct? You can confirm naturally or tell me what needs changing.'));
-        } catch (quoteError: any) {
-          setFareQuote(null);
-          addAssistantMessage(summary + (lang.srv === 'hi-IN'
-            ? ' किराया अभी सत्यापित नहीं हो पाया। कृपया थोड़ी देर बाद दोबारा कोशिश करें।'
-            : ' I could not verify the fare yet. Please try again in a moment.'));
-        }
+        addAssistantMessage(summary + ' Is everything correct? Say “yes, book it” to place the ride, or tell me what needs changing.');
       } else {
         setAwaitingConfirmation(false);
-        setFareQuote(null);
         setLastQuestion(result.nextQuestionKey || 'route');
         addAssistantMessage(result.nextQuestion || 'Could you tell me a little more about your pickup, destination, date, or time?');
       }
@@ -4080,18 +4002,16 @@ function VoiceAgentModal({ onClose, onApply, onBook, onQuote, city }: { onClose:
   }
 
   function startListening() {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!window.isSecureContext && location.hostname !== 'localhost') {
       setErr('Microphone access needs the secure HTTPS website. You can still type your reply.');
       return;
     }
-    // Use the same server-side speech-to-text provider across modern browsers.
-    // Browser-native recognition varies by device, language pack and accent.
-    if (navigator.mediaDevices?.getUserMedia && typeof MediaRecorder !== 'undefined') {
-      void startMediaRecording();
-      return;
-    }
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
+      if (navigator.mediaDevices?.getUserMedia && typeof MediaRecorder !== 'undefined') {
+        void startMediaRecording();
+        return;
+      }
       setErr('This browser does not support voice capture. You can continue the same conversation by typing.');
       return;
     }
@@ -4142,13 +4062,8 @@ function VoiceAgentModal({ onClose, onApply, onBook, onQuote, city }: { onClose:
       recognition.onend = () => {
         if (recognitionRef.current === recognition) recognitionRef.current = null;
         const spoken = speechTextRef.current.trim();
-        if (spoken) {
-          // Keep the transcript visible and editable; never submit a guess silently.
-          setDraft(spoken);
-          setStage('idle');
-        } else {
-          setStage(current => current === 'listening' ? 'idle' : current);
-        }
+        if (spoken) void sendTurn(spoken);
+        else setStage(current => current === 'listening' ? 'idle' : current);
       };
       recognition.start();
     } catch (error: any) {
@@ -4195,9 +4110,7 @@ function VoiceAgentModal({ onClose, onApply, onBook, onQuote, city }: { onClose:
           const result = await response.json();
           if (!response.ok) throw new Error(result.error || 'Voice transcription is not available. Please type your reply.');
           if (!result.text) throw new Error('I could not hear clear words. Please try again.');
-          // Let the user verify names, locations, dates and times before the AI processes them.
-          setDraft(result.text);
-          setStage('idle');
+          await sendTurn(result.text);
         } catch (error: any) {
           setErr(error?.message || 'Voice transcription failed. Please type your reply.');
           setStage('idle');
@@ -4250,8 +4163,6 @@ function VoiceAgentModal({ onClose, onApply, onBook, onQuote, city }: { onClose:
               onClick={() => {
                 if (recognitionRef.current) stopListening();
                 setLang(option);
-                localStorage.setItem('vs_language', option.srv === 'hi-IN' ? 'hi' : option.srv === 'hi-hinglish' ? 'hinglish' : 'en');
-                window.dispatchEvent(new CustomEvent('vs-language-change', { detail: option.srv === 'hi-IN' ? 'hi' : option.srv === 'hi-hinglish' ? 'hinglish' : 'en' }));
                 setErr('');
               }}>{option.label}</button>
           ))}
@@ -4278,9 +4189,6 @@ function VoiceAgentModal({ onClose, onApply, onBook, onQuote, city }: { onClose:
             <div className="va-confirm-row"><span>Pickup</span><b>{intent.pickup}</b></div>
             <div className="va-confirm-row"><span>Destination</span><b>{intent.destination}</b></div>
             <div className="va-confirm-row"><span>Date & time</span><b>{intent.date || 'Not set'} · {intent.time || 'Not set'}</b></div>
-            {fareQuote && <div className="va-confirm-row" style={{borderTop:'1px solid var(--slate-200)',paddingTop:8,marginTop:4}}>
-              <span>{lang.srv === 'hi-IN' ? 'कुल किराया' : 'Total fare'}</span><b style={{fontSize:15,color:'var(--brand,#0f766e)'}}>{money(fareQuote.total)}</b>
-            </div>}
           </div>
         )}
         {err && <p className="va-err" role="alert">{err}</p>}
@@ -4290,10 +4198,9 @@ function VoiceAgentModal({ onClose, onApply, onBook, onQuote, city }: { onClose:
             onClick={stage === 'listening' ? stopListening : startListening}>
             <Mic size={20} /> {stage === 'listening' ? 'Finish speaking' : 'Talk to VaahanSathi'}
           </button>
-          <p style={{fontSize:11,color:'var(--t5)',margin:'2px 0 -4px'}}>Review the words I heard. Correct anything that sounds wrong, then send.</p>
           <textarea className="va-text-input" value={draft}
             onChange={(e) => { setDraft(e.target.value); setErr(''); }}
-            placeholder="Your transcript appears here — edit it or type a reply…"
+            placeholder="Or type your reply here…"
             rows={2} aria-label="Reply to the VaahanSathi voice assistant" />
           <button type="button" className="primary-btn-wide" style={{marginTop:0}}
             disabled={!draft.trim() || stage === 'processing' || booking}
@@ -4302,8 +4209,8 @@ function VoiceAgentModal({ onClose, onApply, onBook, onQuote, city }: { onClose:
           </button>
           {awaitingConfirmation && (
             <button type="button" className="primary-btn-wide" style={{marginTop:0,background:'#15803d'}}
-              onClick={() => void confirmBook()} disabled={booking || stage === 'processing' || !fareQuote?.quoteToken}>
-              {booking ? 'Booking…' : lang.srv === 'hi-IN' ? 'बुकिंग की पुष्टि करें' : lang.srv === 'hi-hinglish' ? 'Booking confirm karo' : 'Confirm booking'} <Check size={17} />
+              onClick={() => void confirmBook()} disabled={booking || stage === 'processing'}>
+              {booking ? 'Booking…' : 'Yes, confirm and book'} <Check size={17} />
             </button>
           )}
         </div>
