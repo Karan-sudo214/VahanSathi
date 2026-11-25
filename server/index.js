@@ -2728,8 +2728,7 @@ app.patch('/api/admin/bookings/:id/cancel', auth, adminOnly, asyncRoute(async (r
 // â”€â”€ Admin: update pricing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // (already exists above; keeping alias here for clarity)
 
-// Cross-browser voice transcription. Provider credentials stay on the server.
-// Prefer ElevenLabs when configured; otherwise use the existing OpenAI server key.
+// Cross-browser voice transcription. The client uploads a short recording; the API key stays on the server.
 app.post('/api/voice/transcribe', express.raw({
   type: ['audio/webm', 'audio/mp4', 'audio/ogg', 'audio/wav', 'audio/mpeg', 'audio/x-m4a'],
   limit: '12mb'
@@ -2738,80 +2737,36 @@ app.post('/api/voice/transcribe', express.raw({
   if (!Buffer.isBuffer(audio) || audio.length < 1000) {
     return res.status(400).json({ error: 'No usable audio was received. Please record your trip again.' });
   }
-
-  const elevenLabsKey = process.env.ELEVENLABS_API_KEY;
-  const openAiKey = process.env.OPENAI_API_KEY;
-  if (!elevenLabsKey && !openAiKey) {
-    return res.status(503).json({
-      error: 'Voice transcription needs a server-side ELEVENLABS_API_KEY or OPENAI_API_KEY. Please ask the administrator to configure one of these voice providers.'
-    });
+  if (!process.env.ELEVENLABS_API_KEY) {
+    return res.status(503).json({ error: 'Voice transcription is not configured on the server yet. Please type your trip or ask the administrator to configure the voice service.' });
   }
-
   const mime = String(req.headers['content-type'] || 'audio/webm').split(';')[0].toLowerCase();
   const extension = mime.includes('mp4') || mime.includes('m4a') ? 'm4a'
     : mime.includes('ogg') ? 'ogg' : mime.includes('wav') ? 'wav'
     : mime.includes('mpeg') ? 'mp3' : 'webm';
-  const filename = 'vaahansathi-recording.' + extension;
+  const form = new FormData();
+  form.append('file', new Blob([audio], { type: mime }), 'vaahansathi-recording.' + extension);
+  form.append('model_id', 'scribe_v1');
   const language = String(req.query.language || '');
-  let transcript = '';
-  let providerError = null;
-
-  // ElevenLabs Scribe is preferred when its key is present.
-  if (elevenLabsKey) {
-    const form = new FormData();
-    form.append('file', new Blob([audio], { type: mime }), filename);
-    form.append('model_id', 'scribe_v1');
-    if (language === 'en-IN') form.append('language_code', 'eng');
-    else if (language === 'hi-IN') form.append('language_code', 'hin');
-    // Hinglish is left to automatic language detection.
-    try {
-      const response = await fetch('https://api.elevenlabs.io/v1/speech-to-text', {
-        method: 'POST',
-        headers: { 'xi-api-key': elevenLabsKey },
-        body: form
-      });
-      const result = await response.json().catch(() => ({}));
-      if (response.ok) transcript = typeof result.text === 'string' ? result.text.trim() : '';
-      else providerError = { status: response.status, message: result?.detail?.message || result?.detail || result?.message || 'ElevenLabs transcription failed' };
-    } catch (error) {
-      providerError = { status: 502, message: error?.message || 'ElevenLabs request failed' };
-    }
+  if (language === 'en-IN') form.append('language_code', 'eng');
+  else if (language === 'hi-IN') form.append('language_code', 'hin');
+  // Hinglish is left to automatic language detection to avoid forcing Hindi or English.
+  const response = await fetch('https://api.elevenlabs.io/v1/speech-to-text', {
+    method: 'POST',
+    headers: { 'xi-api-key': process.env.ELEVENLABS_API_KEY },
+    body: form
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    console.error('Voice transcription provider error:', response.status, result?.detail?.message || result?.detail || result?.message || 'unknown error');
+    return res.status(response.status === 429 ? 503 : 502).json({
+      error: response.status === 429
+        ? 'The voice service is busy or its quota is exhausted. Please try again shortly or type your trip.'
+        : 'We could not transcribe this recording. Please try again or type your trip.'
+    });
   }
-
-  // OpenAI is the automatic fallback, including when ElevenLabs is not configured
-  // or its service is temporarily unavailable.
-  if (!transcript && openAiKey) {
-    const form = new FormData();
-    form.append('file', new Blob([audio], { type: mime }), filename);
-    form.append('model', process.env.OPENAI_TRANSCRIPTION_MODEL || 'whisper-1');
-    if (language === 'en-IN') form.append('language', 'en');
-    else if (language === 'hi-IN') form.append('language', 'hi');
-    try {
-      const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-        method: 'POST',
-        headers: { Authorization: 'Bearer ' + openAiKey },
-        body: form
-      });
-      const result = await response.json().catch(() => ({}));
-      if (response.ok) transcript = typeof result.text === 'string' ? result.text.trim() : '';
-      else providerError = { status: response.status, message: result?.error?.message || 'OpenAI transcription failed' };
-    } catch (error) {
-      providerError = { status: 502, message: error?.message || 'OpenAI request failed' };
-    }
-  }
-
-  if (!transcript) {
-    if (providerError) {
-      console.error('Voice transcription provider error:', providerError.status, providerError.message);
-      return res.status(providerError.status === 429 ? 503 : 502).json({
-        error: providerError.status === 429
-          ? 'The voice service is busy or its quota is exhausted. Please try again shortly or type your trip.'
-          : 'We could not transcribe this recording. Please try again or type your trip.'
-      });
-    }
-    return res.status(422).json({ error: 'We could not hear clear words. Please speak a little closer to the microphone and try again.' });
-  }
-
+  const transcript = typeof result.text === 'string' ? result.text.trim() : '';
+  if (!transcript) return res.status(422).json({ error: 'We could not hear clear words. Please speak a little closer to the microphone and try again.' });
   res.json({ text: transcript });
 }));
 
@@ -3108,7 +3063,6 @@ app.post('/api/voice/conversation', asyncRoute(async (req, res) => {
   const previous = req.body?.previousIntent && typeof req.body.previousIntent === 'object' ? req.body.previousIntent : {};
   const lastQuestion = String(req.body?.lastQuestion || 'route');
   const language = String(req.body?.language || 'en-IN');
-  const awaitingConfirmation = req.body?.awaitingConfirmation === true;
   const requestedCity = String(req.body?.city || previous.city || 'Delhi');
   const todayIndia = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
 
@@ -3117,17 +3071,15 @@ app.post('/api/voice/conversation', asyncRoute(async (req, res) => {
     try {
       const systemPrompt = [
         'You are VaahanSathi, a warm, natural, highly accurate human-like driver-booking concierge for India.',
-        'Understand Indian English, Hindi, and Hinglish, including code-switching within a sentence, regional pronunciation, informal speech, corrections, incomplete phrases, and details spread across multiple turns.',
-        'TRANSCRIPT FIDELITY IS CRITICAL: user messages may be raw speech-to-text transcripts. Treat their wording as the source of truth. Do not paraphrase, translate, autocorrect, expand, or silently replace names, locality names, society names, road names, landmarks, numbers, dates, or times. Preserve a clearly spoken place name exactly as the user said it; do not substitute a more famous or similar-sounding place. If a word or number could refer to more than one thing, ask the user to clarify instead of guessing.',
-        'Use the conversation history and prior extracted fields. Extract only facts the user actually stated. Never invent or guess a pickup, destination, date, or exact time. If a transcript appears incomplete or garbled, ask the user to repeat only the unclear detail.',
+        'Understand English, Hindi, and Hinglish, including informal speech, corrections, incomplete phrases, and details spread across multiple turns.',
+        'Use the conversation history and prior extracted fields. Extract only facts the user actually stated. Never invent or guess a pickup, destination, date, or exact time.',
         'CRITICAL LOCATION RULE: Delhi and Gurugram contain thousands of named colonies, villages, sectors, blocks, societies, roads, markets, metro stations, gates and local landmarks. The built-in locality list is NOT exhaustive. NEVER tell the user a place is not found, unavailable, invalid, or unsupported merely because its name is absent from that list. Accept and preserve any clearly spoken locality, colony, sector, block, society, street, building, gate or landmark as a free-form pickup/destination exactly as spoken, including Hindi/Hinglish spellings. Do not replace a specific small locality with a nearby famous locality. Ask a short clarification only when the spoken words are genuinely ambiguous (for example, "Sector 5" without a city/area qualifier), or ask for a nearby landmark/house or society name when the user says only "home" or "office".',
         'Required before preparing a booking: pickup, destination, date (YYYY-MM-DD), and exact time (HH:mm, 24-hour). Ask one short, natural follow-up question for the most important missing or ambiguous detail. If the user says a vague place such as "home", ask for an area, sector, or landmark instead of pretending it is an address.',
         'Supported service cities are Delhi and Gurugram only. Infer city from the route when clear; otherwise use the selected city. If the requested city is outside these areas, do not pretend it is supported.',
         'Resolve relative dates using India local date ' + todayIndia + '. Interpret "kal" as tomorrow unless context clearly says otherwise. Do not infer AM/PM when ambiguous; ask.',
         'tripType must be one of Hourly, Airport, Outstation, Night driver, Full day. hours is an integer 1-24; default 4 for Hourly and 8 for Full day when the user did not specify.',
         'Respond in the user language: ' + language + '. Be conversational, concise, and reassuring.',
-        'The app may ask you to classify the latest user response to a booking summary. awaitingConfirmation=' + String(awaitingConfirmation) + '. When awaitingConfirmation is true, set confirmationIntent to confirm only when the user clearly expresses that all reviewed trip details are correct and gives natural approval to proceed. Understand equivalent natural dialogue in English, Hindi and Hinglish, not just a fixed phrase. Examples include "everything is correct", "all good", "looks perfect", "that is right", "haan sab sahi hai", "sab kuch theek hai", "bilkul theek", "हाँ सब सही है", "ठीक है कर दो". Set it to change if the user asks to edit or correct any detail, reject if they say no/cancel/do not book, and unclear if their meaning is uncertain. If a message combines approval with a correction (for example, "everything is fine but change the time"), classify as change, never confirm.',
-        'Return ONLY valid JSON with keys: pickup, destination, city, date, time, tripType, hours, nextQuestionKey, nextQuestion, summary, confirmationIntent. confirmationIntent must be confirm, change, reject, or unclear. Use null for unknown pickup/destination/date/time. nextQuestionKey is pickup, destination, date, time, route, or correction.'
+        'Return ONLY valid JSON with keys: pickup, destination, city, date, time, tripType, hours, nextQuestionKey, nextQuestion, summary. Use null for unknown pickup/destination/date/time. nextQuestionKey is pickup, destination, date, time, route, or correction.'
       ].join(' ');
       const response = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
@@ -3249,19 +3201,9 @@ app.post('/api/voice/conversation', asyncRoute(async (req, res) => {
   const nextQuestion = readyToConfirm
     ? 'I have all the details. Let me read them back so you can check everything.'
     : questionMap[nextQuestionKey] || ai?.nextQuestion || 'Could you clarify that detail for me?';
-  const lowerLatest = latestUser.toLocaleLowerCase('en-IN').replace(/[.,!?।]/g, ' ').replace(/\s+/g, ' ').trim();
-  const changeRequested = /\b(change|edit|correct|update|wrong|incorrect|not right|not correct|different|instead|cancel|don't book|do not book|mat|badal|badalna|galat|nahi|nahin)\b/i.test(lowerLatest)
-    || /(नहीं|नही|गलत|बदल|रद्द)/.test(lowerLatest);
-  const fallbackConfirmed = /\b(everything is correct|everything correct|all details are correct|all details correct|all good|looks good|looks perfect|that's right|that is right|that's correct|that is correct|perfect|proceed|go ahead|book it|please book|yes|yeah|yep|sure|confirmed|confirm|haan|han|haan ji|bilkul|sab sahi hai|sab kuch sahi|sab theek hai|sab kuch theek|theek hai|kar do)\b/i.test(lowerLatest)
-    || /(कर दो|बुक कर दो|हाँ|हां|जी|सब सही है|सब ठीक है|बिल्कुल सही|ठीक है)/.test(lowerLatest);
-  let confirmationIntent = ['confirm', 'change', 'reject', 'unclear'].includes(ai?.confirmationIntent)
-    ? ai.confirmationIntent
-    : changeRequested ? 'change' : fallbackConfirmed ? 'confirm' : 'unclear';
-  if (changeRequested) confirmationIntent = 'change';
-  if (!awaitingConfirmation) confirmationIntent = null;
   res.json({
     pickup, destination, city, date, time, tripType, hours,
-    readyToConfirm, missing, nextQuestionKey, nextQuestion, summary, confirmationIntent,
+    readyToConfirm, missing, nextQuestionKey, nextQuestion, summary,
     understandingMode: ai ? 'ai' : 'multilingual-fallback'
   });
 }));
