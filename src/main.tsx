@@ -3956,16 +3956,17 @@ function VoiceAgentModal({ onClose, onApply, onBook, onQuote, city }: { onClose:
     setErr('');
     if ('speechSynthesis' in window) window.speechSynthesis.cancel();
     try {
-      if (!fareQuote?.quoteToken) throw new Error(lang.srv === 'hi-IN'
-        ? 'बुकिंग से पहले किराये की पुष्टि नहीं हो पाई। कृपया किराया दोबारा जाँचें।'
-        : 'I could not verify the fare yet. Please wait for the fare estimate before booking.');
+      const verifiedQuote = fareQuote?.quoteToken ? fareQuote : await onQuote(intent);
+      setFareQuote(verifiedQuote);
       const booked = await onBook(intent);
-      setAwaitingConfirmation(false);
-      addAssistantMessage(lang.srv === 'hi-IN'
-        ? 'आपकी राइड बुक हो गई है। कुल किराया: ' + money(Number(booked?.total || fareQuote.total)) + '। धन्यवाद!'
-        : lang.srv === 'hi-hinglish'
-          ? 'Aapki ride book ho gayi hai. Total fare: ' + money(Number(booked?.total || fareQuote.total)) + '. Thank you!'
-          : 'Your ride is booked successfully. Total fare: ' + money(Number(booked?.total || fareQuote.total)) + '. Thank you!');
+      if (booked?.id) {
+        setAwaitingConfirmation(false);
+        addAssistantMessage(lang.srv === 'hi-IN'
+          ? 'आपकी राइड बुक हो गई है। कुल किराया: ' + money(Number(booked.total || verifiedQuote.total)) + '। धन्यवाद!'
+          : lang.srv === 'hi-hinglish'
+            ? 'Aapki ride book ho gayi hai. Total fare: ' + money(Number(booked.total || verifiedQuote.total)) + '. Thank you!'
+            : 'Your ride is booked successfully. Total fare: ' + money(Number(booked.total || verifiedQuote.total)) + '. Thank you!');
+      }
     } catch (error: any) {
       setErr(error?.message || 'I could not place the booking. Please try again.');
       setStage('idle');
@@ -4066,6 +4067,7 @@ function VoiceAgentModal({ onClose, onApply, onBook, onQuote, city }: { onClose:
         }
       } else {
         setAwaitingConfirmation(false);
+        setFareQuote(null);
         setLastQuestion(result.nextQuestionKey || 'route');
         addAssistantMessage(result.nextQuestion || 'Could you tell me a little more about your pickup, destination, date, or time?');
       }
