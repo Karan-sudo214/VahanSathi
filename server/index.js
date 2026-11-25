@@ -3078,7 +3078,7 @@ app.post('/api/voice/conversation', asyncRoute(async (req, res) => {
         'Supported service cities are Delhi and Gurugram only. Infer city from the route when clear; otherwise use the selected city. If the requested city is outside these areas, do not pretend it is supported.',
         'Resolve relative dates using India local date ' + todayIndia + '. Interpret "kal" as tomorrow unless context clearly says otherwise. Do not infer AM/PM when ambiguous; ask.',
         'tripType must be one of Hourly, Airport, Outstation, Night driver, Full day. hours is an integer 1-24; default 4 for Hourly and 8 for Full day when the user did not specify.',
-        'Respond in the user language: ' + language + '. Be conversational, concise, and reassuring.',
+        'Respond in the selected language only: ' + language + '. Every assistant-generated field, especially nextQuestion and summary, must use that language and its natural script (Hindi in Devanagari for hi-IN; natural Roman Hindi for hi-hinglish). Do not answer in English merely because earlier conversation messages were in English. Keep pickup and destination names exactly as spoken. Be conversational, concise, and reassuring.',
         'Return ONLY valid JSON with keys: pickup, destination, city, date, time, tripType, hours, nextQuestionKey, nextQuestion, summary. Use null for unknown pickup/destination/date/time. nextQuestionKey is pickup, destination, date, time, route, or correction.'
       ].join(' ');
       const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -3189,18 +3189,34 @@ app.post('/api/voice/conversation', asyncRoute(async (req, res) => {
   if (!destination) missing.push('destination');
   if (!date) missing.push('date');
   if (!time) missing.push('time');
-  const questionMap = {
+  const isHindi = language === 'hi-IN';
+  const isHinglish = language === 'hi-hinglish';
+  const questionMap = isHindi ? {
+    pickup: 'ड्राइवर आपको कहाँ से पिकअप करे? कृपया पता, सेक्टर या कोई नज़दीकी पहचान बताएं।',
+    destination: 'आपको कहाँ जाना है? जगह का नाम, सेक्टर या कोई नज़दीकी पहचान बताएं।',
+    date: 'आपको किस तारीख़ को ड्राइवर चाहिए? आज, कल या कोई तारीख़ बताएं।',
+    time: spokenTime.ambiguous ? 'मैंने समय सुना, लेकिन सही बुकिंग के लिए AM या PM जानना ज़रूरी है। क्या आपका मतलब सुबह है या शाम?' : 'ड्राइवर को किस सही समय पर पहुँचना चाहिए? कृपया सुबह या शाम भी बताएं।'
+  } : isHinglish ? {
+    pickup: 'Driver aapko kahan se pickup kare? Please address, sector ya nearby landmark batayein.',
+    destination: 'Aapko kahan jaana hai? Place name, sector ya nearby landmark bata dein.',
+    date: 'Aapko driver kis date ko chahiye? Aaj, kal ya koi date bata dein.',
+    time: spokenTime.ambiguous ? 'Maine time suna, lekin sahi booking ke liye AM ya PM confirm karna hoga. Morning ya evening?' : 'Driver ko exactly kis time pahunchna chahiye? Please AM ya PM bhi batayein.'
+  } : {
     pickup: 'Where should the driver pick you up? Please share an address, sector, or nearby landmark.',
     destination: 'And where would you like to go? A place name, sector, or landmark is fine.',
     date: 'What date do you need the driver? You can say today, tomorrow, or a calendar date.',
-    time: spokenTime.ambiguous ? 'I heard the time, but I need AM or PM to avoid booking the wrong slot. Was that in the morning or evening?' : 'What exact time should the driver arrive? Please include AM or PM.',
+    time: spokenTime.ambiguous ? 'I heard the time, but I need AM or PM to avoid booking the wrong slot. Was that in the morning or evening?' : 'What exact time should the driver arrive? Please include AM or PM.'
   };
   const nextQuestionKey = missing[0] || 'confirmation';
   const readyToConfirm = missing.length === 0 && pickup.toLowerCase() !== destination.toLowerCase();
-  const summary = 'I have your trip from ' + pickup + ' to ' + destination + ', in ' + city + ', on ' + date + ' at ' + time + '.';
+  const summary = isHindi
+    ? 'आपकी यात्रा ' + pickup + ' से ' + destination + ', ' + city + ' में, ' + date + ' को ' + time + ' बजे के लिए है।'
+    : isHinglish
+      ? 'Aapki trip ' + pickup + ' se ' + destination + ', ' + city + ' mein, ' + date + ' ko ' + time + ' baje ke liye hai.'
+      : 'I have your trip from ' + pickup + ' to ' + destination + ', in ' + city + ', on ' + date + ' at ' + time + '.';
   const nextQuestion = readyToConfirm
-    ? 'I have all the details. Let me read them back so you can check everything.'
-    : questionMap[nextQuestionKey] || ai?.nextQuestion || 'Could you clarify that detail for me?';
+    ? (isHindi ? 'सभी जानकारी मिल गई है। कृपया एक बार विवरण जाँच लें।' : isHinglish ? 'Saari details mil gayi hain. Please ek baar check kar lein.' : 'I have all the details. Let me read them back so you can check everything.')
+    : questionMap[nextQuestionKey] || ai?.nextQuestion || (isHindi ? 'कृपया यह जानकारी थोड़ी और स्पष्ट करें।' : isHinglish ? 'Please is detail ko thoda aur clear kar dein.' : 'Could you clarify that detail for me?');
   res.json({
     pickup, destination, city, date, time, tripType, hours,
     readyToConfirm, missing, nextQuestionKey, nextQuestion, summary,
