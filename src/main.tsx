@@ -3985,6 +3985,7 @@ function VoiceAgentModal({ onClose, onApply, onEstimate, onBook, city }: { onClo
 
     setFareQuote(null);
     setStage('processing');
+    let estimatingFare = false;
     try {
       const result = await api('/voice/conversation', {
         method: 'POST',
@@ -4009,7 +4010,9 @@ function VoiceAgentModal({ onClose, onApply, onEstimate, onBook, city }: { onClo
       };
       setIntent(nextIntent);
       if (result.readyToConfirm) {
+        estimatingFare = true;
         const quote = await onEstimate(nextIntent);
+        estimatingFare = false;
         if (!quote?.quoteToken || !Number.isFinite(Number(quote.total))) {
           throw new Error('A verified fare estimate was not returned. Please try again.');
         }
@@ -4038,16 +4041,12 @@ function VoiceAgentModal({ onClose, onApply, onEstimate, onBook, city }: { onClo
       setAwaitingConfirmation(false);
       setFareQuote(null);
       const errorMessage = error?.message || 'I had trouble understanding that. Please say it another way.';
-      setErr(lang.srv === 'hi-IN'
-        ? 'किराये का अनुमान नहीं मिल पाया। कृपया विवरण जाँचकर दोबारा कोशिश करें।'
-        : lang.srv === 'hi-hinglish'
-          ? 'Fare estimate nahi mil paaya. Please details check karke dobara try karein.'
-          : errorMessage);
-      addAssistantMessage(lang.srv === 'hi-IN'
-        ? 'माफ़ कीजिए, अभी किराये का सही अनुमान नहीं मिल पाया। कृपया एक बार फिर कोशिश करें।'
-        : lang.srv === 'hi-hinglish'
-          ? 'Sorry, abhi fare estimate nahi mil paaya. Please ek baar phir try karein.'
-          : 'Sorry, I could not calculate the estimated fare just now. Please try again.');
+      setErr(estimatingFare
+        ? (lang.srv === 'hi-IN' ? 'किराये का अनुमान नहीं मिल पाया। कृपया विवरण जाँचकर दोबारा कोशिश करें।' : lang.srv === 'hi-hinglish' ? 'Fare estimate nahi mil paaya. Please details check karke dobara try karein.' : 'The estimated fare could not be calculated. Please check the trip details and try again.')
+        : errorMessage);
+      addAssistantMessage(estimatingFare
+        ? (lang.srv === 'hi-IN' ? 'माफ़ कीजिए, अभी किराये का सही अनुमान नहीं मिल पाया। कृपया एक बार फिर कोशिश करें।' : lang.srv === 'hi-hinglish' ? 'Sorry, abhi fare estimate nahi mil paaya. Please ek baar phir try karein.' : 'Sorry, I could not calculate the estimated fare just now. Please try again.')
+        : (lang.srv === 'hi-IN' ? 'माफ़ कीजिए, मैं समझ नहीं पाया। क्या आप यह जानकारी दोबारा बता सकते हैं?' : lang.srv === 'hi-hinglish' ? 'Sorry, main samajh nahi paaya. Kya aap ye detail dobara bata sakte hain?' : 'Sorry, I missed that. Could you repeat that detail?'));
     } finally {
       setStage('idle');
     }
