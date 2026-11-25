@@ -7,7 +7,7 @@ import { randomUUID, randomInt, createHmac, createHash, timingSafeEqual, createP
 import fs from 'node:fs';
 import path from 'node:path';
 import pg from 'pg';
-import { normalizePickupTime } from '../shared/time.js';
+import { normalizePickupTime, parseSpokenPickupTime } from '../shared/time.js';
 import { hideInternalFareDetails, toCustomerFareSummary } from '../shared/fare-view.js';
 
 const { Pool } = pg;
@@ -3026,19 +3026,9 @@ app.post('/api/voice/intent', (req, res) => {
     return res.status(422).json({ error: 'Pickup and destination were recognised as the same place. Please say both locations clearly, for example: from Jhilmil Colony to Cyber City.' });
   }
 
-  // ── Time parsing — English + Hindi + Hinglish ────────────────────────────
-  const timeMap = { subah:'AM', morning:'AM', savere:'AM', dopahar:'PM', dopahar:'PM', shaam:'PM', evening:'PM', raat:'PM', night:'PM', raat_ko:'PM' };
-  let time = null;
-  const tMatch = raw.match(/(?:at|around|ko|baje|बजे|सुबह|शाम|रात)\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm|AM|PM|baje|बजे)?/i)
-    || raw.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm|AM|PM)\b/i);
-  if (tMatch) {
-    let h = Number(tMatch[1]);
-    const min = tMatch[2] || '00';
-    const suf = (tMatch[3] || '').toLowerCase();
-    if ((suf === 'pm' || suf === 'shaam' || suf === 'raat' || suf === 'रात' || suf === 'शाम') && h < 12) h += 12;
-    if ((suf === 'am' || suf === 'subah' || suf === 'morning' || suf === 'सुबह') && h === 12) h = 0;
-    time = `${String(h).padStart(2,'0')}:${min}`;
-  }
+  // Use the same multilingual AM/PM parser as the conversation workflow.
+  const parsedTime = parseSpokenPickupTime(raw);
+  const time = parsedTime.time;
 
   // ── Date ─────────────────────────────────────────────────────────────────
   const date =
@@ -3115,7 +3105,9 @@ app.post('/api/voice/conversation', asyncRoute(async (req, res) => {
   let destination = ai?.destination ?? previous.destination ?? null;
   let city = ['Delhi', 'Gurugram'].includes(ai?.city) ? ai.city : (['Delhi', 'Gurugram'].includes(previous.city) ? previous.city : requestedCity);
   let date = ai?.date ?? previous.date ?? null;
-  let time = ai?.time ?? previous.time ?? null;
+  const spokenTime = parseSpokenPickupTime(latestUser, { expectTime: lastQuestion === 'time' });
+  // Explicit caller wording wins over an LLM guess; ambiguous 12-hour values stay unset.
+  let time = spokenTime.mentioned ? spokenTime.time : (ai?.time ?? previous.time ?? null);
   let tripType = ['Hourly', 'Airport', 'Outstation', 'Night driver', 'Full day'].includes(ai?.tripType) ? ai.tripType : (previous.tripType || 'Hourly');
   let hours = Number(ai?.hours || previous.hours || (tripType === 'Full day' ? 8 : 4));
   const allUserText = history.filter((m) => m.role === 'user').map((m) => m.content).join(' ');
@@ -3182,25 +3174,7 @@ app.post('/api/voice/conversation', asyncRoute(async (req, res) => {
         date = year + '-' + String(explicitDate[2]).padStart(2,'0') + '-' + String(explicitDate[1]).padStart(2,'0');
       }
     }
-    const timeText = latestLower;
-    const timeMatch = latestUser.match(/(?:at|around|by|ko|subah|savere|morning|afternoon|dopahar|shaam|evening|raat|night)?\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\s*(?:baje|बजे)?/i);
-    if (lastQuestion === 'time' || /\b(am|pm|morning|afternoon|evening|night|subah|shaam|raat|baje)\b|सुबह|शाम|रात|बजे/.test(timeText)) {
-      if (timeMatch) {
-        let h = Number(timeMatch[1]);
-        const minute = Number(timeMatch[2] || 0);
-        const suffix = (timeMatch[3] || '').toLowerCase();
-        const isPm = suffix === 'pm' || /afternoon|evening|shaam|raat|night|dopahar|शाम|रात|दोपहर/.test(timeText);
-        const isAm = suffix === 'am' || /morning|subah|savere|सुबह|सवेरे/.test(timeText);
-        if (h >= 0 && h <= 23 && minute <= 59) {
-          if (h <= 12 && !suffix && !isPm && !isAm) time = null;
-          else {
-            if (h === 12 && isAm) h = 0;
-            else if (h < 12 && isPm) h += 12;
-            time = String(h).padStart(2,'0') + ':' + String(minute).padStart(2,'0');
-          }
-        }
-      }
-    }
+    // Time was parsed above, even when the AI provider is enabled.
   }
 
   if (!['Delhi', 'Gurugram'].includes(city)) city = requestedCity;
@@ -3219,7 +3193,7 @@ app.post('/api/voice/conversation', asyncRoute(async (req, res) => {
     pickup: 'Where should the driver pick you up? Please share an address, sector, or nearby landmark.',
     destination: 'And where would you like to go? A place name, sector, or landmark is fine.',
     date: 'What date do you need the driver? You can say today, tomorrow, or a calendar date.',
-    time: 'What exact time should the driver arrive? Please include AM or PM.',
+    time: spokenTime.ambiguous ? 'I heard the time, but I need AM or PM to avoid booking the wrong slot. Was that in the morning or evening?' : 'What exact time should the driver arrive? Please include AM or PM.',
   };
   const nextQuestionKey = missing[0] || 'confirmation';
   const readyToConfirm = missing.length === 0 && pickup.toLowerCase() !== destination.toLowerCase();
