@@ -3874,8 +3874,19 @@ function VoiceAgentModal({ onClose, onApply, onBook, city }: { onClose: () => vo
   type ChatMessage = { role: 'assistant' | 'user'; content: string };
   type Stage = 'idle' | 'listening' | 'processing';
   const [stage, setStage] = useState<Stage>('idle');
+  const [lang, setLang] = useState(() => {
+    const saved = localStorage.getItem('vs_language');
+    return saved === 'hi' ? { label: 'हिन्दी', code: 'hi-IN', srv: 'hi-IN' }
+      : saved === 'hinglish' ? { label: 'Hinglish', code: 'en-IN', srv: 'hi-hinglish' }
+      : { label: 'English', code: 'en-IN', srv: 'en-IN' };
+  });
+  const greetingForLanguage = (language: string) => language === 'hi-IN'
+    ? 'नमस्ते! VaahanSathi में आपका स्वागत है। मैं आपकी ड्राइवर बुक करने में मदद कर सकता हूँ। आपको कहाँ से पिकअप करना है और कहाँ जाना है?'
+    : language === 'hi-hinglish'
+      ? 'Namaste! VaahanSathi mein welcome hai. Main aapko driver book karne mein help karunga. Aapko kahan se pickup karna hai aur kahan jaana hai?'
+      : 'Hi! Welcome to VaahanSathi. I can help you book a driver. Where should I pick you up, and where are you headed?';
   const [messages, setMessages] = useState<ChatMessage[]>([
-    { role: 'assistant', content: 'Hi! Welcome to VaahanSathi. I can help you book a driver. Where should I pick you up, and where are you headed?' }
+    { role: 'assistant', content: greetingForLanguage(lang.srv) }
   ]);
   const [draft, setDraft] = useState('');
   const [intent, setIntent] = useState<any>({ city, tripType: 'Hourly', hours: 4 });
@@ -3883,12 +3894,6 @@ function VoiceAgentModal({ onClose, onApply, onBook, city }: { onClose: () => vo
   const [awaitingConfirmation, setAwaitingConfirmation] = useState(false);
   const [booking, setBooking] = useState(false);
   const [err, setErr] = useState('');
-  const [lang, setLang] = useState(() => {
-    const saved = localStorage.getItem('vs_language');
-    return saved === 'hi' ? { label: 'हिन्दी', code: 'hi-IN', srv: 'hi-IN' }
-      : saved === 'hinglish' ? { label: 'Hinglish', code: 'en-IN', srv: 'hi-hinglish' }
-      : { label: 'English', code: 'en-IN', srv: 'en-IN' };
-  });
   const recognitionRef = useRef<any>(null);
   const mediaRecorderRef = useRef<any>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
@@ -3955,7 +3960,9 @@ function VoiceAgentModal({ onClose, onApply, onBook, city }: { onClose: () => vo
       setLastQuestion('correction');
       addAssistantMessage(lang.srv === 'hi-IN'
         ? 'कोई बात नहीं। बताइए, किस जानकारी को बदलना है?'
-        : 'No problem. Tell me what you would like to change, and I will update it.');
+        : lang.srv === 'hi-hinglish'
+          ? 'Koi baat nahi. Bataiye, kaunsi detail change karni hai?'
+          : 'No problem. Tell me what you would like to change, and I will update it.');
       return;
     }
 
@@ -3987,15 +3994,28 @@ function VoiceAgentModal({ onClose, onApply, onBook, city }: { onClose: () => vo
         setAwaitingConfirmation(true);
         onApply(nextIntent);
         const summary = result.summary || ('I have your trip from ' + nextIntent.pickup + ' to ' + nextIntent.destination + ' on ' + nextIntent.date + ' at ' + nextIntent.time + '.');
-        addAssistantMessage(summary + ' Is everything correct? Say “yes, book it” to place the ride, or tell me what needs changing.');
+        const confirmationPrompt = lang.srv === 'hi-IN'
+          ? 'क्या सभी जानकारी सही है? बुकिंग करने के लिए “हाँ, बुक कर दो” कहें, या बताएं कि क्या बदलना है।'
+          : lang.srv === 'hi-hinglish'
+            ? 'Kya saari details sahi hain? Booking ke liye “haan, book kar do” boliye, ya batayein kya change karna hai.'
+            : 'Is everything correct? Say “yes, book it” to place the ride, or tell me what needs changing.';
+        addAssistantMessage(summary + ' ' + confirmationPrompt);
       } else {
         setAwaitingConfirmation(false);
         setLastQuestion(result.nextQuestionKey || 'route');
         addAssistantMessage(result.nextQuestion || 'Could you tell me a little more about your pickup, destination, date, or time?');
       }
     } catch (error: any) {
-      setErr(error?.message || 'I had trouble understanding that. Please say it another way.');
-      addAssistantMessage('Sorry, I missed that. Could you repeat that detail?');
+      setErr(error?.message || (lang.srv === 'hi-IN'
+        ? 'मुझे समझने में परेशानी हुई। कृपया इसे एक बार फिर बताएं।'
+        : lang.srv === 'hi-hinglish'
+          ? 'Mujhe samajhne mein dikkat hui. Please ek baar phir batayein.'
+          : 'I had trouble understanding that. Please say it another way.'));
+      addAssistantMessage(lang.srv === 'hi-IN'
+        ? 'माफ़ कीजिए, मैं समझ नहीं पाया। क्या आप यह जानकारी दोबारा बता सकते हैं?'
+        : lang.srv === 'hi-hinglish'
+          ? 'Sorry, main samajh nahi paaya. Kya aap ye detail dobara bata sakte hain?'
+          : 'Sorry, I missed that. Could you repeat that detail?');
     } finally {
       setStage('idle');
     }
@@ -4162,7 +4182,13 @@ function VoiceAgentModal({ onClose, onApply, onBook, city }: { onClose: () => vo
             <button key={option.label} type="button" className={'va-lang-btn' + (lang.label === option.label ? ' active' : '')}
               onClick={() => {
                 if (recognitionRef.current) stopListening();
+                if ('speechSynthesis' in window) window.speechSynthesis.cancel();
                 setLang(option);
+                setMessages(current => current.map((message, index) =>
+                  message.role === 'assistant' && index === 0
+                    ? { ...message, content: greetingForLanguage(option.srv) }
+                    : message
+                ));
                 setErr('');
               }}>{option.label}</button>
           ))}
