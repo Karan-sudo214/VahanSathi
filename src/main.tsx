@@ -4002,16 +4002,18 @@ function VoiceAgentModal({ onClose, onApply, onBook, city }: { onClose: () => vo
   }
 
   function startListening() {
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!window.isSecureContext && location.hostname !== 'localhost') {
       setErr('Microphone access needs the secure HTTPS website. You can still type your reply.');
       return;
     }
+    // Use the same server-side speech-to-text provider across modern browsers.
+    // Browser-native recognition varies by device, language pack and accent.
+    if (navigator.mediaDevices?.getUserMedia && typeof MediaRecorder !== 'undefined') {
+      void startMediaRecording();
+      return;
+    }
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      if (navigator.mediaDevices?.getUserMedia && typeof MediaRecorder !== 'undefined') {
-        void startMediaRecording();
-        return;
-      }
       setErr('This browser does not support voice capture. You can continue the same conversation by typing.');
       return;
     }
@@ -4062,8 +4064,13 @@ function VoiceAgentModal({ onClose, onApply, onBook, city }: { onClose: () => vo
       recognition.onend = () => {
         if (recognitionRef.current === recognition) recognitionRef.current = null;
         const spoken = speechTextRef.current.trim();
-        if (spoken) void sendTurn(spoken);
-        else setStage(current => current === 'listening' ? 'idle' : current);
+        if (spoken) {
+          // Keep the transcript visible and editable; never submit a guess silently.
+          setDraft(spoken);
+          setStage('idle');
+        } else {
+          setStage(current => current === 'listening' ? 'idle' : current);
+        }
       };
       recognition.start();
     } catch (error: any) {
@@ -4110,7 +4117,9 @@ function VoiceAgentModal({ onClose, onApply, onBook, city }: { onClose: () => vo
           const result = await response.json();
           if (!response.ok) throw new Error(result.error || 'Voice transcription is not available. Please type your reply.');
           if (!result.text) throw new Error('I could not hear clear words. Please try again.');
-          await sendTurn(result.text);
+          // Let the user verify names, locations, dates and times before the AI processes them.
+          setDraft(result.text);
+          setStage('idle');
         } catch (error: any) {
           setErr(error?.message || 'Voice transcription failed. Please type your reply.');
           setStage('idle');
@@ -4198,9 +4207,10 @@ function VoiceAgentModal({ onClose, onApply, onBook, city }: { onClose: () => vo
             onClick={stage === 'listening' ? stopListening : startListening}>
             <Mic size={20} /> {stage === 'listening' ? 'Finish speaking' : 'Talk to VaahanSathi'}
           </button>
+          <p style={{fontSize:11,color:'var(--t5)',margin:'2px 0 -4px'}}>Review the words I heard. Correct anything that sounds wrong, then send.</p>
           <textarea className="va-text-input" value={draft}
             onChange={(e) => { setDraft(e.target.value); setErr(''); }}
-            placeholder="Or type your reply here…"
+            placeholder="Your transcript appears here — edit it or type a reply…"
             rows={2} aria-label="Reply to the VaahanSathi voice assistant" />
           <button type="button" className="primary-btn-wide" style={{marginTop:0}}
             disabled={!draft.trim() || stage === 'processing' || booking}
