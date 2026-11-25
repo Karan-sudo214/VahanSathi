@@ -3205,8 +3205,10 @@ app.post('/api/voice/conversation', asyncRoute(async (req, res) => {
     ? 'I have all the details. Let me read them back so you can check everything.'
     : questionMap[nextQuestionKey] || ai?.nextQuestion || 'Could you clarify that detail for me?';
   const lowerLatest = latestUser.toLocaleLowerCase('en-IN').replace(/[.,!?।]/g, ' ').replace(/\s+/g, ' ').trim();
-  const changeRequested = /\b(change|edit|correct|update|wrong|incorrect|not right|not correct|different|instead|cancel|don't book|do not book|mat|badal|badalna|galat|nahi|nahin|नहीं|नही|गलत|बदल|रद्द)\b/i.test(lowerLatest);
-  const fallbackConfirmed = /\b(everything is correct|everything correct|all details are correct|all details correct|all good|looks good|looks perfect|that's right|that is right|that's correct|that is correct|perfect|proceed|go ahead|book it|please book|yes|yeah|yep|sure|confirmed|confirm|haan|han|haan ji|bilkul|sab sahi hai|sab kuch sahi|sab theek hai|sab kuch theek|theek hai|kar do|कर दो|बुक कर दो|हाँ|हां|जी|सब सही है|सब ठीक है|बिल्कुल सही|ठीक है)\b/i.test(lowerLatest);
+  const changeRequested = /\b(change|edit|correct|update|wrong|incorrect|not right|not correct|different|instead|cancel|don't book|do not book|mat|badal|badalna|galat|nahi|nahin)\b/i.test(lowerLatest)
+    || /(नहीं|नही|गलत|बदल|रद्द)/.test(lowerLatest);
+  const fallbackConfirmed = /\b(everything is correct|everything correct|all details are correct|all details correct|all good|looks good|looks perfect|that's right|that is right|that's correct|that is correct|perfect|proceed|go ahead|book it|please book|yes|yeah|yep|sure|confirmed|confirm|haan|han|haan ji|bilkul|sab sahi hai|sab kuch sahi|sab theek hai|sab kuch theek|theek hai|kar do)\b/i.test(lowerLatest)
+    || /(कर दो|बुक कर दो|हाँ|हां|जी|सब सही है|सब ठीक है|बिल्कुल सही|ठीक है)/.test(lowerLatest);
   let confirmationIntent = ['confirm', 'change', 'reject', 'unclear'].includes(ai?.confirmationIntent)
     ? ai.confirmationIntent
     : changeRequested ? 'change' : fallbackConfirmed ? 'confirm' : 'unclear';
