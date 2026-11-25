@@ -4012,10 +4012,10 @@ function VoiceAgentModal({ onClose, onApply, onEstimate, onBook, city }: { onClo
       if (result.readyToConfirm) {
         estimatingFare = true;
         const quote = await onEstimate(nextIntent);
-        estimatingFare = false;
         if (!quote?.quoteToken || !Number.isFinite(Number(quote.total))) {
           throw new Error('A verified fare estimate was not returned. Please try again.');
         }
+        estimatingFare = false;
         setFareQuote(quote);
         setAwaitingConfirmation(true);
         onApply(nextIntent);
