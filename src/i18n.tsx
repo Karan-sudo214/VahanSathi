@@ -137,7 +137,6 @@ export function LanguageSwitcher() {
     setLanguage(next);
     localStorage.setItem('vs_language', next);
     document.documentElement.lang = next === 'hi' ? 'hi-IN' : 'en-IN';
-    window.dispatchEvent(new CustomEvent('vs-language-change', { detail: next }));
   };
 
   return (
